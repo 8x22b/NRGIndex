@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#100e0d">
+  <meta name="description" content="Коллективный тирлист энергетиков: сводный рейтинг, личные подборки и честные мнения.">
+  <title>NRG / INDEX — тирлист энергетиков</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-noise" aria-hidden="true"></div>
+  <div class="cursor-aura" aria-hidden="true"></div>
+
+  <div class="intro" aria-hidden="true">
+    <div class="intro__mark">NRG<span>/</span>INDEX</div>
+    <div class="intro__line"><i></i></div>
+  </div>
+
+  <header class="site-header">
+    <button class="brand" type="button" data-view="average" aria-label="Открыть сводный рейтинг">
+      <span class="brand__name">NRG<span>/</span>INDEX</span>
+      <span class="brand__caption">private tasting society</span>
+    </button>
+    <div class="header-meta">
+      <span class="live-dot"></span>
+      <span>4 участника</span>
+      <span class="header-meta__slash">/</span>
+      <span id="header-count">1 образец</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero__glow hero__glow--pink" aria-hidden="true"></div>
+      <div class="hero__glow hero__glow--orange" aria-hidden="true"></div>
+
+      <div class="hero__copy">
+        <p class="eyebrow reveal">Коллективный дегустационный архив · 2026</p>
+        <h1 id="hero-title" class="hero__title reveal">
+          Энергия,<br>
+          <em>разложенная</em><br>
+          по полкам.
+        </h1>
+        <div class="hero__bottom reveal">
+          <p>Четыре человека. Один общий рейтинг. Никакой объективности — только вкус, настроение и последствия.</p>
+          <a class="round-link" href="#rating" aria-label="Перейти к рейтингу">
+            <svg viewBox="0 0 80 80" aria-hidden="true">
+              <defs><path id="circlePath" d="M40,40 m-27,0 a27,27 0 1,1 54,0 a27,27 0 1,1 -54,0"/></defs>
+              <text><textPath href="#circlePath">СМОТРЕТЬ РЕЙТИНГ · СМОТРЕТЬ РЕЙТИНГ · </textPath></text>
+            </svg>
+            <span>↓</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="hero__specimen reveal" aria-hidden="true">
+        <div class="specimen-card">
+          <span class="specimen-card__index">№ 001</span>
+          <div class="specimen-card__halo"></div>
+          <img src="assets/adrenaline-yuzu-strawberry-calamansi.png" alt="">
+          <div class="specimen-card__stamp">S</div>
+          <p>ADRENALINE RUSH<br><span>YUZU · STRAWBERRY · CALAMANSI</span></p>
+        </div>
+      </div>
+    </section>
+
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee__track">
+        <span>ВКУС</span><i>✦</i><span>ЭФФЕКТ</span><i>✦</i><span>ДИЗАЙН</span><i>✦</i><span>ПОСЛЕВКУСИЕ</span><i>✦</i>
+        <span>ВКУС</span><i>✦</i><span>ЭФФЕКТ</span><i>✦</i><span>ДИЗАЙН</span><i>✦</i><span>ПОСЛЕВКУСИЕ</span><i>✦</i>
+      </div>
+    </div>
+
+    <section class="rating-section" id="rating" aria-labelledby="rating-title">
+      <div class="section-head reveal">
+        <div>
+          <p class="eyebrow">The ranking room</p>
+          <h2 id="rating-title">Общий стол</h2>
+        </div>
+        <p id="view-description">Сводный тир считается по всем выставленным оценкам. Пока голос один — вердикт особенно безапелляционный.</p>
+      </div>
+
+      <nav class="view-switcher reveal" aria-label="Выбор тирлиста">
+        <button class="view-chip is-active" type="button" data-view="average">
+          <span class="view-chip__number">00</span>
+          <span><b>Сводный</b><small>средняя оценка</small></span>
+        </button>
+        <div class="view-switcher__people" id="participant-tabs"></div>
+      </nav>
+
+      <div class="board-wrap reveal">
+        <div class="board-topline">
+          <span id="board-label">NRG / CONSENSUS</span>
+          <span id="board-meta">1 из 4 голосов учтён</span>
+        </div>
+        <div class="tier-board" id="tier-board" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="manifesto">
+      <div class="manifesto__number reveal">01—05</div>
+      <div class="manifesto__copy reveal">
+        <p class="eyebrow">How to read the room</p>
+        <h2>От «запасай ящик»<br>до «больше никогда».</h2>
+      </div>
+      <div class="manifesto__legend reveal">
+        <div><b>S</b><span>Безоговорочно<br>в холодильник</span></div>
+        <div><b>A</b><span>Сильный<br>повтор</span></div>
+        <div><b>B</b><span>Нормальная<br>смена</span></div>
+        <div><b>C</b><span>Только при<br>обстоятельствах</span></div>
+        <div><b>D</b><span>Энергия<br>ошибки</span></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="site-footer__mark">NRG<span>/</span>INDEX</div>
+    <p>Частная коллекция сомнительных решений.<br>Обновляется по мере дегустации.</p>
+    <p class="site-footer__date">LAST POUR<br><span id="last-update">31.08.2026</span></p>
+  </footer>
+
+  <dialog class="drink-dialog" id="drink-dialog" aria-labelledby="dialog-title">
+    <button class="dialog-close" type="button" aria-label="Закрыть">×</button>
+    <div id="dialog-content"></div>
+  </dialog>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
