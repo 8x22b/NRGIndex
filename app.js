@@ -242,9 +242,17 @@
     if (dialog.open) dialog.close();
   };
 
-  createTabs();
-  headerCount.textContent = `${data.drinks.length} ${wordForm(data.drinks.length, ["образец", "образца", "образцов"])}`;
-  updateNode.textContent = data.updatedAt;
+  const refreshChrome = () => {
+    createTabs();
+    headerCount.textContent = `${data.drinks.length} ${wordForm(data.drinks.length, ["образец", "образца", "образцов"])}`;
+    updateNode.textContent = data.updatedAt;
+  };
+
+  refreshChrome();
+  document.addEventListener("nrg:data-changed", () => {
+    refreshChrome();
+    renderBoard();
+  });
 
   document.addEventListener("click", (event) => {
     const viewButton = event.target.closest("[data-view]");

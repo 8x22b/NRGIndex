@@ -13,7 +13,8 @@ window.NRG_DATA = {
     { id: "sanya", name: "Саня", initials: "СА", role: "участник 01", color: "#ff6b49" },
     { id: "yarik", name: "Ярик", initials: "ЯР", role: "участник 02", color: "#f1c46c" },
     { id: "roma", name: "Рома", initials: "РО", role: "участник 03", color: "#9fb7ff" },
-    { id: "person-4", name: "Участник 4", initials: "04", role: "место свободно", color: "#cf8cff" }
+    { id: "person-4", name: "Участник 4", initials: "04", role: "место свободно", color: "#cf8cff" },
+    { id: "person-5", name: "Участник 5", initials: "05", role: "место свободно", color: "#7ee6a8" }
   ],
 
   drinks: [
