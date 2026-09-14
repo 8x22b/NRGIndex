@@ -173,7 +173,7 @@
     const relatedDrinks = (drink.related || []).map(getDrink).filter(Boolean);
     const relatedMarkup = relatedDrinks.length ? `
       <section class="related-drinks">
-        <div class="reviews__head"><h4>Похожие NRGOS’ы</h4><span>связанные карточки</span></div>
+        <div class="reviews__head"><h4>Похожие энергосы</h4><span>связанные карточки</span></div>
         <div class="related-drinks__grid">
           ${relatedDrinks.map((related) => `
             <button class="related-card" type="button" data-related-drink="${related.id}" style="--related-a:${related.accent?.[0] || "#ff4f79"};--related-b:${related.accent?.[1] || "#ff7448"}">
