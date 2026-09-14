@@ -28,9 +28,11 @@
     </button>
     <div class="header-meta">
       <span class="live-dot"></span>
-      <span id="header-people">4 участника</span>
+      <span id="header-people">5 участников</span>
       <span class="header-meta__slash">/</span>
       <span id="header-count">1 образец</span>
+      <span class="header-meta__slash">/</span>
+      <a class="header-cab" href="cabinet.html">кабинет</a>
     </div>
   </header>
 
@@ -47,7 +49,7 @@
           по полкам.
         </h1>
         <div class="hero__bottom reveal">
-          <p id="hero-people">Четыре человека. Один общий рейтинг. Никакой объективности — только вкус, настроение и последствия.</p>
+          <p id="hero-people">Пять человек. Один общий рейтинг. Никакой объективности — только вкус, настроение и последствия.</p>
           <a class="round-link" href="#rating" aria-label="Перейти к рейтингу">
             <svg viewBox="0 0 80 80" aria-hidden="true">
               <defs><path id="circlePath" d="M40,40 m-27,0 a27,27 0 1,1 54,0 a27,27 0 1,1 -54,0"/></defs>
@@ -102,110 +104,11 @@
       </div>
     </section>
 
-    <section class="cabinet-section" id="cabinets" aria-labelledby="cabinet-title">
-      <div class="section-head reveal">
-        <div>
-          <p class="eyebrow">Personal cabinets</p>
-          <h2 id="cabinet-title">Кабинеты</h2>
-        </div>
-        <p>Каждый участник ведёт свой профиль: добавляет энергосы, правит свои оценки — доска пересчитывается мгновенно. Данные живут в этом браузере. Для переноса на телефон — экспорт/импорт JSON внизу секции.</p>
-      </div>
-
-      <div class="cabinet-tabs reveal" id="cabinet-tabs" role="tablist" aria-label="Выбор участника"></div>
-
-      <div class="cabinet-body reveal">
-        <div class="cabinet-profile" id="cabinet-profile"></div>
-
-        <div class="cabinet-grid">
-          <form class="cabinet-form" id="drink-form" autocomplete="off">
-            <h3>Добавить энергос</h3>
-            <label>Бренд<input id="f-brand" type="text" placeholder="Adrenaline Rush" required></label>
-            <label>Название<input id="f-name" type="text" placeholder="Adrenaline Rush" required></label>
-            <label>Вкус<input id="f-flavor" type="text" placeholder="Юдзу · клубника · каламанси" required></label>
-            <label>Издание<input id="f-edition" type="text" placeholder="розово-оранжевая банка"></label>
-            <div class="form-row">
-              <label>Тир
-                <select id="f-tier">
-                  <option value="S">S — запасай ящик</option>
-                  <option value="A" selected>A — берём ещё</option>
-                  <option value="B">B — рабочий вариант</option>
-                  <option value="C">C — по ситуации</option>
-                  <option value="D">D — энергия ошибки</option>
-                </select>
-              </label>
-            </div>
-            <label>Отзыв<textarea id="f-review" rows="4" placeholder="Вкус, послевкусие, последствия…"></textarea></label>
-
-            <div class="voice-row">
-              <button class="btn" type="button" id="btn-record">● Записать войс</button>
-              <button class="btn btn--ghost" type="button" id="btn-ai-rewrite">✦ Причесать через ИИ</button>
-              <span class="voice-status" id="voice-status"></span>
-            </div>
-            <audio id="voice-audio" controls hidden></audio>
-
-            <fieldset class="image-block">
-              <legend>Фото банки</legend>
-              <label class="btn btn--ghost btn--file">📷 Снять / загрузить фото
-                <input id="f-image-file" type="file" accept="image/*" hidden>
-              </label>
-              <div class="form-row">
-                <input id="f-image-url" type="url" placeholder="…или вставь ссылку на картинку">
-                <button class="btn btn--ghost" type="button" id="btn-image-url">Взять</button>
-              </div>
-              <div class="form-row">
-                <input id="f-image-search" type="text" placeholder="…или найди: «burn tropical mix»">
-                <button class="btn btn--ghost" type="button" id="btn-image-search">Найти</button>
-              </div>
-              <div class="image-results" id="image-results" hidden>
-                <button class="btn btn--ghost" type="button" id="img-prev">←</button>
-                <img id="img-img" alt="Найденное изображение">
-                <button class="btn btn--ghost" type="button" id="img-next">→</button>
-                <div class="image-results__bar">
-                  <span id="img-count">0 / 0</span>
-                  <button class="btn" type="button" id="btn-image-pick">Выбрать это</button>
-                </div>
-              </div>
-              <div class="image-preview" id="image-preview" hidden>
-                <img id="image-preview-img" alt="Выбранное фото банки">
-                <div class="image-preview__bar">
-                  <span id="image-source-label"></span>
-                  <button class="btn btn--ghost" type="button" id="btn-image-clear">Убрать</button>
-                </div>
-              </div>
-              <p class="hint">Белый фон с загруженного фото вырезается автоматически, прямо в браузере.</p>
-            </fieldset>
-
-            <button class="btn btn--big" type="submit">Добавить в индекс</button>
-            <p class="form-status" id="form-status" aria-live="polite"></p>
-          </form>
-
-          <div class="cabinet-side">
-            <div class="cabinet-mine">
-              <h3>Мои оценки</h3>
-              <div id="cabinet-my-ratings"></div>
-            </div>
-            <details class="cabinet-ai" id="ai-settings">
-              <summary>Настройки ИИ (кастомный URL)</summary>
-              <label>Endpoint<input id="ai-endpoint" type="url" placeholder="https://твой-хост/v1/chat/completions"></label>
-              <label>Модель<input id="ai-model" type="text" placeholder="my-model"></label>
-              <label>Ключ<input id="ai-key" type="password" placeholder="вставь ключ — хранится только в этом браузере" autocomplete="off"></label>
-              <button class="btn btn--ghost" type="button" id="btn-ai-save">Сохранить</button>
-              <span class="form-status" id="ai-status" aria-live="polite"></span>
-              <p class="hint">Запросы идут напрямую из браузера на твой URL в OpenAI-совместимом формате. Ключ в репозиторий не попадает.</p>
-            </details>
-            <div class="cabinet-sync">
-              <h3>Перенос данных</h3>
-              <div class="form-row">
-                <button class="btn btn--ghost" type="button" id="btn-export">Скачать JSON</button>
-                <label class="btn btn--ghost btn--file">Импорт JSON
-                  <input id="import-file" type="file" accept="application/json" hidden>
-                </label>
-              </div>
-              <button class="btn btn--danger" type="button" id="btn-wipe">Стереть мои локальные данные</button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <section class="cab-cta">
+      <p class="eyebrow">Personal cabinets</p>
+      <h2>Кабинеты — вход по ключу</h2>
+      <p>Одна строка про банку — нейросеть разберёт бренд, вкус и тир, фото найдётся само.</p>
+      <a class="btn" href="cabinet.html">Войти в кабинет</a>
     </section>
 
     <section class="manifesto">
@@ -236,7 +139,17 @@
   </dialog>
 
   <script src="data.js"></script>
-  <script src="cabinet.js"></script>
+  <script src="keys.js"></script>
+  <script>
+    try {
+      var _km = {};
+      (window.NRG_KEYS || []).forEach(function (k) { if (k.name || k.role) _km[k.pid] = k; });
+      window.NRG_DATA.participants.forEach(function (p) {
+        var o = _km[p.id];
+        if (o) { if (o.name) p.name = o.name; if (o.role) p.role = o.role; }
+      });
+    } catch (e) {}
+  </script>
   <script src="app.js"></script>
 </body>
 </html>

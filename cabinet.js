@@ -1,11 +1,13 @@
-/* NRG/INDEX — личные кабинеты.
- * Всё хранится в localStorage этого браузера, доска пересчитывается мгновенно.
- * Ключ ИИ — только локально, в репозиторий не попадает. */
+/* NRG/INDEX — личный кабинет: вход по ключу, добавление через OpenRouter.
+ * Ник и подпись назначает админ в keys.js. Свои банки/оценки — в localStorage. */
 (() => {
   const data = window.NRG_DATA;
+  const KEYS = window.NRG_KEYS || [];
+  const AI = window.NRG_AI || {};
   if (!data) return;
 
-  const LS_KEY = "nrgindex:v1";
+  const LS_KEY = "nrgindex:v2";
+  const SESSION_KEY = "nrgindex:session";
   const ACCENTS = [
     ["#ff4f79", "#ff7448"], ["#00b8d9", "#7ee6e1"], ["#8b3bc4", "#ef3ea6"],
     ["#39a844", "#b7e43b"], ["#f1c46c", "#ff7448"], ["#9fb7ff", "#cf8cff"],
@@ -16,6 +18,7 @@
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 
+  const freshStore = () => ({ addedDrinks: [], ratingEdits: {}, orKey: "" });
   const loadStore = () => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -23,24 +26,15 @@
       return { ...freshStore(), ...JSON.parse(raw) };
     } catch { return freshStore(); }
   };
-  const freshStore = () => ({ profiles: {}, addedDrinks: [], ratingEdits: {}, ai: {}, activePid: null });
   let store = loadStore();
   const persist = () => {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch { /* переполнено — фото ужмётся при следующем сохранении */ }
+    try { localStorage.setItem(LS_KEY, JSON.stringify(store)); } catch { /* фото ужмётся при следующем сохранении */ }
   };
 
   const getDrink = (id) => data.drinks.find((d) => d.id === id);
-  const today = () => {
-    const d = new Date();
-    return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
-  };
+  const getPerson = (pid) => data.participants.find((p) => p.id === pid);
 
-  /* ---------- merge local data into base ---------- */
   const applyStore = () => {
-    for (const p of data.participants) {
-      const o = store.profiles[p.id];
-      if (o) { if (o.name) p.name = o.name; if (o.role) p.role = o.role; if (o.initials) p.initials = o.initials; }
-    }
     for (const d of store.addedDrinks) {
       if (!getDrink(d.id)) data.drinks.push(structuredClone(d));
     }
@@ -53,18 +47,38 @@
         else delete drink.ratings[pid];
       }
     }
-    if (!data.participants.some((p) => p.id === store.activePid)) {
-      store.activePid = data.participants[0]?.id || null;
-    }
   };
 
-  const notify = () => {
-    data.updatedAt = today();
-    document.dispatchEvent(new Event("nrg:data-changed"));
-    renderAll();
+  /* ---------- auth ---------- */
+  const sha256 = async (s) => {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
   };
 
-  /* ---------- ratings (base + user drinks) ---------- */
+  let me = null; // { pid, name, role, ...person }
+
+  const tryLogin = async (rawKey) => {
+    const key = (rawKey || "").trim().toUpperCase();
+    if (!key) return null;
+    const hash = await sha256(key);
+    const rec = KEYS.find((k) => k.hash === hash);
+    if (!rec) return null;
+    const person = getPerson(rec.pid) || {};
+    return { key, pid: rec.pid, name: rec.name || person.name || "Участник", role: rec.role || person.role || "", person };
+  };
+
+  const showCabinet = () => {
+    $("auth-view").hidden = true;
+    $("cab-view").hidden = false;
+    const p = me.person || {};
+    $("me-avatar").textContent = p.initials || "?";
+    $("me-avatar").style.setProperty("--person-color", p.color || "#fff");
+    $("me-name").textContent = me.name;
+    $("me-role").textContent = me.role;
+    renderMine();
+  };
+
+  /* ---------- ratings ---------- */
   const setRating = (drinkId, pid, patch) => {
     const drink = getDrink(drinkId);
     if (!drink) return;
@@ -74,14 +88,14 @@
 
     if (drink.userAdded) {
       const saved = store.addedDrinks.find((d) => d.id === drinkId);
-      if (saved) { saved.ratings = structuredClone(drink.ratings); }
+      if (saved) saved.ratings = structuredClone(drink.ratings);
     } else {
       store.ratingEdits[drinkId] = store.ratingEdits[drinkId] || {};
       store.ratingEdits[drinkId][pid] = patch ? { tier: patch.tier, review: patch.review || "" } : null;
       if (!patch && !Object.values(store.ratingEdits[drinkId]).some(Boolean)) delete store.ratingEdits[drinkId];
     }
     persist();
-    notify();
+    renderMine();
   };
 
   const deleteDrink = (drinkId) => {
@@ -90,284 +104,15 @@
     store.addedDrinks = store.addedDrinks.filter((d) => d.id !== drinkId);
     delete store.ratingEdits[drinkId];
     persist();
-    notify();
-  };
-
-  /* ---------- image: load, shrink, cut white bg ---------- */
-  const loadImage = (src) => new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
-  });
-
-  const cutWhiteBg = (img, maxSide = 640) => {
-    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
-    const w = Math.max(1, Math.round(img.naturalWidth * scale));
-    const h = Math.max(1, Math.round(img.naturalHeight * scale));
-    const cv = document.createElement("canvas");
-    cv.width = w; cv.height = h;
-    const ctx = cv.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, w, h);
-    const id = ctx.getImageData(0, 0, w, h);
-    const px = id.data;
-
-    // медиана границы = образец фона
-    const border = [];
-    for (let x = 0; x < w; x += 2) { border.push(x * 4, ((h - 1) * w + x) * 4); }
-    for (let y = 0; y < h; y += 2) { border.push((y * w) * 4, (y * w + w - 1) * 4); }
-    const ch = [[], [], []];
-    for (const o of border) { ch[0].push(px[o]); ch[1].push(px[o + 1]); ch[2].push(px[o + 2]); }
-    const med = (a) => a.sort((x, y) => x - y)[Math.floor(a.length / 2)];
-    const bg = [med(ch[0]), med(ch[1]), med(ch[2])];
-
-    const TOL = 52, BRIGHT_MIN = 120, NEUTRAL_MAX = 34;
-    const isBgish = (o) => {
-      const r = px[o], g = px[o + 1], b = px[o + 2];
-      const dist = Math.hypot(r - bg[0], g - bg[1], b - bg[2]);
-      if (dist < TOL) return true;
-      return Math.min(r, g, b) > BRIGHT_MIN && Math.max(r, g, b) - Math.min(r, g, b) < NEUTRAL_MAX;
-    };
-
-    // flood fill от границы (4-связность)
-    const mask = new Uint8Array(w * h);
-    const stack = [];
-    const seed = (x, y) => { const i = y * w + x; if (!mask[i] && isBgish(i * 4)) { mask[i] = 1; stack.push(i); } };
-    for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
-    for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
-    while (stack.length) {
-      const i = stack.pop();
-      const x = i % w, y = (i / w) | 0;
-      if (x > 0) { const j = i - 1; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
-      if (x < w - 1) { const j = i + 1; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
-      if (y > 0) { const j = i - w; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
-      if (y < h - 1) { const j = i + w; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
-    }
-
-    let bgShare = 0;
-    for (let i = 0; i < mask.length; i++) bgShare += mask[i];
-    bgShare /= mask.length;
-    if (bgShare < 0.005) return { dataUrl: null, cut: false }; // фона у края нет — оставляем как есть
-
-    // лёгкое расширение маски (съесть белый ореол) + применение альфы
-    const grown = Uint8Array.from(mask);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      if (mask[y * w + x]) continue;
-      if ((x > 0 && mask[y * w + x - 1]) || (x < w - 1 && mask[y * w + x + 1]) ||
-          (y > 0 && mask[(y - 1) * w + x]) || (y < h - 1 && mask[(y + 1) * w + x])) grown[y * w + x] = 1;
-    }
-    for (let i = 0; i < grown.length; i++) if (grown[i]) px[i * 4 + 3] = 0;
-    ctx.putImageData(id, 0, 0);
-    return { dataUrl: cv.toDataURL("image/png"), cut: true };
-  };
-
-  const shrinkOnly = (img, maxSide = 640) => {
-    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
-    const cv = document.createElement("canvas");
-    cv.width = Math.max(1, Math.round(img.naturalWidth * scale));
-    cv.height = Math.max(1, Math.round(img.naturalHeight * scale));
-    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
-    return cv.toDataURL("image/jpeg", 0.85);
-  };
-
-  const state = { pendingImage: null, searchResults: [], searchIndex: 0 };
-
-  const setPendingImage = (dataUrl, label) => {
-    state.pendingImage = dataUrl ? { dataUrl, label } : null;
-    $("image-preview").hidden = !dataUrl;
-    if (dataUrl) {
-      $("image-preview-img").src = dataUrl;
-      $("image-source-label").textContent = label;
-    }
-    $("form-status").textContent = "";
-  };
-
-  const takeFile = async (file) => {
-    if (!file) return;
-    $("form-status").textContent = "Режу фон…";
-    try {
-      const img = await loadImage(URL.createObjectURL(file));
-      const cut = cutWhiteBg(img);
-      setPendingImage(cut.dataUrl || shrinkOnly(img), cut.dataUrl ? "фото · фон вырезан" : "фото · фон не найден, как есть");
-      $("form-status").textContent = cut.dataUrl ? "Фон вырезан ✓" : "Белый фон у края не найден — взял как есть.";
-    } catch { $("form-status").textContent = "Не смог прочитать файл."; }
-  };
-
-  const takeUrl = async (url, label = "по ссылке") => {
-    url = (url || "").trim();
-    if (!url) return;
-    $("form-status").textContent = "Тяну картинку…";
-    try {
-      const img = await loadImage(url);
-      const cut = cutWhiteBg(img);
-      setPendingImage(cut.dataUrl || shrinkOnly(img), `${label}${cut.dataUrl ? " · фон вырезан" : ""}`);
-      $("form-status").textContent = cut.dataUrl ? "Фон вырезан ✓" : "Взял как есть (фон у края не найден).";
-    } catch {
-      // CORS чужого хостинга — кладём ссылку как есть
-      setPendingImage(url, `${label} · без обработки (CORS)`);
-      $("form-status").textContent = "Хостинг не отдал пиксели (CORS) — вставил ссылку как есть.";
-    }
-  };
-
-  /* ---------- image search (Wikimedia Commons, без ключей) ---------- */
-  const searchImages = async (query) => {
-    query = (query || "").trim();
-    if (!query) return;
-    const box = $("image-results");
-    $("img-count").textContent = "ищу…";
-    box.hidden = false;
-    try {
-      const url = "https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*" +
-        `&generator=search&gsrsearch=${encodeURIComponent(query + " energy drink can")}` +
-        "&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url%7Csize&iiurlwidth=480";
-      const res = await (await fetch(url)).json();
-      const pages = Object.values(res?.query?.pages || {});
-      state.searchResults = pages
-        .map((p) => p?.imageinfo?.[0]?.thumburl || p?.imageinfo?.[0]?.url)
-        .filter(Boolean);
-      state.searchIndex = 0;
-      if (!state.searchResults.length) { $("img-count").textContent = "ничего не нашлось"; $("img-img").removeAttribute("src"); return; }
-      showSearchResult();
-    } catch { $("img-count").textContent = "поиск не ответил"; }
-  };
-
-  const showSearchResult = () => {
-    const list = state.searchResults;
-    if (!list.length) return;
-    state.searchIndex = (state.searchIndex + list.length) % list.length;
-    $("img-img").src = list[state.searchIndex];
-    $("img-count").textContent = `${state.searchIndex + 1} / ${list.length}`;
-  };
-
-  /* ---------- voice ---------- */
-  const voice = { recorder: null, chunks: [], recording: false, recognizer: null };
-  const srSupported = () => window.SpeechRecognition || window.webkitSpeechRecognition;
-
-  const toggleRecord = async () => {
-    const btn = $("btn-record"), status = $("voice-status");
-    if (voice.recording) { voice.recorder?.stop(); voice.recognizer?.stop(); return; }
-    let stream;
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch { status.textContent = "Нет доступа к микрофону."; return; }
-
-    voice.chunks = [];
-    voice.recorder = new MediaRecorder(stream);
-    voice.recorder.ondataavailable = (e) => { if (e.data.size) voice.chunks.push(e.data); };
-    voice.recorder.onstop = () => {
-      stream.getTracks().forEach((t) => t.stop());
-      voice.recording = false;
-      btn.textContent = "● Записать войс";
-      const blob = new Blob(voice.chunks, { type: voice.recorder.mimeType || "audio/webm" });
-      if (blob.size) {
-        const audio = $("voice-audio");
-        audio.src = URL.createObjectURL(blob);
-        audio.hidden = false;
-      }
-      status.textContent = srSupported() ? "Готово." : "Записано. Диктовка в этом браузере не поддерживается — вбей текст руками.";
-    };
-    voice.recorder.start();
-    voice.recording = true;
-    btn.textContent = "■ Стоп";
-    status.textContent = "Слушаю…";
-
-    if (srSupported()) {
-      try {
-        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-        voice.recognizer = new SR();
-        voice.recognizer.lang = "ru-RU";
-        voice.recognizer.interimResults = true;
-        voice.recognizer.onresult = (e) => {
-          let text = "";
-          for (const r of e.results) text += r[0].transcript;
-          const area = $("f-review");
-          if (e.results[e.results.length - 1].isFinal) {
-            area.value = (area.value ? area.value.replace(/\s+$/, "") + " " : "") + text.trim();
-          }
-          status.textContent = "… " + text.slice(-60);
-        };
-        voice.recognizer.onend = () => { if (voice.recording) { try { voice.recognizer.start(); } catch {} } };
-        voice.recognizer.start();
-      } catch { status.textContent = "Запись идёт, диктовка не завелась."; }
-    }
-  };
-
-  /* ---------- AI rewrite via custom endpoint ---------- */
-  const aiRewrite = async () => {
-    const area = $("f-review"), status = $("form-status");
-    const text = area.value.trim();
-    if (!text) { status.textContent = "Сначала надиктуй или вбей текст отзыва."; return; }
-    const { endpoint, model, key } = store.ai || {};
-    if (!endpoint || !model) { status.textContent = "Задай endpoint и модель в «Настройках ИИ» внизу."; $("ai-settings").open = true; return; }
-    status.textContent = "Нейросеть причёсывает…";
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(key ? { Authorization: `Bearer ${key}` } : {}) },
-        body: JSON.stringify({
-          model,
-          temperature: 0.7,
-          messages: [
-            { role: "system", content: "Ты редактор дегустационных заметок про энергетики. Перепиши текст пользователя живо и по-русски, 1–3 предложения. Сохрани смысл, оценки и детали вкуса, мат оставь только если он к месту. Верни ТОЛЬКО переписанный текст без кавычек и комментариев." },
-            { role: "user", content: text },
-          ],
-        }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      const out = json?.choices?.[0]?.message?.content?.trim();
-      if (!out) throw new Error("пустой ответ");
-      area.value = out;
-      status.textContent = "Готово ✦";
-    } catch (e) { status.textContent = "ИИ не ответил: " + (e?.message || e); }
-  };
-
-  /* ---------- rendering ---------- */
-  const activePid = () => store.activePid;
-  const activePerson = () => data.participants.find((p) => p.id === activePid());
-
-  const wordForm = (v, f) => {
-    const n = Math.abs(v) % 100, n1 = n % 10;
-    if (n > 10 && n < 20) return f[2];
-    if (n1 > 1 && n1 < 5) return f[1];
-    if (n1 === 1) return f[0];
-    return f[2];
-  };
-
-  const renderTabs = () => {
-    $("cabinet-tabs").innerHTML = data.participants.map((p, i) => `
-      <button class="cab-tab ${p.id === activePid() ? "is-active" : ""}" type="button" data-pid="${p.id}" role="tab">
-        <span class="cab-tab__avatar" style="--person-color:${p.color}">${esc(p.initials || String(i + 1).padStart(2, "0"))}</span>
-        <span><b>${esc(p.name)}</b><small>${esc(p.role || "")}</small></span>
-      </button>`).join("");
-  };
-
-  const renderProfile = () => {
-    const p = activePerson();
-    if (!p) { $("cabinet-profile").innerHTML = ""; return; }
-    const count = data.drinks.filter((d) => d.ratings?.[p.id]).length;
-    $("cabinet-profile").innerHTML = `
-      <div class="cab-profile__avatar" style="--person-color:${p.color}">${esc(p.initials)}</div>
-      <div class="cab-profile__fields">
-        <label>Имя<input id="p-name" type="text" value="${esc(p.name)}" maxlength="24"></label>
-        <label>Подпись<input id="p-role" type="text" value="${esc(p.role || "")}" maxlength="40" placeholder="участник"></label>
-      </div>
-      <div class="cab-profile__meta"><b>${count}</b><span>${wordForm(count, ["оценка", "оценки", "оценок"])}</span></div>
-      <button class="btn btn--ghost" type="button" id="btn-profile-save">Сохранить профиль</button>`;
-    $("btn-profile-save").onclick = () => {
-      const name = $("p-name").value.trim(), role = $("p-role").value.trim();
-      if (!name) return;
-      p.name = name; p.role = role;
-      store.profiles[p.id] = { name, role, initials: p.initials };
-      persist(); notify();
-    };
+    renderMine();
   };
 
   const renderMine = () => {
-    const pid = activePid();
+    const pid = me.pid;
     const mine = data.drinks.filter((d) => d.ratings?.[pid]);
+    $("me-count").textContent = mine.length;
     if (!mine.length) {
-      $("cabinet-my-ratings").innerHTML = `<p class="hint">Пока пусто — добавь первый энергос через форму.</p>`;
+      $("cabinet-my-ratings").innerHTML = `<p class="hint">Пока пусто — опиши первую банку выше.</p>`;
       return;
     }
     $("cabinet-my-ratings").innerHTML = mine.map((d) => {
@@ -381,8 +126,8 @@
         </div>
         <div class="mine-row__actions">
           <select data-m-tier>${["S", "A", "B", "C", "D"].map((t) => `<option ${t === r.tier ? "selected" : ""}>${t}</option>`).join("")}</select>
-          <button class="btn btn--ghost" type="button" data-m-del-rating title="Убрать мою оценку">− оценка</button>
-          ${d.userAdded && d.addedBy === pid ? `<button class="btn btn--danger" type="button" data-m-del-drink title="Удалить карточку целиком">× банка</button>` : ""}
+          <button class="btn btn--ghost" type="button" data-m-del-rating>− оценка</button>
+          ${d.userAdded && d.addedBy === pid ? `<button class="btn btn--danger" type="button" data-m-del-drink>× банка</button>` : ""}
         </div>
       </div>`;
     }).join("");
@@ -403,61 +148,317 @@
     });
   };
 
-  const renderPeople = () => {
-    const n = data.participants.length;
-    const hp = $("header-people");
-    if (hp) hp.textContent = `${n} ${wordForm(n, ["участник", "участника", "участников"])}`;
-    const hero = $("hero-people");
-    if (hero) {
-      const words = { 1: "Один человек.", 2: "Два человека.", 3: "Три человека.", 4: "Четыре человека.", 5: "Пять человек." };
-      hero.textContent = `${words[n] || `${n} человек.`} Один общий рейтинг. Никакой объективности — только вкус, настроение и последствия.`;
+  /* ---------- images: load, shrink, cut white bg ---------- */
+  const loadImage = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+
+  const cutWhiteBg = (img, maxSide = 640) => {
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, w, h);
+    const id = ctx.getImageData(0, 0, w, h);
+    const px = id.data;
+
+    const border = [];
+    for (let x = 0; x < w; x += 2) { border.push(x * 4, ((h - 1) * w + x) * 4); }
+    for (let y = 0; y < h; y += 2) { border.push((y * w) * 4, (y * w + w - 1) * 4); }
+    const ch = [[], [], []];
+    for (const o of border) { ch[0].push(px[o]); ch[1].push(px[o + 1]); ch[2].push(px[o + 2]); }
+    const med = (a) => a.sort((x, y) => x - y)[Math.floor(a.length / 2)];
+    const bg = [med(ch[0]), med(ch[1]), med(ch[2])];
+
+    const TOL = 52, BRIGHT_MIN = 120, NEUTRAL_MAX = 34;
+    const isBgish = (o) => {
+      const r = px[o], g = px[o + 1], b = px[o + 2];
+      if (Math.hypot(r - bg[0], g - bg[1], b - bg[2]) < TOL) return true;
+      return Math.min(r, g, b) > BRIGHT_MIN && Math.max(r, g, b) - Math.min(r, g, b) < NEUTRAL_MAX;
+    };
+
+    const mask = new Uint8Array(w * h);
+    const stack = [];
+    const seed = (x, y) => { const i = y * w + x; if (!mask[i] && isBgish(i * 4)) { mask[i] = 1; stack.push(i); } };
+    for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
+    for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
+    while (stack.length) {
+      const i = stack.pop();
+      const x = i % w, y = (i / w) | 0;
+      if (x > 0) { const j = i - 1; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
+      if (x < w - 1) { const j = i + 1; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
+      if (y > 0) { const j = i - w; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
+      if (y < h - 1) { const j = i + w; if (!mask[j] && isBgish(j * 4)) { mask[j] = 1; stack.push(j); } }
     }
+
+    let bgShare = 0;
+    for (let i = 0; i < mask.length; i++) bgShare += mask[i];
+    bgShare /= mask.length;
+    if (bgShare < 0.005) return { dataUrl: null, cut: false };
+
+    const grown = Uint8Array.from(mask);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (mask[y * w + x]) continue;
+      if ((x > 0 && mask[y * w + x - 1]) || (x < w - 1 && mask[y * w + x + 1]) ||
+          (y > 0 && mask[(y - 1) * w + x]) || (y < h - 1 && mask[(y + 1) * w + x])) grown[y * w + x] = 1;
+    }
+    for (let i = 0; i < grown.length; i++) if (grown[i]) px[i * 4 + 3] = 0;
+    ctx.putImageData(id, 0, 0);
+    return { dataUrl: cv.toDataURL("image/png"), cut: true };
   };
 
-  const renderAi = () => {
-    $("ai-endpoint").value = store.ai?.endpoint || "";
-    $("ai-model").value = store.ai?.model || "";
-    if (store.ai?.key) $("ai-key").placeholder = "ключ сохранён •••• (введи новый чтобы заменить)";
+  const shrinkOnly = (img, maxSide = 640) => {
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    cv.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+    return cv.toDataURL("image/jpeg", 0.85);
   };
 
-  const renderAll = () => { renderTabs(); renderProfile(); renderMine(); renderPeople(); };
+  const processImageUrl = async (url) => {
+    const img = await loadImage(url);
+    const cut = cutWhiteBg(img);
+    return { dataUrl: cut.dataUrl || shrinkOnly(img), auto: true };
+  };
 
-  /* ---------- add drink ---------- */
+  const searchImages = async (query) => {
+    const url = "https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*" +
+      `&generator=search&gsrsearch=${encodeURIComponent(query + " energy drink can")}` +
+      "&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url%7Csize&iiurlwidth=480";
+    const res = await (await fetch(url)).json();
+    return Object.values(res?.query?.pages || {})
+      .map((p) => p?.imageinfo?.[0]?.thumburl || p?.imageinfo?.[0]?.url)
+      .filter(Boolean);
+  };
+
+  /* ---------- OpenRouter: разбор банки ---------- */
+  const orKey = () => store.orKey || AI.key || "";
+  const TIER_RE = /^[SABCD]$/;
+
+  const parseWithAI = async (freeText) => {
+    const key = orKey();
+    if (!AI.endpoint || !AI.model) throw new Error("не задан endpoint/модель (keys.js)");
+    if (!key) throw new Error("нет OpenRouter-ключа — попроси его у админа");
+    const res = await fetch(AI.endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+        "HTTP-Referer": location.origin,
+        "X-Title": "NRG/INDEX",
+      },
+      body: JSON.stringify({
+        model: AI.model,
+        temperature: 0.4,
+        messages: [
+          {
+            role: "system",
+            content: "Ты разбираешь сообщение про энергетик и возвращаешь СТРОГО JSON без пояснений: " +
+              '{"brand":"бренд","name":"полное название","flavor":"вкус по-русски","edition":"издание/дизайн банки, коротко","tier":"S|A|B|C|D","review":"живой отзыв 1-3 предложения по-русски"} ' +
+              "tier выведи из описания: восторг=S, хвалят=A, норм=B, так себе=C, ругают=D. Если чего-то нет в тексте — додумай правдоподобно по названию, пустым не оставляй.",
+          },
+          { role: "user", content: freeText },
+        ],
+      }),
+    });
+    if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}`);
+    const json = await res.json();
+    const raw = (json?.choices?.[0]?.message?.content || "").replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(raw);
+    if (!parsed.name) throw new Error("ИИ вернул пустоту, попробуй переформулировать");
+    if (!TIER_RE.test(parsed.tier)) parsed.tier = "B";
+    for (const f of ["brand", "name", "flavor", "edition", "review"]) parsed[f] = String(parsed[f] || "").trim();
+    if (!parsed.brand) parsed.brand = parsed.name;
+    return parsed;
+  };
+
+  /* ---------- smart flow ---------- */
+  const pending = { parsed: null, image: null, photoNote: "", searchResults: [], searchIndex: 0, userPhoto: false };
   const slug = (s) => (s || "").toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "drink";
 
-  const submitDrink = (e) => {
-    e.preventDefault();
-    const pid = activePid();
-    const brand = $("f-brand").value.trim(), name = $("f-name").value.trim(), flavor = $("f-flavor").value.trim();
-    if (!brand || !name || !flavor) { $("form-status").textContent = "Заполни бренд, название и вкус."; return; }
-    const img = state.pendingImage;
-    const drink = {
-      id: `${slug(brand)}-${slug(flavor)}-u${Date.now().toString(36)}`,
-      brand, name, flavor,
-      edition: $("f-edition").value.trim() || "кастомная банка",
-      image: img?.dataUrl || "assets/favicon.svg",
-      sourceLabel: img ? `добавил ${activePerson()?.name || "участник"}` : "без фото",
-      accent: ACCENTS[data.drinks.length % ACCENTS.length],
-      related: [],
-      ratings: { [pid]: { tier: $("f-tier").value, review: $("f-review").value.trim() } },
-      userAdded: true, addedBy: pid,
-    };
+  const fillManual = (p) => {
+    if (!p) return;
+    $("m-brand").value = p.brand || "";
+    $("m-name").value = p.name || "";
+    $("m-flavor").value = p.flavor || "";
+    $("m-edition").value = p.edition || "";
+    $("m-tier").value = TIER_RE.test(p.tier) ? p.tier : "B";
+    $("m-review").value = p.review || "";
+  };
+
+  const showPreview = () => {
+    const p = pending.parsed;
+    if (!p) return;
+    $("smart-preview").hidden = false;
+    if (pending.image) $("parsed-img").src = pending.image;
+    $("parsed-title").textContent = `${p.brand} — ${p.name}`;
+    $("parsed-sub").textContent = [p.flavor, p.edition].filter(Boolean).join(" · ");
+    $("parsed-review").textContent = p.review || "—";
+    $("parsed-tier").textContent = p.tier;
+    $("parsed-photo-note").textContent = pending.photoNote;
+    fillManual(p);
+    $("smart-preview").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+
+  const autoPhoto = async (parsed) => {
+    if (pending.userPhoto) return; // своё фото важнее автопоиска
+    const status = $("smart-status");
+    try {
+      const results = await searchImages(`${parsed.brand} ${parsed.name}`);
+      pending.searchResults = results;
+      pending.searchIndex = 0;
+      if (!results.length) {
+        pending.image = null;
+        pending.photoNote = "фото не нашлось — приложи своё или выбери вручную ниже";
+      } else {
+        try {
+          const done = await processImageUrl(results[0]);
+          pending.image = done.dataUrl;
+          pending.photoNote = "фото найдено автоматически ✓";
+        } catch {
+          pending.image = results[0];
+          pending.photoNote = "фото найдено автоматически ✓ (без обработки)";
+        }
+      }
+    } catch {
+      pending.photoNote = "поиск фото не ответил — приложи своё или выбери вручную ниже";
+    }
+    status.textContent = "";
+    showPreview();
+  };
+
+  const retryPhoto = async () => {
+    const list = pending.searchResults;
+    if (!list.length) {
+      $("smart-status").textContent = "Вариантов больше нет — вставь ссылку вручную ниже.";
+      return;
+    }
+    pending.searchIndex = (pending.searchIndex + 1) % list.length;
+    $("smart-status").textContent = `Фото ${pending.searchIndex + 1} / ${list.length}…`;
+    try {
+      const done = await processImageUrl(list[pending.searchIndex]);
+      pending.image = done.dataUrl;
+      pending.photoNote = `фото найдено автоматически ✓ (${pending.searchIndex + 1}/${list.length})`;
+    } catch {
+      pending.image = list[pending.searchIndex];
+      pending.photoNote = `фото ${pending.searchIndex + 1}/${list.length} (без обработки)`;
+    }
+    $("smart-status").textContent = "";
+    showPreview();
+  };
+
+  const buildDrink = (p, image) => ({
+    id: `${slug(p.brand)}-${slug(p.flavor || p.name)}-u${Date.now().toString(36)}`,
+    brand: p.brand, name: p.name, flavor: p.flavor,
+    edition: p.edition || "кастомная банка",
+    image: image || "assets/favicon.svg",
+    sourceLabel: `добавил ${me.name}`,
+    accent: ACCENTS[data.drinks.length % ACCENTS.length],
+    related: [],
+    ratings: { [me.pid]: { tier: p.tier, review: p.review || "" } },
+    userAdded: true, addedBy: me.pid,
+  });
+
+  const saveDrink = (drink) => {
     data.drinks.push(structuredClone(drink));
     store.addedDrinks.push(structuredClone(drink));
     persist();
-    e.target.reset();
-    $("f-tier").value = "A";
-    setPendingImage(null);
+    pending.parsed = null; pending.image = null; pending.userPhoto = false;
+    pending.searchResults = []; pending.searchIndex = 0;
+    $("smart-preview").hidden = true;
+    $("smart-input").value = "";
     $("voice-audio").hidden = true;
-    $("image-results").hidden = true;
-    $("form-status").textContent = "В индексе ✓ доска обновилась.";
-    notify();
+    $("smart-status").textContent = "В индексе ✓";
+    renderMine();
+  };
+
+  const submitSmart = async (e) => {
+    e.preventDefault();
+    const text = $("smart-input").value.trim();
+    if (!text) { $("smart-status").textContent = "Напиши хоть пару слов или надиктуй войсом."; return; }
+    $("smart-status").textContent = "Нейросеть разбирает…";
+    try {
+      pending.parsed = await parseWithAI(text);
+      pending.userPhoto = !!pending.image; // фото могли приложить заранее
+      $("smart-status").textContent = "Ищу фото…";
+      await autoPhoto(pending.parsed);
+    } catch (err) {
+      $("smart-status").textContent = "ИИ не ответил: " + (err?.message || err) + ". Заполни вручную ниже.";
+    }
+  };
+
+  const submitManual = () => {
+    const p = {
+      brand: $("m-brand").value.trim(), name: $("m-name").value.trim(),
+      flavor: $("m-flavor").value.trim(), edition: $("m-edition").value.trim(),
+      tier: $("m-tier").value, review: $("m-review").value.trim(),
+    };
+    if (!p.brand || !p.name || !p.flavor) { $("smart-status").textContent = "Вручную нужны хотя бы бренд, название и вкус."; return; }
+    saveDrink(buildDrink(p, pending.image));
+  };
+
+  /* ---------- voice ---------- */
+  const voice = { recorder: null, chunks: [], recording: false, recognizer: null };
+  const srSupported = () => window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  const toggleRecord = async () => {
+    const btn = $("btn-record"), status = $("voice-status");
+    if (voice.recording) { voice.recorder?.stop(); voice.recognizer?.stop(); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { status.textContent = "Нет доступа к микрофону."; return; }
+
+    voice.chunks = [];
+    voice.recorder = new MediaRecorder(stream);
+    voice.recorder.ondataavailable = (e) => { if (e.data.size) voice.chunks.push(e.data); };
+    voice.recorder.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      voice.recording = false;
+      btn.textContent = "● Войс вместо текста";
+      const blob = new Blob(voice.chunks, { type: voice.recorder.mimeType || "audio/webm" });
+      if (blob.size) {
+        const audio = $("voice-audio");
+        audio.src = URL.createObjectURL(blob);
+        audio.hidden = false;
+      }
+      status.textContent = srSupported() ? "Готово." : "Записано. Диктовка тут не поддерживается — вбей текст руками.";
+    };
+    voice.recorder.start();
+    voice.recording = true;
+    btn.textContent = "■ Стоп";
+    status.textContent = "Слушаю…";
+
+    if (srSupported()) {
+      try {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        voice.recognizer = new SR();
+        voice.recognizer.lang = "ru-RU";
+        voice.recognizer.interimResults = true;
+        voice.recognizer.onresult = (e) => {
+          let text = "";
+          for (const r of e.results) text += r[0].transcript;
+          const area = $("smart-input");
+          if (e.results[e.results.length - 1].isFinal) {
+            area.value = (area.value ? area.value.replace(/\s+$/, "") + " " : "") + text.trim();
+          }
+          status.textContent = "… " + text.slice(-60);
+        };
+        voice.recognizer.onend = () => { if (voice.recording) { try { voice.recognizer.start(); } catch {} } };
+        voice.recognizer.start();
+      } catch { status.textContent = "Запись идёт, диктовка не завелась."; }
+    }
   };
 
   /* ---------- export / import / wipe ---------- */
   const exportJson = () => {
-    const { endpoint, model } = store.ai || {};
-    const blob = new Blob([JSON.stringify({ app: "nrgindex", v: 1, profiles: store.profiles, addedDrinks: store.addedDrinks, ratingEdits: store.ratingEdits, ai: { endpoint, model } }, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ app: "nrgindex", v: 2, addedDrinks: store.addedDrinks, ratingEdits: store.ratingEdits }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "nrgindex-data.json";
@@ -470,71 +471,145 @@
     try {
       const json = JSON.parse(await file.text());
       if (json.app !== "nrgindex") throw new Error("не наш JSON");
-      // сносим ранее влитые локальные банки, чтобы не дублировать
       for (const d of store.addedDrinks) {
         const i = data.drinks.findIndex((x) => x.id === d.id);
         if (i >= 0) data.drinks.splice(i, 1);
       }
-      // откатываем правки оценок базовых банок
       for (const [drinkId, perPid] of Object.entries(store.ratingEdits)) {
         const drink = getDrink(drinkId);
         if (drink?.ratings) for (const pid of Object.keys(perPid)) delete drink.ratings[pid];
       }
-      store.profiles = json.profiles || {};
       store.addedDrinks = json.addedDrinks || [];
       store.ratingEdits = json.ratingEdits || {};
-      if (json.ai) store.ai = { ...store.ai, endpoint: json.ai.endpoint || "", model: json.ai.model || "" };
       persist();
-      applyStoreFull();
-      notify();
-      $("form-status").textContent = "Импорт влит ✓";
-    } catch { $("form-status").textContent = "Не смог прочитать файл."; }
-  };
-
-  const applyStoreFull = () => {
-    // полный ре-аплай после импорта: профили + банки + оценки
-    applyStore();
+      applyStore();
+      renderMine();
+      $("sync-status").textContent = "Импорт влит ✓";
+    } catch { $("sync-status").textContent = "Не смог прочитать файл."; }
   };
 
   /* ---------- wire up ---------- */
   applyStore();
 
-  document.addEventListener("click", (e) => {
-    const tab = e.target.closest("#cabinet-tabs [data-pid]");
-    if (tab) { store.activePid = tab.dataset.pid; persist(); renderAll(); }
+  const doLogin = async () => {
+    $("auth-status").textContent = "Проверяю…";
+    const found = await tryLogin($("auth-key").value);
+    if (!found) { $("auth-status").textContent = "Такого ключа нет. Проверь буквы или спроси у админа."; return; }
+    me = found;
+    try { sessionStorage.setItem(SESSION_KEY, found.key); } catch {}
+    showCabinet();
+  };
+
+  $("btn-login").onclick = doLogin;
+  $("auth-key").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+  $("btn-logout").onclick = () => {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    location.reload();
+  };
+
+  $("smart-form").addEventListener("submit", submitSmart);
+  $("btn-confirm").onclick = () => { if (pending.parsed) saveDrink(buildDrink(pending.parsed, pending.image)); };
+  $("btn-retry-photo").onclick = retryPhoto;
+  $("btn-record").onclick = toggleRecord;
+
+  $("smart-photo").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    $("smart-status").textContent = "Режу фон…";
+    try {
+      const img = await loadImage(URL.createObjectURL(file));
+      const cut = cutWhiteBg(img);
+      pending.image = cut.dataUrl || shrinkOnly(img);
+      pending.userPhoto = true;
+      pending.photoNote = cut.dataUrl ? "твоё фото · фон вырезан ✓" : "твоё фото ✓";
+      $("smart-status").textContent = "Фото приложено ✓";
+      if (pending.parsed) showPreview();
+    } catch { $("smart-status").textContent = "Не смог прочитать файл."; }
   });
 
-  $("drink-form").addEventListener("submit", submitDrink);
-  $("f-image-file").addEventListener("change", (e) => takeFile(e.target.files[0]));
-  $("btn-image-url").onclick = () => takeUrl($("f-image-url").value);
-  $("btn-image-search").onclick = () => searchImages($("f-image-search").value);
-  $("f-image-search").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); searchImages(e.target.value); } });
-  $("img-prev").onclick = () => { state.searchIndex--; showSearchResult(); };
-  $("img-next").onclick = () => { state.searchIndex++; showSearchResult(); };
-  $("btn-image-pick").onclick = () => takeUrl(state.searchResults[state.searchIndex], "из поиска");
-  $("btn-image-clear").onclick = () => setPendingImage(null);
-  $("btn-record").onclick = toggleRecord;
-  $("btn-ai-rewrite").onclick = aiRewrite;
-  $("btn-ai-save").onclick = () => {
-    store.ai = {
-      endpoint: $("ai-endpoint").value.trim(),
-      model: $("ai-model").value.trim(),
-      key: $("ai-key").value || store.ai?.key || "",
-    };
+  // ручной fallback: правит pending-объект наживую
+  for (const [id, field] of [["m-brand", "brand"], ["m-name", "name"], ["m-flavor", "flavor"], ["m-edition", "edition"], ["m-tier", "tier"], ["m-review", "review"]]) {
+    $(id).addEventListener("input", (e) => { if (pending.parsed) pending.parsed[field] = e.target.value; });
+  }
+  // кнопка ручного сохранения — добавим в details через статус
+  $("btn-manual-pick").onclick = async () => {
+    const url = pending.manualResults?.[pending.manualIndex];
+    if (!url) return;
+    try {
+      const done = await processImageUrl(url);
+      pending.image = done.dataUrl;
+    } catch { pending.image = url; }
+    pending.photoNote = "фото выбрано вручную ✓";
+    if (pending.parsed) showPreview();
+    else $("smart-status").textContent = "Фото выбрано ✓ теперь нажми «Распознать» или заполни поля и жми кнопку ниже.";
+  };
+
+  const manualAddBtn = document.createElement("button");
+  manualAddBtn.className = "btn btn--big";
+  manualAddBtn.type = "button";
+  manualAddBtn.textContent = "Добавить вручную из этих полей";
+  manualAddBtn.onclick = submitManual;
+  $("btn-manual-pick").closest("details").appendChild(manualAddBtn);
+
+  // ручной поиск фото (fallback)
+  pending.manualResults = [];
+  pending.manualIndex = 0;
+  const showManual = () => {
+    const list = pending.manualResults;
+    if (!list.length) return;
+    pending.manualIndex = (pending.manualIndex + list.length) % list.length;
+    $("m-img").src = list[pending.manualIndex];
+    $("m-count").textContent = `${pending.manualIndex + 1} / ${list.length}`;
+  };
+  $("btn-manual-search").onclick = async () => {
+    const q = $("m-image-search").value.trim();
+    if (!q) return;
+    $("m-count").textContent = "ищу…";
+    $("manual-results").hidden = false;
+    try {
+      pending.manualResults = await searchImages(q);
+      pending.manualIndex = 0;
+      if (!pending.manualResults.length) { $("m-count").textContent = "ничего не нашлось"; $("m-img").removeAttribute("src"); return; }
+      showManual();
+    } catch { $("m-count").textContent = "поиск не ответил"; }
+  };
+  $("m-image-search").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("btn-manual-search").click(); } });
+  $("m-prev").onclick = () => { pending.manualIndex--; showManual(); };
+  $("m-next").onclick = () => { pending.manualIndex++; showManual(); };
+  $("btn-manual-url").onclick = async () => {
+    const url = $("m-image-url").value.trim();
+    if (!url) return;
+    try {
+      const done = await processImageUrl(url);
+      pending.image = done.dataUrl;
+    } catch { pending.image = url; }
+    pending.photoNote = "фото по ссылке ✓";
+    if (pending.parsed) showPreview();
+    else $("smart-status").textContent = "Фото взято ✓";
+  };
+
+  $("btn-or-save").onclick = () => {
+    store.orKey = $("or-key").value.trim();
     persist();
-    $("ai-key").value = "";
-    $("ai-status").textContent = "Сохранено локально ✓";
-    renderAi();
+    $("or-key").value = "";
+    $("sync-status").textContent = store.orKey ? "Свой ключ сохранён локально ✓" : "Свой ключ убран, используется общий ✓";
   };
   $("btn-export").onclick = exportJson;
   $("import-file").addEventListener("change", (e) => importJson(e.target.files[0]));
   $("btn-wipe").onclick = () => {
-    if (confirm("Стереть ВСЕ локальные данные кабинетов в этом браузере?")) {
+    if (confirm("Стереть ВСЕ локальные данные этого кабинета в браузере?")) {
       localStorage.removeItem(LS_KEY);
       location.reload();
     }
   };
 
-  renderAll();
-  renderAi();
+  // автовход по сессии
+  (async () => {
+    let saved = null;
+    try { saved = sessionStorage.getItem(SESSION_KEY); } catch {}
+    if (saved) {
+      const found = await tryLogin(saved);
+      if (found) { me = found; showCabinet(); }
+    }
+  })();
 })();

@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#100e0d">
+  <meta name="description" content="Личный кабинет NRG/INDEX: добавление энергосов через ИИ.">
+  <title>NRG / INDEX — личный кабинет</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="page-noise" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="На главную">
+      <span class="brand__name">NRG<span>/</span>INDEX</span>
+      <span class="brand__caption">private tasting society</span>
+    </a>
+    <div class="header-meta">
+      <span class="live-dot"></span>
+      <span>личный кабинет</span>
+    </div>
+  </header>
+
+  <main class="cab-page">
+    <!-- ВХОД -->
+    <section class="auth-card" id="auth-view">
+      <p class="eyebrow">Restricted area</p>
+      <h1>Вход по ключу</h1>
+      <p class="hint">Ключ выдаёт админ. Никому его не показывай — он и есть твой аккаунт.</p>
+      <div class="form-row">
+        <input id="auth-key" type="text" placeholder="NRG-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button class="btn" type="button" id="btn-login">Войти</button>
+      </div>
+      <p class="form-status" id="auth-status" aria-live="polite"></p>
+    </section>
+
+    <!-- КАБИНЕТ -->
+    <section id="cab-view" hidden>
+      <div class="me-card">
+        <div class="cab-profile__avatar" id="me-avatar" style="--person-color:#fff">?</div>
+        <div class="me-card__main">
+          <b id="me-name">—</b>
+          <small id="me-role">—</small>
+        </div>
+        <div class="cab-profile__meta"><b id="me-count">0</b><span>оценок</span></div>
+        <button class="btn btn--ghost" type="button" id="btn-logout">Выйти</button>
+      </div>
+
+      <form class="cabinet-form smart-form" id="smart-form" autocomplete="off">
+        <h3>Новый энергос</h3>
+        <p class="hint">Просто напиши что за банка — хоть «монстр белый», хоть войсом. Остальное (бренд, вкус, тир, отзыв) распишет нейросеть, фото найдётся само.</p>
+        <label>Что за энергос?
+          <textarea id="smart-input" rows="3" placeholder="Например: Burn тропический микс, кисло-сладкий, жахнул бодро, тир А"></textarea>
+        </label>
+        <div class="voice-row">
+          <button class="btn" type="button" id="btn-record">● Войс вместо текста</button>
+          <label class="btn btn--ghost btn--file">📷 Приложить фото
+            <input id="smart-photo" type="file" accept="image/*" hidden>
+          </label>
+          <span class="voice-status" id="voice-status"></span>
+        </div>
+        <audio id="voice-audio" controls hidden></audio>
+        <button class="btn btn--big" type="submit" id="btn-smart">✦ Распознать и добавить</button>
+        <p class="form-status" id="smart-status" aria-live="polite"></p>
+
+        <div class="parsed-card" id="smart-preview" hidden>
+          <img id="parsed-img" alt="Фото банки">
+          <div class="parsed-card__main">
+            <b id="parsed-title">—</b>
+            <small id="parsed-sub">—</small>
+            <p id="parsed-review">—</p>
+            <p class="hint" id="parsed-photo-note">фото найдено автоматически ✓</p>
+          </div>
+          <div class="parsed-card__actions">
+            <span class="parsed-tier" id="parsed-tier">A</span>
+            <button class="btn" type="button" id="btn-confirm">В индекс ✓</button>
+            <button class="btn btn--ghost" type="button" id="btn-retry-photo">Сменить фото</button>
+          </div>
+        </div>
+
+        <details class="cabinet-ai">
+          <summary>Не так распозналось? Править вручную (крайний случай)</summary>
+          <label>Бренд<input id="m-brand" type="text"></label>
+          <label>Название<input id="m-name" type="text"></label>
+          <label>Вкус<input id="m-flavor" type="text"></label>
+          <label>Издание<input id="m-edition" type="text"></label>
+          <label>Тир
+            <select id="m-tier">
+              <option value="S">S — запасай ящик</option>
+              <option value="A" selected>A — берём ещё</option>
+              <option value="B">B — рабочий вариант</option>
+              <option value="C">C — по ситуации</option>
+              <option value="D">D — энергия ошибки</option>
+            </select>
+          </label>
+          <label>Отзыв<textarea id="m-review" rows="3"></textarea></label>
+          <div class="form-row">
+            <input id="m-image-url" type="url" placeholder="ссылка на другое фото">
+            <button class="btn btn--ghost" type="button" id="btn-manual-url">Взять</button>
+          </div>
+          <div class="form-row">
+            <input id="m-image-search" type="text" placeholder="поиск фото: «burn tropical»">
+            <button class="btn btn--ghost" type="button" id="btn-manual-search">Найти</button>
+          </div>
+          <div class="image-results" id="manual-results" hidden>
+            <button class="btn btn--ghost" type="button" id="m-prev">←</button>
+            <img id="m-img" alt="Найденное изображение">
+            <button class="btn btn--ghost" type="button" id="m-next">→</button>
+            <div class="image-results__bar">
+              <span id="m-count">0 / 0</span>
+              <button class="btn" type="button" id="btn-manual-pick">Выбрать это</button>
+            </div>
+          </div>
+        </details>
+      </form>
+
+      <div class="cabinet-mine">
+        <h3>Мои оценки</h3>
+        <div id="cabinet-my-ratings"></div>
+      </div>
+
+      <details class="cabinet-ai">
+        <summary>Настройки и перенос</summary>
+        <p class="hint">Общий OpenRouter-ключ подхватывается сам. Свой можно вбить тут — сохранится только в этом браузере.</p>
+        <label>Свой OpenRouter-ключ<input id="or-key" type="password" placeholder="sk-or-… (необязательно)" autocomplete="off"></label>
+        <div class="form-row">
+          <button class="btn btn--ghost" type="button" id="btn-or-save">Сохранить ключ</button>
+          <button class="btn btn--ghost" type="button" id="btn-export">Скачать JSON</button>
+          <label class="btn btn--ghost btn--file">Импорт JSON
+            <input id="import-file" type="file" accept="application/json" hidden>
+          </label>
+        </div>
+        <button class="btn btn--danger" type="button" id="btn-wipe">Стереть мои локальные данные</button>
+        <p class="form-status" id="sync-status" aria-live="polite"></p>
+      </details>
+    </section>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="keys.js"></script>
+  <script src="cabinet.js"></script>
+</body>
+</html>
