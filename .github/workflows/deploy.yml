@@ -1,0 +1,33 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build keys.js from secrets
+        run: node scripts/build-config.js
+        env:
+          LOGIN_KEYS_JSON: ${{ secrets.LOGIN_KEYS_JSON }}
+          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
+          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+
+      - name: Copy site to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          source: "."
+          target: ${{ secrets.VPS_PATH }}
+          rm: true
+          exclude: ".git/**,.github/**,scripts/**,tools/**,assets_original_backup/**,node_modules/**,.env*"

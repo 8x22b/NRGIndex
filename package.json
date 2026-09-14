@@ -1,0 +1,8 @@
+{
+  "name": "nrgindex",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build:config": "node scripts/build-config.js"
+  }
+}

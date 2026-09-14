@@ -1,8 +1,11 @@
 /* NRG/INDEX — личный кабинет: вход по ключу, добавление через OpenRouter.
- * Ник и подпись назначает админ в keys.js. Свои банки/оценки — в localStorage. */
+ * Ник и подпись назначает админ в participants.js. Хеши ключей и OR-ключ
+ * прилетают из keys.js (генерится из секретов, см. scripts/build-config.js).
+ * Свои банки/оценки — в localStorage. */
 (() => {
   const data = window.NRG_DATA;
   const KEYS = window.NRG_KEYS || [];
+  const IDENTITIES = window.NRG_IDENTITIES || [];
   const AI = window.NRG_AI || {};
   if (!data) return;
 
@@ -64,7 +67,8 @@
     const rec = KEYS.find((k) => k.hash === hash);
     if (!rec) return null;
     const person = getPerson(rec.pid) || {};
-    return { key, pid: rec.pid, name: rec.name || person.name || "Участник", role: rec.role || person.role || "", person };
+    const ident = IDENTITIES.find((i) => i.pid === rec.pid) || {};
+    return { key, pid: rec.pid, name: ident.name || person.name || "Участник", role: ident.role || person.role || "", person };
   };
 
   const showCabinet = () => {
@@ -492,6 +496,7 @@
   applyStore();
 
   const doLogin = async () => {
+    if (!KEYS.length) { $("auth-status").textContent = "Конфиг не собран (нет keys.js). Скажи админу."; return; }
     $("auth-status").textContent = "Проверяю…";
     const found = await tryLogin($("auth-key").value);
     if (!found) { $("auth-status").textContent = "Такого ключа нет. Проверь буквы или спроси у админа."; return; }
