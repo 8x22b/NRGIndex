@@ -65,8 +65,26 @@ function promptHidden(question) {
   });
 }
 
+function readAllStdin() {
+  return new Promise((resolve) => {
+    let data = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk) => {
+      data += chunk;
+    });
+    process.stdin.on("end", () => resolve(data));
+  });
+}
+
 async function readPassword(args) {
   if (args.password) return validatePassword(args.password);
+  if (!process.stdin.isTTY) {
+    const lines = (await readAllStdin()).split(/\r?\n/);
+    const first = lines[0] || "";
+    const second = lines[1] === undefined ? first : lines[1];
+    if (first !== second) throw new Error("Пароли не совпадают");
+    return validatePassword(first);
+  }
   const first = await promptHidden("Пароль: ");
   const second = await promptHidden("Повторите пароль: ");
   if (first !== second) throw new Error("Пароли не совпадают");
