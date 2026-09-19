@@ -21,27 +21,14 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
 
-      - name: Syntax check (node --check)
-        run: |
-          for f in *.js scripts/*.js; do
-            echo "checking $f"
-            node --check "$f"
-          done
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Data and assets check
-        run: node scripts/check-site.js
-
-      - name: Build keys.js from secrets
-        run: node scripts/build-config.js
-        env:
-          LOGIN_KEYS_JSON: ${{ secrets.LOGIN_KEYS_JSON }}
-          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
-          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
-
-      - name: Deployment smoke test
-        run: node scripts/smoke-test.js
+      - name: Unit and API tests
+        run: npm test
 
   deploy:
     name: Deploy site
@@ -54,60 +41,72 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
 
-      - name: Build keys.js from secrets
-        run: node scripts/build-config.js
-        env:
-          LOGIN_KEYS_JSON: ${{ secrets.LOGIN_KEYS_JSON }}
-          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
-          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+      - name: Install production dependencies
+        run: npm ci --omit=dev
 
-      - name: Dry-run rsync (deploy simulation)
-        run: |
-          rm -rf /tmp/nrgindex-dryrun
-          mkdir -p /tmp/nrgindex-dryrun
-          rsync -a --delete \
-            --exclude '.git/' \
-            --exclude '.github/' \
-            --exclude 'scripts/' \
-            --exclude 'tools/' \
-            --exclude 'assets_original_backup/' \
-            --exclude 'node_modules/' \
-            --exclude '.env*' \
-            ./ /tmp/nrgindex-dryrun/
-          test -s /tmp/nrgindex-dryrun/index.html
-          test -s /tmp/nrgindex-dryrun/cabinet.html
-          test -s /tmp/nrgindex-dryrun/keys.js
-          test -s /tmp/nrgindex-dryrun/assets/favicon.svg
-
-      - name: Sync, reload and health check (with rollback)
+      - name: "Dry-run: синтаксис и миграции на временной БД"
         run: |
           set -euo pipefail
-          LIVE=/var/www/nrgindex
-          BACKUP=/home/ghrunner/backups/nrgindex
+          node --check server/index.js
+          CHECK_DB="$(mktemp -u /tmp/nrgindex-check.XXXXXX.db)"
+          DB_PATH="$CHECK_DB" node -e "
+            const { openDatabase } = require('./server/db');
+            const db = openDatabase(process.env.DB_PATH);
+            const tables = db.prepare(\"SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table'\").get().n;
+            if (tables < 8) throw new Error('мало таблиц: ' + tables);
+            console.log('dry-run ok, tables:', tables);
+            db.close();
+          "
+          rm -f "$CHECK_DB" "$CHECK_DB-wal" "$CHECK_DB-shm"
+
+      - name: Backup and sync app to /opt/nrgindex
+        run: |
+          set -euo pipefail
+          LIVE=/opt/nrgindex
+          BACKUP=/home/ghrunner/backups/nrgindex-app
           rm -rf "$BACKUP"
-          mkdir -p "$(dirname "$BACKUP")"
+          mkdir -p "$BACKUP"
           if [ -d "$LIVE" ]; then cp -a "$LIVE" "$BACKUP"; fi
+          mkdir -p "$LIVE"
           rsync -a --delete \
             --exclude '.git/' \
             --exclude '.github/' \
-            --exclude 'scripts/' \
-            --exclude 'tools/' \
-            --exclude 'assets_original_backup/' \
-            --exclude 'node_modules/' \
+            --exclude 'tests/' \
             --exclude '.env*' \
+            --exclude '*.log' \
             ./ "$LIVE/"
-          sudo systemctl reload lighttpd
-          if ! curl -fsS -o /dev/null http://127.0.0.1/ \
-            || ! curl -fsS -o /dev/null http://127.0.0.1/keys.js \
-            || ! curl -fsS -o /dev/null http://127.0.0.1/cabinet.html; then
+
+      - name: Refresh systemd unit
+        run: |
+          set -euo pipefail
+          sudo tee /etc/systemd/system/nrgindex.service < deploy/nrgindex.service > /dev/null
+          sudo systemctl daemon-reload
+          sudo systemctl enable nrgindex
+
+      - name: Restart and health check (with rollback)
+        run: |
+          set -euo pipefail
+          HEALTH_URL="${HEALTH_URL:-http://127.0.0.1/api/health}"
+          LIVE=/opt/nrgindex
+          BACKUP=/home/ghrunner/backups/nrgindex-app
+          sudo systemctl restart nrgindex
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -fsS "$HEALTH_URL" > /dev/null; then ok=1; break; fi
+            sleep 1
+          done
+          if [ -z "$ok" ]; then
             echo "Health check не прошёл — откат"
+            sudo systemctl status nrgindex --no-pager || true
             if [ -d "$BACKUP" ]; then
               rsync -a --delete "$BACKUP/" "$LIVE/"
-              sudo systemctl reload lighttpd
+              sudo systemctl restart nrgindex
               echo "Откат выполнен"
             fi
             exit 1
           fi
+          curl -fsS "$HEALTH_URL"
           echo "Деплой и health check успешны"

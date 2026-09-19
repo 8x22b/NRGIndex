@@ -23,6 +23,7 @@
     <div class="header-meta">
       <span class="live-dot"></span>
       <span>личный кабинет</span>
+      <a class="header-cab" href="/admin" id="admin-link" hidden>админка</a>
     </div>
   </header>
 
@@ -30,13 +31,27 @@
     <!-- ВХОД -->
     <section class="auth-card" id="auth-view">
       <p class="eyebrow">Restricted area</p>
-      <h1>Вход по ключу</h1>
-      <p class="hint">Ключ выдаёт админ. Никому его не показывай — он и есть твой аккаунт.</p>
+      <h1>Вход</h1>
+      <p class="hint">Логин и пароль выдаёт админ.</p>
       <div class="form-row">
-        <input id="auth-key" type="text" placeholder="NRG-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <input id="auth-user" type="text" placeholder="логин" autocomplete="username" spellcheck="false" autocapitalize="none">
+        <input id="auth-pass" type="password" placeholder="пароль" autocomplete="current-password">
         <button class="btn" type="button" id="btn-login">Войти</button>
       </div>
       <p class="form-status" id="auth-status" aria-live="polite"></p>
+    </section>
+
+    <!-- СМЕНА ПАРОЛЯ -->
+    <section class="auth-card" id="password-view" hidden>
+      <p class="eyebrow">Первый вход</p>
+      <h1>Смените пароль</h1>
+      <p class="hint">Временный пароль нужно заменить своим — минимум 8 символов.</p>
+      <div class="form-row">
+        <input id="new-pass" type="password" placeholder="новый пароль" autocomplete="new-password">
+        <input id="new-pass2" type="password" placeholder="повторите" autocomplete="new-password">
+        <button class="btn" type="button" id="btn-set-pass">Сохранить</button>
+      </div>
+      <p class="form-status" id="pass-status" aria-live="polite"></p>
     </section>
 
     <!-- КАБИНЕТ -->
@@ -47,20 +62,20 @@
           <b id="me-name">—</b>
           <small id="me-role">—</small>
         </div>
-        <div class="cab-profile__meta"><b id="me-count">0</b><span>оценок</span></div>
+        <div class="cab-profile__meta"><b id="me-count">0</b><span id="me-count-label">оценок</span></div>
         <button class="btn btn--ghost" type="button" id="btn-logout">Выйти</button>
       </div>
 
       <form class="cabinet-form smart-form" id="smart-form" autocomplete="off">
         <h3>Новый энергос</h3>
-        <p class="hint">Просто напиши что за банка — хоть «монстр белый», хоть войсом. Остальное (бренд, вкус, тир, отзыв) распишет нейросеть, фото найдётся само.</p>
+        <p class="hint">Опиши банку словами — сервер разберёт бренд, вкус и тир, фото можно найти отдельно. Оценка ставится от твоего имени.</p>
         <label>Что за энергос?
           <textarea id="smart-input" rows="3" placeholder="Например: Burn тропический микс, кисло-сладкий, жахнул бодро, тир А"></textarea>
         </label>
         <div class="voice-row">
           <button class="btn" type="button" id="btn-record">● Войс вместо текста</button>
           <label class="btn btn--ghost btn--file">📷 Приложить фото
-            <input id="smart-photo" type="file" accept="image/*" hidden>
+            <input id="smart-photo" type="file" accept="image/png,image/jpeg,image/webp" hidden>
           </label>
           <span class="voice-status" id="voice-status"></span>
         </div>
@@ -84,7 +99,7 @@
         </div>
 
         <details class="cabinet-ai">
-          <summary>Не так распозналось? Править вручную (крайний случай)</summary>
+          <summary>Не так распозналось? Править вручную</summary>
           <label>Бренд<input id="m-brand" type="text"></label>
           <label>Название<input id="m-name" type="text"></label>
           <label>Вкус<input id="m-flavor" type="text"></label>
@@ -100,7 +115,7 @@
           </label>
           <label>Отзыв<textarea id="m-review" rows="3"></textarea></label>
           <div class="form-row">
-            <input id="m-image-url" type="url" placeholder="ссылка на другое фото">
+            <input id="m-image-url" type="url" placeholder="ссылка на фото">
             <button class="btn btn--ghost" type="button" id="btn-manual-url">Взять</button>
           </div>
           <div class="form-row">
@@ -116,6 +131,7 @@
               <button class="btn" type="button" id="btn-manual-pick">Выбрать это</button>
             </div>
           </div>
+          <button class="btn btn--big" type="button" id="btn-manual-save">Добавить вручную из этих полей</button>
         </details>
       </form>
 
@@ -125,25 +141,17 @@
       </div>
 
       <details class="cabinet-ai">
-        <summary>Настройки и перенос</summary>
-        <p class="hint">Общий OpenRouter-ключ подхватывается сам. Свой можно вбить тут — сохранится только в этом браузере.</p>
-        <label>Свой OpenRouter-ключ<input id="or-key" type="password" placeholder="sk-or-… (необязательно)" autocomplete="off"></label>
+        <summary>Аккаунт</summary>
         <div class="form-row">
-          <button class="btn btn--ghost" type="button" id="btn-or-save">Сохранить ключ</button>
-          <button class="btn btn--ghost" type="button" id="btn-export">Скачать JSON</button>
-          <label class="btn btn--ghost btn--file">Импорт JSON
-            <input id="import-file" type="file" accept="application/json" hidden>
-          </label>
+          <input id="old-pass" type="password" placeholder="текущий пароль" autocomplete="current-password">
+          <input id="change-pass" type="password" placeholder="новый пароль" autocomplete="new-password">
+          <button class="btn btn--ghost" type="button" id="btn-change-pass">Сменить пароль</button>
         </div>
-        <button class="btn btn--danger" type="button" id="btn-wipe">Стереть мои локальные данные</button>
         <p class="form-status" id="sync-status" aria-live="polite"></p>
       </details>
     </section>
   </main>
 
-  <script src="data.js"></script>
-  <script src="participants.js"></script>
-  <script src="keys.js"></script>
   <script src="cabinet.js"></script>
 </body>
 </html>
