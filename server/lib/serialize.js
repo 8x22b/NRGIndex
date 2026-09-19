@@ -35,6 +35,7 @@ function userToApi(row) {
     initials: row.initials || initialsOf(row.display_name),
     color: row.color || "#9fb7ff",
     isActive: Boolean(row.is_active),
+    isPublic: Boolean(row.is_public),
     mustChangePassword: Boolean(row.must_change_password),
     hasPassword: Boolean(row.password_hash),
     createdAt: row.created_at,

@@ -153,10 +153,10 @@ img { display: block; max-width: 100%; }
 .hero__glow--orange { width: 21rem; height: 21rem; left: -8%; bottom: -4%; background: var(--orange); }
 
 .marquee { overflow: hidden; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--paper); color: var(--ink); transform: rotate(-1.2deg) scale(1.02); }
-.marquee__track { display: flex; width: max-content; align-items: center; gap: 2.2rem; padding: .85rem 0; animation: marquee 22s linear infinite; }
+.marquee__track { display: flex; width: max-content; align-items: center; gap: 2.2rem; padding: .85rem 0; animation: marquee 22s linear infinite; will-change: transform; }
 .marquee span { font-family: var(--serif); font-size: 1.4rem; font-style: italic; }
 .marquee i { color: var(--pink); font-size: .9rem; }
-@keyframes marquee { to { transform: translateX(-50%); } }
+@keyframes marquee { to { transform: translate3d(-50%, 0, 0); } }
 
 .rating-section { position: relative; padding: 10rem 2rem 8rem; background: var(--ink); }
 .section-head { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 3rem; margin-bottom: 4rem; }
@@ -185,12 +185,13 @@ img { display: block; max-width: 100%; }
 .tier-letter { color: var(--tier-color); font: 600 italic 5.2rem/.75 var(--serif); letter-spacing: -.08em; }
 .tier-label__copy b { display: block; margin-bottom: .25rem; font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; }
 .tier-label__copy span { color: var(--muted); font-size: .48rem; letter-spacing: .07em; text-transform: uppercase; }
-.tier-items { position: relative; z-index: 2; display: flex; align-items: stretch; gap: .85rem; padding: .85rem; }
+.tier-items { position: relative; z-index: 2; display: flex; flex-wrap: wrap; align-items: stretch; gap: .85rem; padding: .85rem; }
 .empty-tier { min-width: 15rem; flex: 1; display: grid; place-items: center; border: 1px dashed rgba(255,255,255,.08); border-radius: .75rem; color: rgba(255,255,255,.2); font: 500 italic 1.1rem var(--serif); }
 
 .drink-card { --rx: 0deg; --ry: 0deg; position: relative; width: clamp(12rem, 17vw, 15rem); min-height: 10.8rem; flex: 0 0 auto; display: grid; grid-template-rows: 1fr auto; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: .75rem; color: var(--paper); background: #201b18; cursor: pointer; text-align: left; transform: perspective(850px) rotateX(var(--rx)) rotateY(var(--ry)); transform-style: preserve-3d; transition: transform .22s ease, border-color .3s, box-shadow .35s var(--ease); }
 .drink-card:hover { border-color: color-mix(in srgb, var(--card-accent) 65%, white); box-shadow: 0 1.5rem 3rem rgba(0,0,0,.35), 0 0 2.2rem color-mix(in srgb, var(--card-accent) 18%, transparent); }
 .drink-card__visual { position: relative; min-height: 7.2rem; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--card-accent) 62%, white), var(--card-accent) 38%, #251b1b 70%); }
+.drink-card__visual::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8.6rem; height: 8.6rem; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(255,255,255,.55) 0%, rgba(255,255,255,.22) 45%, rgba(255,255,255,0) 70%); pointer-events: none; }
 .drink-card__visual::before { content: ""; position: absolute; width: 8rem; height: 8rem; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; }
 .drink-card__visual img { position: relative; z-index: 1; height: 7.2rem; width: auto; filter: drop-shadow(0 .75rem .8rem rgba(0,0,0,.4)); transition: transform .55s var(--ease); }
 .drink-card:hover .drink-card__visual img { transform: translateY(-.35rem) rotate(2deg) scale(1.06); }
@@ -307,8 +308,8 @@ img { display: block; max-width: 100%; }
   .tier-letter { font-size: 3.3rem; }
   .tier-label__copy b { font-size: .43rem; }
   .tier-label__copy span { font-size: .38rem; }
-  .tier-items { overflow-x: auto; scroll-snap-type: x mandatory; }
-  .drink-card { width: 11.5rem; scroll-snap-align: start; }
+  .tier-items { padding: .6rem; gap: .6rem; }
+  .drink-card { width: 11.5rem; }
   .empty-tier { min-width: 12rem; }
   .manifesto { grid-template-columns: 1fr; gap: 1.5rem; padding: 6rem 1rem; }
   .manifesto__legend { grid-column: 1; grid-template-columns: 1fr; margin-top: 2rem; }
@@ -466,3 +467,5 @@ img { display: block; max-width: 100%; }
 a.brand { color: inherit; text-decoration: none; }
 a.brand:hover .brand__name { color: var(--orange); }
 .cabinet-form input[type="color"], .cabinet-ai input[type="color"] { width: 4rem; height: 2.2rem; margin-top: .35rem; padding: .15rem; border: 1px solid var(--line); border-radius: .5rem; background: #0f0d0c; }
+.admin-page h1 { margin: 0 0 1rem; font: 500 clamp(2.2rem, 5vw, 3.6rem)/.95 var(--serif); letter-spacing: -.045em; }
+.admin-page .form-status { font-size: .72rem; }

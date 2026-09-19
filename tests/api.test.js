@@ -370,3 +370,29 @@ test("аудит: редактор не видит, админ видит", asyn
   assert.equal(asEditor.json.audit.length, 0);
   assert.equal(asEditor.json.drinks.length >= 1, true);
 });
+
+test("скрытый пользователь исчезает из публичной сводки вместе с оценками", async () => {
+  const sanya = ctx.db.prepare("SELECT id FROM users WHERE username = 'sanya'").get();
+  const hidden = await request(ctx.base, "PATCH", `/api/admin/users/${sanya.id}`, {
+    cookie: adminCookie,
+    body: { isPublic: false },
+  });
+  assert.equal(hidden.status, 200);
+  assert.equal(hidden.json.user.isPublic, false);
+
+  const summary = await request(ctx.base, "GET", "/api/public/summary");
+  assert.equal(summary.json.participants.some((p) => p.id === "sanya"), false);
+  const drink = summary.json.drinks.find((d) => d.id === createdDrink.slug);
+  assert.equal("sanya" in drink.ratings, false);
+
+  const back = await request(ctx.base, "PATCH", `/api/admin/users/${sanya.id}`, {
+    cookie: adminCookie,
+    body: { isPublic: true },
+  });
+  assert.equal(back.json.user.isPublic, true);
+});
+
+test("несуществующий файл в /uploads отдаёт 404", async () => {
+  const res = await fetch(`${ctx.base}/uploads/nope.png`);
+  assert.equal(res.status, 404);
+});

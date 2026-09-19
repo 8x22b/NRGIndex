@@ -68,6 +68,7 @@
     $("me-avatar").style.setProperty("--person-color", safeColor(state.me.color, "#fff"));
     $("me-name").textContent = state.me.displayName;
     $("me-role").textContent = state.me.title || state.me.role;
+    if (state.me.role === "admin") $("admin-button").hidden = false;
     if (state.me.role === "admin" || state.me.role === "editor") $("admin-link").hidden = false;
     await refreshAll();
   };
@@ -79,6 +80,7 @@
     ]);
     state.summary = summary;
     state.addedSlugs = new Set((mine.addedDrinks || []).map((drink) => drink.slug));
+    if (summary.site?.title) document.title = `${summary.site.title} — личный кабинет`;
     renderMine();
   };
 

@@ -289,6 +289,7 @@ module.exports = (db, auth, config) => {
     const title = str(req.body?.title ?? "", "Должность", { required: false, max: 80 });
     const initials = str(req.body?.initials ?? "", "Инициалы", { required: false, max: 4 });
     const userColor = color(req.body?.color, "Цвет", "#9fb7ff");
+    const isPublic = req.body?.isPublic === undefined ? true : Boolean(req.body.isPublic);
     const given = typeof req.body?.password === "string" && req.body.password ? password(req.body.password) : "";
     const generated = given ? "" : tempPassword();
     const hash = await hashPassword(given || generated);
@@ -297,10 +298,10 @@ module.exports = (db, auth, config) => {
     try {
       const info = db
         .prepare(
-          `INSERT INTO users (username, display_name, role, title, initials, color, password_hash, must_change_password)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO users (username, display_name, role, title, initials, color, password_hash, must_change_password, is_public)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(uname, displayName, role, title, initials, userColor, hash, given ? 0 : 1);
+        .run(uname, displayName, role, title, initials, userColor, hash, given ? 0 : 1, isPublic ? 1 : 0);
       id = info.lastInsertRowid;
     } catch (error) {
       if (String(error.message).includes("UNIQUE")) throw conflict("Логин уже занят");
@@ -324,13 +325,22 @@ module.exports = (db, auth, config) => {
     const title = str(req.body?.title ?? target.title, "Должность", { required: false, max: 80 });
     const initials = str(req.body?.initials ?? target.initials, "Инициалы", { required: false, max: 4 });
     const userColor = color(req.body?.color ?? target.color, "Цвет", target.color || "#9fb7ff");
+    const isPublic =
+      req.body?.isPublic === undefined ? Boolean(target.is_public) : Boolean(req.body.isPublic);
 
     db.prepare(
       `UPDATE users SET display_name = ?, role = ?, title = ?, initials = ?, color = ?, is_active = ?,
-         updated_at = datetime('now') WHERE id = ?`,
-    ).run(displayName, role, title, initials, userColor, isActive ? 1 : 0, id);
+         is_public = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(displayName, role, title, initials, userColor, isActive ? 1 : 0, isPublic ? 1 : 0, id);
     if (!isActive) auth.destroyUserSessions(id);
-    writeAudit(db, req.user, "admin.user.update", "user", String(id), `role=${role} active=${isActive}`);
+    writeAudit(
+      db,
+      req.user,
+      "admin.user.update",
+      "user",
+      String(id),
+      `role=${role} active=${isActive} public=${isPublic}`,
+    );
     res.json({ user: userToApi(getUser(id)) });
   });
 

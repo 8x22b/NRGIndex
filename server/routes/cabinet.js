@@ -141,7 +141,7 @@ module.exports = (db, auth, config) => {
       `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
          accent_a = ?, accent_b = ?, updated_at = datetime('now') WHERE id = ?`,
     ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, drink.id);
-    if (req.user.role !== "user") {
+    if (req.body?.tier !== undefined || req.body?.review !== undefined) {
       db.prepare(
         `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)
          ON CONFLICT(drink_id, user_id)

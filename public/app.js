@@ -321,6 +321,26 @@
     );
   });
 
+  const marqueeTrack = document.querySelector(".marquee__track");
+  let marqueeResizeTimer = null;
+  const setupMarquee = () => {
+    if (!marqueeTrack) return;
+    const original = marqueeTrack.dataset.original || marqueeTrack.innerHTML;
+    marqueeTrack.dataset.original = original;
+    marqueeTrack.innerHTML = original;
+    let copies = 1;
+    while (marqueeTrack.scrollWidth < window.innerWidth * 2 && copies < 10) {
+      marqueeTrack.innerHTML += original;
+      copies += 1;
+    }
+    if (copies % 2 === 1) marqueeTrack.innerHTML += original;
+  };
+  window.addEventListener("resize", () => {
+    window.clearTimeout(marqueeResizeTimer);
+    marqueeResizeTimer = window.setTimeout(setupMarquee, 250);
+  });
+  setupMarquee();
+
   (async () => {
     try {
       const res = await fetch("api/public/summary", { headers: { accept: "application/json" } });
@@ -330,6 +350,13 @@
       board.innerHTML = `<div class="empty-tier">Не удалось загрузить данные: ${esc(error.message)}</div>`;
       return;
     }
+    if (data.site?.title) document.title = `${data.site.title} — тирлист энергетиков`;
+    const brandName = document.querySelector(".brand__name");
+    if (brandName && data.site?.title && data.site.title !== "NRG / INDEX") {
+      brandName.textContent = data.site.title;
+    }
+    const meta = document.querySelector('meta[name="description"]');
+    if (meta && data.site?.description) meta.setAttribute("content", data.site.description);
     refreshChrome();
     renderBoard();
   })();
