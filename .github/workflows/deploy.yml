@@ -47,7 +47,7 @@ jobs:
       - name: Install production dependencies
         run: npm ci --omit=dev
 
-      - name: Dry-run: синтаксис и миграции на временной БД
+      - name: "Dry-run: синтаксис и миграции на временной БД"
         run: |
           set -euo pipefail
           node --check server/index.js

@@ -27,7 +27,7 @@ jobs:
       - name: Unit and API tests
         run: npm test
 
-      - name: Smoke: сервер стартует и отвечает
+      - name: "Smoke: сервер стартует и отвечает"
         run: |
           DB_PATH="$RUNNER_TEMP/nrg-ci.db" UPLOADS_DIR="$RUNNER_TEMP/nrg-ci-uploads" PORT=3210 \
             node server/index.js > /tmp/nrg-ci.log 2>&1 &
