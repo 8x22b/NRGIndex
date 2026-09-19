@@ -70,9 +70,13 @@ npm run seed        # откажется работать, если база н�
 PORT=80
 DB_PATH=/var/lib/nrgindex/nrgindex.db
 UPLOADS_DIR=/var/lib/nrgindex/uploads
-TRUST_PROXY=1
+TRUST_PROXY=10.10.20.25    # IP обратного прокси; X-Forwarded-* принимаются только от него
 COOKIE_SECURE=auto
+SESSION_TTL_DAYS=30
+SESSION_IDLE_DAYS=14
 OPENROUTER_KEY=            # можно задать в админке (Настройки)
 ```
+
+systemd-юнит обновляется вручную: скопировать `deploy/nrgindex.service` в `/etc/systemd/system/`, затем `systemctl daemon-reload && systemctl restart nrgindex`. Деплой обновляет только код — у runner'а нет прав на изменение юнита.
 
 Данные (БД и загрузки) лежат в `/var/lib/nrgindex` и в репозиторий не попадают.

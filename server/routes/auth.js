@@ -1,5 +1,5 @@
 const express = require("express");
-const { verifyPassword, hashPassword } = require("../auth");
+const { verifyPassword, hashPassword, DUMMY_HASH } = require("../auth");
 const { unauthorized, badRequest } = require("../lib/errors");
 const { password } = require("../lib/validate");
 const { userToApi } = require("../lib/serialize");
@@ -15,7 +15,12 @@ module.exports = (db, auth) => {
 
     auth.checkLoginAllowed(ip, username);
     const row = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
-    const ok = Boolean(row && row.is_active && (await verifyPassword(row.password_hash, pass)));
+    let ok = false;
+    if (row && row.is_active && row.password_hash) {
+      ok = await verifyPassword(row.password_hash, pass);
+    } else {
+      await verifyPassword(DUMMY_HASH, pass);
+    }
     auth.recordLogin(username, ip, ok);
     if (!ok) throw unauthorized("Неверный логин или пароль");
 

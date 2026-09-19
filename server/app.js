@@ -28,7 +28,9 @@ function createApp({ db, config }) {
   const auth = createAuth(db, config);
   const app = express();
   app.disable("x-powered-by");
-  if (config.trustProxy) app.set("trust proxy", true);
+  if (config.trustProxy && config.trustProxy !== "false") {
+    app.set("trust proxy", config.trustProxy === "true" ? true : config.trustProxy);
+  }
 
   app.use(
     helmet({
@@ -55,11 +57,13 @@ function createApp({ db, config }) {
       },
       hsts: false,
       crossOriginEmbedderPolicy: false,
+      xFrameOptions: { action: "deny" },
     }),
   );
   app.use(express.json({ limit: config.jsonLimit }));
   app.use(cookieParser());
   app.use((req, res, next) => {
+    if (req.path.startsWith("/api")) res.setHeader("Cache-Control", "no-store");
     req.user = auth.userFromRequest(req);
     next();
   });

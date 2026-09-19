@@ -79,13 +79,6 @@ jobs:
             --exclude '*.log' \
             ./ "$LIVE/"
 
-      - name: Refresh systemd unit
-        run: |
-          set -euo pipefail
-          sudo tee /etc/systemd/system/nrgindex.service < deploy/nrgindex.service > /dev/null
-          sudo systemctl daemon-reload
-          sudo systemctl enable nrgindex
-
       - name: Restart and health check (with rollback)
         run: |
           set -euo pipefail

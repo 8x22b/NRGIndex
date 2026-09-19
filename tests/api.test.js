@@ -396,3 +396,42 @@ test("несуществующий файл в /uploads отдаёт 404", async
   const res = await fetch(`${ctx.base}/uploads/nope.png`);
   assert.equal(res.status, 404);
 });
+
+test("после повторного входа старая сессия перестаёт работать", async () => {
+  const first = await login(ctx.base, "editor", "editor-pass-123");
+  const second = await login(ctx.base, "editor", "editor-pass-123");
+  const oldMe = await request(ctx.base, "GET", "/api/auth/me", { cookie: first.cookie });
+  assert.equal(oldMe.json.user, null);
+  const newMe = await request(ctx.base, "GET", "/api/auth/me", { cookie: second.cookie });
+  assert.equal(newMe.json.user.username, "editor");
+  editorCookie = second.cookie;
+});
+
+test("API-ответы помечены no-store, страницы — нет", async () => {
+  const api = await fetch(`${ctx.base}/api/auth/me`);
+  assert.equal(api.headers.get("cache-control"), "no-store");
+  const page = await fetch(`${ctx.base}/`);
+  assert.notEqual(page.headers.get("cache-control"), "no-store");
+});
+
+test("спуф X-Forwarded-For не обходит лимит логина", async () => {
+  for (let i = 0; i < 5; i++) {
+    await request(ctx.base, "POST", "/api/auth/login", {
+      body: { username: "xff-target", password: "bad" },
+      headers: { "x-forwarded-for": "9.9.9.9" },
+    });
+  }
+  const blocked = await request(ctx.base, "POST", "/api/auth/login", {
+    body: { username: "xff-target", password: "bad" },
+    headers: { "x-forwarded-for": "8.8.8.8" },
+  });
+  assert.equal(blocked.status, 429);
+});
+
+test("сессия истекает после длительного простоя", async () => {
+  await createUser(ctx.db, { username: "idle-user", password: "idle-pass-123" });
+  const { cookie } = await login(ctx.base, "idle-user", "idle-pass-123");
+  ctx.db.prepare("UPDATE sessions SET last_seen_at = datetime('now', '-40 days')").run();
+  const me = await request(ctx.base, "GET", "/api/auth/me", { cookie });
+  assert.equal(me.json.user, null);
+});
