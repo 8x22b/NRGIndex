@@ -6,7 +6,7 @@ function ratingsMap(db) {
     .prepare(
       `SELECT r.drink_id, r.tier_id AS tier, r.review, r.order_index AS "order", u.username
        FROM ratings r JOIN users u ON u.id = r.user_id
-       WHERE u.is_active = 1`,
+       WHERE u.is_active = 1 AND u.is_public = 1`,
     )
     .all();
   const map = new Map();
@@ -57,15 +57,21 @@ module.exports = (db) => {
       .all();
     const participants = db
       .prepare(
-        "SELECT username, display_name, initials, title, color FROM users WHERE is_active = 1 ORDER BY id",
+        "SELECT username, display_name, initials, title, color FROM users WHERE is_active = 1 AND is_public = 1 ORDER BY id",
       )
       .all()
       .map(userToParticipant);
     const drinks = db.prepare("SELECT * FROM drinks WHERE is_published = 1 ORDER BY id").all();
     const ratings = ratingsMap(db);
     const relations = relationsMap(db);
+    const site = {
+      title: db.prepare("SELECT value FROM settings WHERE key = 'site_title'").get()?.value || "NRG / INDEX",
+      description:
+        db.prepare("SELECT value FROM settings WHERE key = 'site_description'").get()?.value || "",
+    };
 
     res.json({
+      site,
       updatedAt: formatDate(contentUpdatedAt(db)),
       tiers,
       participants,

@@ -114,6 +114,9 @@ const MIGRATIONS = [
     ('C', 'Situational', 'Только при обстоятельствах', 2, 4),
     ('D', 'Regret', 'Энергия ошибки', 1, 5);
   `,
+  `
+  ALTER TABLE users ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 function migrate(db) {

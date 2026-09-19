@@ -26,7 +26,7 @@
     return json;
   };
 
-  const state = { me: null, data: null, tab: "drinks", imageDataUrl: null, removeImage: false };
+  const state = { me: null, data: null, tab: "drinks", removeImage: false };
   const status = (id, message, isError = false) => {
     const node = $(id);
     if (!node) return;
@@ -336,7 +336,7 @@
     const users = state.data.users;
     $("users-table").innerHTML = `
       <table class="admin-table">
-        <thead><tr><th>Логин</th><th>Имя</th><th>Роль</th><th>Должность</th><th>Пароль</th><th>Статус</th><th></th></tr></thead>
+        <thead><tr><th>Логин</th><th>Имя</th><th>Роль</th><th>Должность</th><th>Пароль</th><th>Статус</th><th>Публичность</th><th></th></tr></thead>
         <tbody>
           ${users
             .map(
@@ -348,6 +348,7 @@
               <td class="muted">${esc(user.title)}</td>
               <td>${user.hasPassword ? (user.mustChangePassword ? "временный" : "задан") : "нет"}</td>
               <td><span class="admin-badge ${user.isActive ? "admin-badge--on" : "admin-badge--off"}">${user.isActive ? "активен" : "отключён"}</span></td>
+              <td><span class="admin-badge ${user.isPublic ? "admin-badge--on" : "admin-badge--off"}">${user.isPublic ? "на сайте" : "скрыт"}</span></td>
               <td class="admin-actions">
                 <button class="btn btn--ghost" type="button" data-edit="${user.id}">Править</button>
                 <button class="btn btn--ghost" type="button" data-reset="${user.id}">Сбросить пароль</button>
@@ -401,6 +402,7 @@
     $("u-initials").value = user?.initials || "";
     $("u-color").value = user?.color || "#9fb7ff";
     $("u-active").checked = user ? user.isActive : true;
+    $("u-public").checked = user ? user.isPublic : true;
     $("u-active-row").hidden = !user;
     $("u-password-row").hidden = Boolean(user);
     $("u-password").value = "";
@@ -426,6 +428,7 @@
           initials: $("u-initials").value,
           color: $("u-color").value,
           isActive: $("u-active").checked,
+          isPublic: $("u-public").checked,
         };
         await api("PATCH", `api/admin/users/${id}`, payload);
         $("user-form").hidden = true;
@@ -439,6 +442,7 @@
           title: $("u-title").value,
           initials: $("u-initials").value,
           color: $("u-color").value,
+          isPublic: $("u-public").checked,
           password: $("u-password").value || undefined,
         };
         const { user, tempPassword } = await api("POST", "api/admin/users", payload);
@@ -586,6 +590,7 @@
       status("global-status", error.message, true);
       return;
     }
+    document.title = `${state.data.settings.siteTitle || "NRG / INDEX"} — админка`;
     switchTab("drinks");
   })();
 })();

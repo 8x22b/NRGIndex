@@ -122,6 +122,9 @@ function createApp({ db, config }) {
     if (err?.type === "entity.too.large") {
       return res.status(413).json({ error: "Слишком большой запрос" });
     }
+    if (err?.status || err?.statusCode) {
+      return res.status(err.status || err.statusCode).end();
+    }
     console.error("[nrgindex]", err);
     return res.status(500).json({ error: "Внутренняя ошибка" });
   });
