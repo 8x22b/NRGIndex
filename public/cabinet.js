@@ -64,7 +64,8 @@
     $("auth-view").hidden = true;
     $("password-view").hidden = true;
     $("cab-view").hidden = false;
-    $("me-avatar").textContent = state.me.initials || "?";
+    $("me-avatar").textContent =
+      state.me.initials || String(state.me.displayName || "?").slice(0, 2).toUpperCase();
     $("me-avatar").style.setProperty("--person-color", safeColor(state.me.color, "#fff"));
     $("me-name").textContent = state.me.displayName;
     $("me-role").textContent = state.me.title || state.me.role;

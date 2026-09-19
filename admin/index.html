@@ -12,7 +12,7 @@
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <style>
-    .admin-page { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+    .admin-page { max-width: 1180px; margin: 0 auto; padding: 7rem 20px 80px; }
     .admin-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
     .admin-tabs .btn.is-active { background: var(--accent, #ff4f79); color: #100e0d; }
     .admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -29,6 +29,15 @@
     .admin-badge--off { border-color: #ff8a8a; color: #ff8a8a; }
     .admin-hint { font-size: 13px; opacity: .7; }
     .admin-temp { font-family: ui-monospace, monospace; background: rgba(255,255,255,.08); padding: 4px 8px; border-radius: 6px; user-select: all; }
+    @media (max-width: 720px) {
+      .admin-page { padding: 5.5rem 12px 4rem; }
+      .admin-tabs { gap: 6px; }
+      .admin-tabs .btn { padding: .5rem .7rem; font-size: .62rem; }
+      #drinks-table, #tiers-table, #users-table, #audit-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .admin-table { min-width: 620px; }
+      .admin-form { padding: 12px; }
+      .grid-2 { grid-template-columns: 1fr !important; }
+    }
   </style>
 </head>
 <body>
