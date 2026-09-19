@@ -5,6 +5,11 @@ const { unauthorized, forbidden, tooMany } = require("./lib/errors");
 const scrypt = promisify(crypto.scrypt);
 const SCRYPT = { N: 32768, r: 8, p: 1, keylen: 64, maxmem: 128 * 1024 * 1024 };
 const SESSION_COOKIE = "nrg_session";
+const LOGIN_WINDOW = "-15 minutes";
+const LOGIN_MAX_PER_USER = 5;
+const LOGIN_MAX_PER_IP = 30;
+const DUMMY_HASH =
+  "scrypt$32768$8$1$O3tdaIoax4ADfMHtnvwAcw==$sYAzxCvg4G1l0C9D1vqzAyhdFb/obmBiTlSxU8J83dnTGuqDKKmRByuG69iC63+GLaLbRbDzoZdoZysrYPRu/Q==";
 
 async function hashPassword(password) {
   const salt = crypto.randomBytes(16);
@@ -38,6 +43,7 @@ const hashToken = (token) => crypto.createHash("sha256").update(token).digest("h
 
 function createAuth(db, config) {
   const ttlMs = config.sessionTtlDays * 24 * 60 * 60 * 1000;
+  const idleDays = Number(config.sessionIdleDays) || 14;
 
   const stmt = {
     insertSession: db.prepare(
@@ -51,15 +57,20 @@ function createAuth(db, config) {
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > datetime('now')
+        AND s.last_seen_at > datetime('now', ?)
     `),
     touchSession: db.prepare("UPDATE sessions SET last_seen_at = datetime('now') WHERE token_hash = ?"),
     cleanup: db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')"),
     recordAttempt: db.prepare(
       "INSERT INTO login_attempts (username, ip, success) VALUES (?, ?, ?)",
     ),
-    recentFailures: db.prepare(
+    recentUserFailures: db.prepare(
       `SELECT COUNT(*) AS n FROM login_attempts
-       WHERE ip = ? AND username = ? AND success = 0 AND created_at > datetime('now', '-15 minutes')`,
+       WHERE ip = ? AND username = ? AND success = 0 AND created_at > datetime('now', ?)`,
+    ),
+    recentIpFailures: db.prepare(
+      `SELECT COUNT(*) AS n FROM login_attempts
+       WHERE ip = ? AND success = 0 AND created_at > datetime('now', ?)`,
     ),
   };
 
@@ -87,7 +98,7 @@ function createAuth(db, config) {
     const token = req.cookies?.[SESSION_COOKIE];
     if (!token) return null;
     const tokenHash = hashToken(token);
-    const row = stmt.findSession.get(tokenHash);
+    const row = stmt.findSession.get(tokenHash, `-${idleDays} days`);
     if (!row || !row.is_active) return null;
     stmt.touchSession.run(tokenHash);
     return {
@@ -127,8 +138,14 @@ function createAuth(db, config) {
     };
 
   function checkLoginAllowed(ip, username) {
-    const row = stmt.recentFailures.get(String(ip || ""), String(username || ""));
-    if (row.n >= 5) throw tooMany("Слишком много неудачных попыток. Подождите 15 минут.");
+    const perIp = stmt.recentIpFailures.get(String(ip || ""), LOGIN_WINDOW);
+    if (perIp.n >= LOGIN_MAX_PER_IP) {
+      throw tooMany("Слишком много неудачных попыток. Подождите 15 минут.");
+    }
+    const perUser = stmt.recentUserFailures.get(String(ip || ""), String(username || ""), LOGIN_WINDOW);
+    if (perUser.n >= LOGIN_MAX_PER_USER) {
+      throw tooMany("Слишком много попыток для этого логина. Подождите 15 минут.");
+    }
   }
 
   function recordLogin(username, ip, success) {
@@ -163,4 +180,4 @@ function createAuth(db, config) {
   };
 }
 
-module.exports = { hashPassword, verifyPassword, hashToken, createAuth, SESSION_COOKIE };
+module.exports = { hashPassword, verifyPassword, hashToken, createAuth, SESSION_COOKIE, DUMMY_HASH };
