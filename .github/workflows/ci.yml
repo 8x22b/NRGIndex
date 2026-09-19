@@ -2,9 +2,12 @@ name: CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, production]
   push:
-    branches: [master]
+    branches: [master, production]
+
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -24,16 +27,15 @@ jobs:
             node --check "$f"
           done
 
-      - name: Site data and assets check
+      - name: Data and assets check
         run: node scripts/check-site.js
 
-      - name: Build config smoke test
+      - name: Build keys.js from CI placeholders
         env:
           LOGIN_KEYS_JSON: '[{"key":"ci-test","hash":"ci-test-hash","pid":"sanya"}]'
           OPENROUTER_KEY: ""
           OPENROUTER_MODEL: openai/gpt-4o-mini
-        run: |
-          node scripts/build-config.js
-          test -s keys.js
-          node --check keys.js
-          rm -f keys.js
+        run: node scripts/build-config.js
+
+      - name: Deployment smoke test
+        run: node scripts/smoke-test.js
