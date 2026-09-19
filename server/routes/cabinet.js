@@ -2,7 +2,7 @@ const express = require("express");
 const { notFound, tooMany } = require("../lib/errors");
 const { str, oneOf, slugify } = require("../lib/validate");
 const { parseDrinkText, searchCanImages, TIERS } = require("../lib/ai");
-const { saveDataUrlImage } = require("../lib/images");
+const { saveProcessedImage } = require("../lib/images");
 const { writeAudit, getSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { drinkToAdmin } = require("../lib/serialize");
@@ -80,12 +80,14 @@ module.exports = (db, auth, config) => {
     res.json({ ok: true });
   });
 
-  router.post("/drinks", (req, res) => {
+  router.post("/drinks", async (req, res) => {
     const fields = drinkFields(req.body);
-    const imagePath = req.body?.imageDataUrl
-      ? saveDataUrlImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
-      : "";
-    const accent = ACCENTS[db.prepare("SELECT COUNT(*) AS n FROM drinks").get().n % ACCENTS.length];
+    const image = req.body?.imageDataUrl
+      ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
+      : null;
+    const accent =
+      image?.accent ||
+      ACCENTS[db.prepare("SELECT COUNT(*) AS n FROM drinks").get().n % ACCENTS.length];
     const slug = uniqueSlug(db, `${fields.brand}-${fields.flavor || fields.name}`);
 
     const create = db.transaction(() => {
@@ -100,7 +102,7 @@ module.exports = (db, auth, config) => {
           fields.name,
           fields.flavor,
           fields.edition,
-          imagePath,
+          image?.path || "",
           `добавил ${req.user.displayName}`,
           accent[0],
           accent[1],
@@ -122,19 +124,23 @@ module.exports = (db, auth, config) => {
     res.status(201).json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
   });
 
-  router.patch("/drinks/:slug", (req, res) => {
+  router.patch("/drinks/:slug", async (req, res) => {
     const drink = findDrink(req.params.slug);
     const isOwner = drink.created_by === req.user.id;
     const canEditAny = req.user.role === "admin" || req.user.role === "editor";
     if (!isOwner && !canEditAny) throw notFound("Напиток не найден");
 
     const fields = drinkFields(req.body);
-    const imagePath = req.body?.imageDataUrl
-      ? saveDataUrlImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
-      : drink.image_path;
+    const image = req.body?.imageDataUrl
+      ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
+      : null;
+    const imagePath = image ? image.path : drink.image_path;
+    const accentA = image ? image.accent[0] : drink.accent_a;
+    const accentB = image ? image.accent[1] : drink.accent_b;
     db.prepare(
-      `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, drink.id);
+      `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
+         accent_a = ?, accent_b = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, drink.id);
     if (req.user.role !== "user") {
       db.prepare(
         `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)

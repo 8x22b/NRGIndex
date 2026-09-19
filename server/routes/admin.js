@@ -5,6 +5,7 @@ const { notFound, badRequest, conflict, forbidden } = require("../lib/errors");
 const { str, username, password, oneOf, int, color, idArray } = require("../lib/validate");
 const { writeAudit, getSetting, setSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
+const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
 const { userToApi, drinkToAdmin } = require("../lib/serialize");
 const { TIERS } = require("../lib/ai");
 
@@ -52,8 +53,8 @@ module.exports = (db, auth, config) => {
         required: false,
         max: 160,
       }),
-      accentA: color(body?.accentA ?? drink.accent_a, "Акцент A", "#ff4f79"),
-      accentB: color(body?.accentB ?? drink.accent_b, "Акцент B", "#ff7448"),
+      accentA: color(body?.accentA ?? drink.accent_a, "Акцент A", null),
+      accentB: color(body?.accentB ?? drink.accent_b, "Акцент B", null),
       published:
         body?.published === undefined ? Boolean(drink.is_published ?? true) : Boolean(body.published),
     };
@@ -88,13 +89,18 @@ module.exports = (db, auth, config) => {
 
   // ---------- drinks (editor+) ----------
 
-  router.post("/drinks", (req, res) => {
+  router.post("/drinks", async (req, res) => {
     const fields = drinkFields(req.body);
     const relatedIds = idArray(req.body?.relatedIds, "Похожие", { max: 50 });
-    const imagePath = req.body?.imageDataUrl
-      ? require("../lib/images").saveDataUrlImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
+    const image = req.body?.imageDataUrl
+      ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
+      : null;
+    const imagePath = image
+      ? image.path
       : str(req.body?.image ?? "", "Картинка", { required: false, max: 300 });
-    const accent = ACCENTS[db.prepare("SELECT COUNT(*) AS n FROM drinks").get().n % ACCENTS.length];
+    const accent =
+      image?.accent ||
+      ACCENTS[db.prepare("SELECT COUNT(*) AS n FROM drinks").get().n % ACCENTS.length];
     const slug = uniqueSlug(db, `${fields.brand}-${fields.flavor || fields.name}`);
 
     const create = db.transaction(() => {
@@ -127,16 +133,21 @@ module.exports = (db, auth, config) => {
     res.status(201).json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
   });
 
-  router.patch("/drinks/:id", (req, res) => {
+  router.patch("/drinks/:id", async (req, res) => {
     const id = int(req.params.id, "id", { min: 1 });
     const drink = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     if (!drink) throw notFound("Напиток не найден");
     const fields = drinkFields(req.body, drink);
-    const imagePath = req.body?.imageDataUrl
-      ? require("../lib/images").saveDataUrlImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
+    const image = req.body?.imageDataUrl
+      ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
+      : null;
+    const imagePath = image
+      ? image.path
       : req.body?.removeImage
         ? ""
         : drink.image_path;
+    const accentA = fields.accentA || image?.accent?.[0] || drink.accent_a;
+    const accentB = fields.accentB || image?.accent?.[1] || drink.accent_b;
     db.prepare(
       `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
          source_label = ?, accent_a = ?, accent_b = ?, is_published = ?, updated_at = datetime('now')
@@ -148,8 +159,8 @@ module.exports = (db, auth, config) => {
       fields.edition,
       imagePath,
       fields.sourceLabel,
-      fields.accentA,
-      fields.accentB,
+      accentA,
+      accentB,
       fields.published ? 1 : 0,
       id,
     );
@@ -157,6 +168,21 @@ module.exports = (db, auth, config) => {
       setRelations(id, idArray(req.body.relatedIds, "Похожие", { max: 50 }));
     }
     writeAudit(db, req.user, "admin.drink.update", "drink", drink.slug);
+    touchContent(db);
+    const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
+    res.json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
+  });
+
+  router.post("/drinks/:id/reprocess-image", async (req, res) => {
+    const id = int(req.params.id, "id", { min: 1 });
+    const drink = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
+    if (!drink) throw notFound("Напиток не найден");
+    const result = await reprocessStoredImage(config.uploadsDir, drink.image_path);
+    if (!result) throw badRequest("Переобработать можно только картинки из /uploads");
+    db.prepare(
+      "UPDATE drinks SET image_path = ?, accent_a = ?, accent_b = ?, updated_at = datetime('now') WHERE id = ?",
+    ).run(result.path, result.accent[0], result.accent[1], id);
+    writeAudit(db, req.user, "admin.drink.reprocess", "drink", drink.slug);
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     res.json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });

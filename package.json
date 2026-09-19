@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "test": "node --test",
+    "test": "node --test --test-reporter=spec",
     "create-admin": "node scripts/create-admin.js",
     "seed": "node scripts/seed-legacy.js"
   },
@@ -17,6 +17,7 @@
     "better-sqlite3": "^11.10.0",
     "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
-    "helmet": "^8.1.0"
+    "helmet": "^8.1.0",
+    "sharp": "^0.35.4"
   }
 }

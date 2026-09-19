@@ -1,11 +1,15 @@
 const express = require("express");
-const { saveDataUrlImage } = require("../lib/images");
+const { saveProcessedImage } = require("../lib/images");
 
 module.exports = (db, auth, config) => {
   const router = express.Router();
-  router.post("/", (req, res) => {
-    const path = saveDataUrlImage(config.uploadsDir, req.body?.dataUrl, config.maxUploadBytes);
-    res.status(201).json({ path });
+  router.post("/", async (req, res) => {
+    const image = await saveProcessedImage(
+      config.uploadsDir,
+      req.body?.dataUrl,
+      config.maxUploadBytes,
+    );
+    res.status(201).json(image);
   });
   return router;
 };
