@@ -226,10 +226,11 @@ img { display: block; max-width: 100%; }
 .dialog-close { position: sticky; z-index: 4; top: 1rem; float: right; margin: 1rem 1rem -4rem 0; width: 2.8rem; aspect-ratio: 1; border: 1px solid rgba(255,255,255,.2); border-radius: 50%; color: var(--paper); background: rgba(17,16,15,.75); backdrop-filter: blur(10px); cursor: pointer; font: 300 1.55rem/1 var(--sans); transition: color .25s, background .25s, transform .25s; }
 .dialog-close:hover { color: var(--ink); background: var(--paper); transform: rotate(90deg); }
 .dialog-hero { --dialog-a: var(--pink); --dialog-b: var(--orange); min-height: 27rem; display: grid; grid-template-columns: .85fr 1.15fr; overflow: hidden; border-bottom: 1px solid var(--line); }
-.dialog-product { position: relative; display: grid; place-items: center; min-height: 27rem; background: radial-gradient(circle at 50% 52%, var(--dialog-b), var(--dialog-a) 46%, #2c191a 73%); }
-.dialog-product::before { content: ""; position: absolute; width: 18rem; aspect-ratio: 1; border: 1px solid rgba(255,255,255,.25); border-radius: 50%; }
-.dialog-product img { position: relative; z-index: 1; height: 22rem; width: auto; filter: drop-shadow(0 2rem 1.8rem rgba(0,0,0,.38)); }
-.dialog-intro { display: flex; flex-direction: column; justify-content: flex-end; padding: 5rem 3.5rem 3rem; }
+.dialog-product { position: relative; display: grid; place-items: center; min-height: 27rem; overflow: hidden; background: radial-gradient(40% 6% at 50% 87%, rgba(0,0,0,.55), transparent 72%), radial-gradient(130% 95% at 50% 42%, color-mix(in srgb, var(--dialog-a) 32%, #f6f1e7) 0%, color-mix(in srgb, var(--dialog-a) 62%, #ffffff) 20%, color-mix(in srgb, var(--dialog-b) 62%, #2b1d19) 48%, #241a17 74%, #171110 100%); }
+.dialog-product::before { content: ""; position: absolute; width: 22rem; aspect-ratio: 1; border: 1px solid rgba(255,255,255,.14); border-radius: 50%; transform: translateY(-.6rem); }
+.dialog-product::after { content: ""; position: absolute; left: 50%; top: 50%; width: 20rem; height: 20rem; border-radius: 50%; transform: translate(-50%, -54%); background: radial-gradient(circle, rgba(255,255,255,.5) 0%, rgba(255,255,255,.18) 48%, rgba(255,255,255,0) 70%); pointer-events: none; }
+.dialog-product img { position: relative; z-index: 1; height: 22rem; width: auto; filter: drop-shadow(0 2.2rem 1.7rem rgba(0,0,0,.5)) drop-shadow(0 0 3px rgba(255,255,255,.28)); }
+.dialog-intro { display: flex; flex-direction: column; justify-content: center; padding: 3.5rem 3.5rem 3rem; }
 .dialog-kicker { margin: 0 0 1rem; color: var(--dialog-b); font-size: .58rem; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
 .dialog-intro h3 { margin: 0; font: 500 clamp(3rem, 6vw, 6.5rem)/.78 var(--serif); letter-spacing: -.06em; }
 .dialog-flavor { max-width: 25rem; margin: 1.5rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.7; letter-spacing: .08em; text-transform: uppercase; }
