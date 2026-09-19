@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#100e0d">
+  <meta name="robots" content="noindex">
+  <title>NRG / INDEX — админка</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .admin-page { max-width: 1180px; margin: 0 auto; padding: 24px 20px 80px; }
+    .admin-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+    .admin-tabs .btn.is-active { background: var(--accent, #ff4f79); color: #100e0d; }
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .admin-table th, .admin-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); vertical-align: middle; }
+    .admin-table img { width: 34px; height: 34px; object-fit: contain; }
+    .admin-table .muted { opacity: .55; }
+    .admin-form { display: grid; gap: 12px; margin: 16px 0; padding: 16px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; }
+    .admin-form label { display: grid; gap: 4px; font-size: 13px; }
+    .admin-form input, .admin-form select, .admin-form textarea { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; }
+    .admin-form .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .admin-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .admin-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid rgba(255,255,255,.25); }
+    .admin-badge--on { border-color: #7ee6a8; color: #7ee6a8; }
+    .admin-badge--off { border-color: #ff8a8a; color: #ff8a8a; }
+    .admin-hint { font-size: 13px; opacity: .7; }
+    .admin-temp { font-family: ui-monospace, monospace; background: rgba(255,255,255,.08); padding: 4px 8px; border-radius: 6px; user-select: all; }
+  </style>
+</head>
+<body>
+  <div class="page-noise" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="На главную">
+      <span class="brand__name">NRG<span>/</span>INDEX</span>
+      <span class="brand__caption">admin room</span>
+    </a>
+    <div class="header-meta">
+      <a class="header-cab" href="/cabinet.html">кабинет</a>
+      <span id="admin-me" class="admin-hint"></span>
+      <button class="btn btn--ghost" type="button" id="btn-logout-admin">Выйти</button>
+    </div>
+  </header>
+
+  <main class="admin-page">
+    <h1>Управление сайтом</h1>
+    <p class="form-status" id="global-status" aria-live="polite"></p>
+
+    <nav class="admin-tabs" id="admin-tabs">
+      <button class="btn is-active" type="button" data-tab="drinks">Напитки</button>
+      <button class="btn" type="button" data-tab="tiers">Тиры</button>
+      <button class="btn" type="button" data-tab="users" data-admin-only>Пользователи</button>
+      <button class="btn" type="button" data-tab="settings" data-admin-only>Настройки</button>
+      <button class="btn" type="button" data-tab="audit" data-admin-only>Журнал</button>
+    </nav>
+
+    <section id="tab-drinks" hidden>
+      <div class="admin-actions">
+        <button class="btn" type="button" id="btn-drink-new">+ Новый напиток</button>
+      </div>
+      <form class="admin-form" id="drink-form" hidden autocomplete="off">
+        <input type="hidden" id="d-id">
+        <div class="grid-2">
+          <label>Бренд<input id="d-brand" type="text" required></label>
+          <label>Название<input id="d-name" type="text" required></label>
+          <label>Вкус<input id="d-flavor" type="text"></label>
+          <label>Издание<input id="d-edition" type="text"></label>
+          <label>Источник (подпись)<input id="d-source" type="text"></label>
+          <label>Похожие (Ctrl — несколько)
+            <select id="d-related" multiple size="5"></select>
+          </label>
+          <label>Акцент A<input id="d-accent-a" type="color" value="#ff4f79"></label>
+          <label>Акцент B<input id="d-accent-b" type="color" value="#ff7448"></label>
+        </div>
+        <div class="grid-2">
+          <label>Картинка
+            <input id="d-image-file" type="file" accept="image/png,image/jpeg,image/webp">
+          </label>
+          <label>Или ссылка на картинку<input id="d-image-path" type="text" placeholder="/uploads/… или /assets/…"></label>
+        </div>
+        <img id="d-image-preview" alt="" style="max-width:120px;max-height:120px;object-fit:contain" hidden>
+        <label class="admin-hint"><input id="d-published" type="checkbox" checked> Опубликован</label>
+        <div class="admin-actions">
+          <button class="btn" type="submit">Сохранить</button>
+          <button class="btn btn--ghost" type="button" id="btn-drink-cancel">Отмена</button>
+        </div>
+        <p class="form-status" id="drink-status" aria-live="polite"></p>
+      </form>
+      <div id="drinks-table"></div>
+    </section>
+
+    <section id="tab-tiers" hidden>
+      <div class="admin-actions">
+        <button class="btn" type="button" id="btn-tier-new">+ Новый тир</button>
+      </div>
+      <form class="admin-form" id="tier-form" hidden autocomplete="off">
+        <input type="hidden" id="t-id-original">
+        <div class="grid-2">
+          <label>ID (буква, S/A/B…)<input id="t-id" type="text" maxlength="8" required></label>
+          <label>Название<input id="t-title" type="text" required></label>
+          <label>Балл (1–100)<input id="t-score" type="number" min="1" max="100" value="3" required></label>
+          <label>Позиция<input id="t-position" type="number" min="0" max="1000" value="10"></label>
+        </div>
+        <label>Описание<textarea id="t-note" rows="2"></textarea></label>
+        <div class="admin-actions">
+          <button class="btn" type="submit">Сохранить</button>
+          <button class="btn btn--ghost" type="button" id="btn-tier-cancel">Отмена</button>
+        </div>
+        <p class="form-status" id="tier-status" aria-live="polite"></p>
+      </form>
+      <div id="tiers-table"></div>
+    </section>
+
+    <section id="tab-users" hidden>
+      <div class="admin-actions">
+        <button class="btn" type="button" id="btn-user-new">+ Создать пользователя</button>
+      </div>
+      <form class="admin-form" id="user-form" hidden autocomplete="off">
+        <input type="hidden" id="u-id">
+        <div class="grid-2">
+          <label>Логин<input id="u-username" type="text" required></label>
+          <label>Имя<input id="u-name" type="text" required></label>
+          <label>Роль
+            <select id="u-role">
+              <option value="user">user</option>
+              <option value="editor">editor</option>
+              <option value="admin">admin</option>
+            </select>
+          </label>
+          <label>Должность (видна на сайте)<input id="u-title" type="text"></label>
+          <label>Инициалы<input id="u-initials" type="text" maxlength="4"></label>
+          <label>Цвет<input id="u-color" type="color" value="#9fb7ff"></label>
+        </div>
+        <label id="u-password-row">Пароль (оставьте пустым — сгенерируется временный)
+          <input id="u-password" type="password" autocomplete="new-password">
+        </label>
+        <label class="admin-hint" id="u-active-row" hidden><input id="u-active" type="checkbox" checked> Активен</label>
+        <div class="admin-actions">
+          <button class="btn" type="submit">Сохранить</button>
+          <button class="btn btn--ghost" type="button" id="btn-user-cancel">Отмена</button>
+        </div>
+        <p class="form-status" id="user-status" aria-live="polite"></p>
+      </form>
+      <div id="users-table"></div>
+    </section>
+
+    <section id="tab-settings" hidden>
+      <form class="admin-form" id="settings-form" autocomplete="off">
+        <div class="grid-2">
+          <label>Заголовок сайта<input id="s-title" type="text"></label>
+          <label>Описание<input id="s-description" type="text"></label>
+          <label>Модель OpenRouter<input id="s-model" type="text"></label>
+          <label>Ключ OpenRouter
+            <input id="s-key" type="password" placeholder="оставьте пустым — не менять">
+          </label>
+        </div>
+        <div class="admin-actions">
+          <button class="btn" type="submit">Сохранить</button>
+          <button class="btn btn--ghost" type="button" id="btn-key-clear">Убрать ключ</button>
+        </div>
+        <p class="form-status" id="settings-status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section id="tab-audit" hidden>
+      <div id="audit-table"></div>
+    </section>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

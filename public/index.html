@@ -138,19 +138,6 @@
     <div id="dialog-content"></div>
   </dialog>
 
-  <script src="data.js"></script>
-  <script src="participants.js"></script>
-  <script src="keys.js"></script>
-  <script>
-    try {
-      var _km = {};
-      (window.NRG_IDENTITIES || []).forEach(function (k) { if (k.name || k.role) _km[k.pid] = k; });
-      window.NRG_DATA.participants.forEach(function (p) {
-        var o = _km[p.id];
-        if (o) { if (o.name) p.name = o.name; if (o.role) p.role = o.role; }
-      });
-    } catch (e) {}
-  </script>
   <script src="app.js"></script>
 </body>
 </html>
