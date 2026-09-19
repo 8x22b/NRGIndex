@@ -82,6 +82,7 @@
               <td class="admin-actions">
                 <button class="btn btn--ghost" type="button" data-edit="${drink.id}">Править</button>
                 <button class="btn btn--ghost" type="button" data-toggle="${drink.id}">${drink.published ? "Скрыть" : "Опубликовать"}</button>
+                ${String(drink.image || "").startsWith("/uploads/") ? `<button class="btn btn--ghost" type="button" data-reprocess="${drink.id}">Переобработать</button>` : ""}
                 <button class="btn btn--danger" type="button" data-delete="${drink.id}">Удалить</button>
               </td>
             </tr>`,
@@ -100,6 +101,18 @@
         try {
           await api("PATCH", `api/admin/drinks/${drink.id}`, { published: !drink.published });
           await refresh();
+        } catch (error) {
+          status("global-status", error.message, true);
+        }
+      };
+    });
+    container.querySelectorAll("[data-reprocess]").forEach((button) => {
+      button.onclick = async () => {
+        try {
+          status("global-status", "Обрабатываю картинку…");
+          await api("POST", `api/admin/drinks/${button.dataset.reprocess}/reprocess-image`, {});
+          await refresh();
+          status("global-status", "Картинка переобработана, цвет обновлён ✓");
         } catch (error) {
           status("global-status", error.message, true);
         }
@@ -130,7 +143,7 @@
     $("d-accent-a").value = drink?.accent?.[0] || "#ff4f79";
     $("d-accent-b").value = drink?.accent?.[1] || "#ff7448";
     $("d-published").checked = drink ? drink.published : true;
-    $("d-image-path").value = drink?.image && !drink.image.startsWith("/uploads/") ? drink.image : "";
+    $("d-image-path").value = drink?.image || "";
     const preview = $("d-image-preview");
     if (drink?.image) {
       preview.src = drink.image;
@@ -139,7 +152,6 @@
       preview.hidden = true;
       preview.removeAttribute("src");
     }
-    state.imageDataUrl = null;
     state.removeImage = false;
     $("d-related").innerHTML = state.data.drinks
       .filter((item) => item.id !== (drink?.id || -1))
@@ -162,33 +174,45 @@
     const file = event.target.files[0];
     if (!file) return;
     try {
+      status("drink-status", "Обрабатываю картинку…");
       const dataUrl = await fileToDataUrl(file, 1200);
-      state.imageDataUrl = dataUrl;
+      const { path, accent } = await api("POST", "api/uploads", { dataUrl });
       state.removeImage = false;
+      $("d-image-path").value = path;
+      $("d-accent-a").value = accent[0];
+      $("d-accent-b").value = accent[1];
       const preview = $("d-image-preview");
-      preview.src = dataUrl;
+      preview.src = path;
       preview.hidden = false;
-      $("d-image-path").value = "";
-      status("drink-status", "Картинка загружена (сохранится при записи)");
-    } catch {
-      status("drink-status", "Не удалось прочитать файл", true);
+      status("drink-status", `Готово: фон вырезан, цвет ${accent[0]} / ${accent[1]}`);
+    } catch (error) {
+      status("drink-status", error.message || "Не удалось прочитать файл", true);
     } finally {
       event.target.value = "";
     }
   });
 
   $("d-image-path").addEventListener("input", () => {
-    state.imageDataUrl = null;
-    state.removeImage = false;
     const preview = $("d-image-preview");
     const value = $("d-image-path").value.trim();
     if (value) {
+      state.removeImage = false;
       preview.src = value;
       preview.hidden = false;
     } else {
+      state.removeImage = true;
       preview.hidden = true;
+      preview.removeAttribute("src");
     }
   });
+
+  $("btn-drink-image-clear").onclick = () => {
+    state.removeImage = true;
+    $("d-image-path").value = "";
+    $("d-image-preview").hidden = true;
+    $("d-image-preview").removeAttribute("src");
+    status("drink-status", "Картинка будет убрана при сохранении");
+  };
 
   $("drink-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -203,8 +227,9 @@
       published: $("d-published").checked,
       relatedIds: [...$("d-related").selectedOptions].map((option) => Number(option.value)),
     };
-    if (state.imageDataUrl) payload.imageDataUrl = state.imageDataUrl;
-    else if ($("d-image-path").value.trim()) payload.image = $("d-image-path").value.trim();
+    const imagePath = $("d-image-path").value.trim();
+    if (imagePath) payload.image = imagePath;
+    else if (state.removeImage) payload.removeImage = true;
     try {
       const id = $("d-id").value;
       if (id) await api("PATCH", `api/admin/drinks/${id}`, payload);

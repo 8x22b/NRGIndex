@@ -1,10 +1,10 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
+const sharp = require("sharp");
 const { startServer, createUser, request, login } = require("./helpers");
 
-const PNG_1X1 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
-const PNG_DATA_URL = `data:image/png;base64,${PNG_1X1}`;
+let testImageDataUrl;
+const hexToRgb = (hex) => [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));
 
 let ctx;
 let adminCookie;
@@ -13,6 +13,21 @@ let userCookie;
 let createdDrink;
 
 before(async () => {
+  const width = 60;
+  const height = 60;
+  const raw = Buffer.alloc(width * height * 4, 255);
+  for (let y = 15; y < 45; y++) {
+    for (let x = 18; x < 42; x++) {
+      const offset = (y * width + x) * 4;
+      raw[offset] = 30;
+      raw[offset + 1] = 90;
+      raw[offset + 2] = 220;
+      raw[offset + 3] = 255;
+    }
+  }
+  const png = await sharp(raw, { raw: { width, height, channels: 4 } }).png().toBuffer();
+  testImageDataUrl = `data:image/png;base64,${png.toString("base64")}`;
+
   ctx = await startServer();
   await createUser(ctx.db, { username: "admin", password: "admin-pass-123", role: "admin", displayName: "Админ" });
   await createUser(ctx.db, { username: "editor", password: "editor-pass-123", role: "editor", displayName: "Редактор" });
@@ -127,16 +142,19 @@ test("смена пароля: старый перестаёт работать"
   assert.equal(newLogin.res.status, 200);
 });
 
-test("загрузки: аноним 401, валидный PNG 201, мусор 400", async () => {
-  const anon = await request(ctx.base, "POST", "/api/uploads", { body: { dataUrl: PNG_DATA_URL } });
+test("загрузки: аноним 401, валидный PNG 201 c авто-цветом, мусор 400", async () => {
+  const anon = await request(ctx.base, "POST", "/api/uploads", { body: { dataUrl: testImageDataUrl } });
   assert.equal(anon.status, 401);
 
   const ok = await request(ctx.base, "POST", "/api/uploads", {
     cookie: userCookie,
-    body: { dataUrl: PNG_DATA_URL },
+    body: { dataUrl: testImageDataUrl },
   });
   assert.equal(ok.status, 201);
   assert.match(ok.json.path, /^\/uploads\/[a-z0-9-]+\.png$/);
+  assert.equal(ok.json.accent.length, 2);
+  const [r, g, b] = hexToRgb(ok.json.accent[0]);
+  assert.ok(b > r + 40 && b > g, `акцент должен быть синеватым: ${ok.json.accent[0]}`);
 
   const served = await fetch(ctx.base + ok.json.path);
   assert.equal(served.status, 200);
@@ -166,13 +184,15 @@ test("админ создаёт напиток, оценка из кабинет
       name: "Adrenaline Rush",
       flavor: "Юдзу-клубника",
       edition: "Лимитка",
-      imageDataUrl: PNG_DATA_URL,
+      imageDataUrl: testImageDataUrl,
       published: true,
     },
   });
   assert.equal(created.status, 201);
   createdDrink = created.json.drink;
   assert.match(createdDrink.slug, /^adrenaline-/);
+  const [r, g, b] = hexToRgb(createdDrink.accent[0]);
+  assert.ok(b > r + 40 && b > g, `акцент из картинки: ${createdDrink.accent[0]}`);
 
   const rated = await request(ctx.base, "PUT", `/api/cabinet/ratings/${createdDrink.slug}`, {
     cookie: userCookie,
@@ -202,12 +222,14 @@ test("кабинет: пользователь добавляет свой на�
       edition: "Классика",
       tier: "A",
       review: "Хорошо бодрит",
-      imageDataUrl: PNG_DATA_URL,
+      imageDataUrl: testImageDataUrl,
     },
   });
   assert.equal(res.status, 201);
   assert.equal(res.json.drink.published, true);
   assert.match(res.json.drink.image, /^\/uploads\//);
+  const [vr, vg, vb] = hexToRgb(res.json.drink.accent[0]);
+  assert.ok(vb > vr + 40 && vb > vg, `акцент из картинки: ${res.json.drink.accent[0]}`);
 
   const slug = res.json.drink.slug;
   const otherCookie = (await login(ctx.base, "other", "other-pass-123")).cookie;
@@ -245,6 +267,34 @@ test("снятие с публикации скрывает напиток", asy
   assert.equal(on.status, 200);
   summary = await request(ctx.base, "GET", "/api/public/summary");
   assert.equal(summary.json.drinks.some((d) => d.id === createdDrink.slug), true);
+});
+
+test("переобработка картинки: редактор может, акцент остаётся по банке", async () => {
+  const res = await request(
+    ctx.base,
+    "POST",
+    `/api/admin/drinks/${createdDrink.id}/reprocess-image`,
+    { cookie: editorCookie },
+  );
+  assert.equal(res.status, 200);
+  assert.match(res.json.drink.image, /^\/uploads\//);
+  const [r, g, b] = hexToRgb(res.json.drink.accent[0]);
+  assert.ok(b > r && b > g, `акцент остаётся синеватым: ${res.json.drink.accent[0]}`);
+});
+
+test("переобработка недоступна для картинок не из uploads", async () => {
+  const created = await request(ctx.base, "POST", "/api/admin/drinks", {
+    cookie: adminCookie,
+    body: { brand: "Asset", name: "Asset Drink", flavor: "Тест", image: "/assets/favicon.svg" },
+  });
+  assert.equal(created.status, 201);
+  const res = await request(
+    ctx.base,
+    "POST",
+    `/api/admin/drinks/${created.json.drink.id}/reprocess-image`,
+    { cookie: adminCookie },
+  );
+  assert.equal(res.status, 400);
 });
 
 test("пользователи: создание с временным паролем, роль, удаление", async () => {
