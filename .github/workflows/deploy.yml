@@ -2,16 +2,50 @@ name: Deploy to LXC
 
 on:
   push:
-    branches: [master]
+    branches: [production]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: deploy-prod
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
+  test:
+    name: Pre-deploy tests
+    runs-on: [self-hosted, nrgindex]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: Syntax check (node --check)
+        run: |
+          for f in *.js scripts/*.js; do
+            echo "checking $f"
+            node --check "$f"
+          done
+
+      - name: Data and assets check
+        run: node scripts/check-site.js
+
+      - name: Build keys.js from secrets
+        run: node scripts/build-config.js
+        env:
+          LOGIN_KEYS_JSON: ${{ secrets.LOGIN_KEYS_JSON }}
+          OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
+          OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
+
+      - name: Deployment smoke test
+        run: node scripts/smoke-test.js
+
   deploy:
     name: Deploy site
+    needs: test
     runs-on: [self-hosted, nrgindex]
     steps:
       - uses: actions/checkout@v7
@@ -29,8 +63,10 @@ jobs:
           OPENROUTER_KEY: ${{ secrets.OPENROUTER_KEY }}
           OPENROUTER_MODEL: ${{ secrets.OPENROUTER_MODEL }}
 
-      - name: Sync site to /var/www/nrgindex
+      - name: Dry-run rsync (deploy simulation)
         run: |
+          rm -rf /tmp/nrgindex-dryrun
+          mkdir -p /tmp/nrgindex-dryrun
           rsync -a --delete \
             --exclude '.git/' \
             --exclude '.github/' \
@@ -39,7 +75,39 @@ jobs:
             --exclude 'assets_original_backup/' \
             --exclude 'node_modules/' \
             --exclude '.env*' \
-            ./ /var/www/nrgindex/
+            ./ /tmp/nrgindex-dryrun/
+          test -s /tmp/nrgindex-dryrun/index.html
+          test -s /tmp/nrgindex-dryrun/cabinet.html
+          test -s /tmp/nrgindex-dryrun/keys.js
+          test -s /tmp/nrgindex-dryrun/assets/favicon.svg
 
-      - name: Reload lighttpd
-        run: sudo systemctl reload lighttpd
+      - name: Sync, reload and health check (with rollback)
+        run: |
+          set -euo pipefail
+          LIVE=/var/www/nrgindex
+          BACKUP=/home/ghrunner/backups/nrgindex
+          rm -rf "$BACKUP"
+          mkdir -p "$(dirname "$BACKUP")"
+          if [ -d "$LIVE" ]; then cp -a "$LIVE" "$BACKUP"; fi
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude 'scripts/' \
+            --exclude 'tools/' \
+            --exclude 'assets_original_backup/' \
+            --exclude 'node_modules/' \
+            --exclude '.env*' \
+            ./ "$LIVE/"
+          sudo systemctl reload lighttpd
+          if ! curl -fsS -o /dev/null http://127.0.0.1/ \
+            || ! curl -fsS -o /dev/null http://127.0.0.1/keys.js \
+            || ! curl -fsS -o /dev/null http://127.0.0.1/cabinet.html; then
+            echo "Health check не прошёл — откат"
+            if [ -d "$BACKUP" ]; then
+              rsync -a --delete "$BACKUP/" "$LIVE/"
+              sudo systemctl reload lighttpd
+              echo "Откат выполнен"
+            fi
+            exit 1
+          fi
+          echo "Деплой и health check успешны"
