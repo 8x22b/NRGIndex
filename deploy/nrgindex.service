@@ -1,0 +1,24 @@
+[Unit]
+Description=NRG/INDEX backend (Express + SQLite)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nrgindex
+Group=nrgindex
+WorkingDirectory=/opt/nrgindex
+EnvironmentFile=/etc/nrgindex.env
+ExecStart=/opt/node/bin/node server/index.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/lib/nrgindex
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

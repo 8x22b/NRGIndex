@@ -1,8 +1,22 @@
 {
   "name": "nrgindex",
+  "version": "2.0.0",
   "private": true,
-  "version": "1.0.0",
+  "description": "NRG/INDEX — тирлист энергетиков: сервер, SQLite и админ-панель",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
-    "build:config": "node scripts/build-config.js"
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test",
+    "create-admin": "node scripts/create-admin.js",
+    "seed": "node scripts/seed-legacy.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0"
   }
 }
