@@ -69,7 +69,7 @@
 
       <form class="cabinet-form smart-form" id="smart-form" autocomplete="off">
         <h3>Новый энергос</h3>
-        <p class="hint">Опиши банку как угодно коротко — нейросеть сама заполнит бренд, вкус, издание и отзыв. Фото можно найти отдельно.</p>
+        <p class="hint">Опиши банку своими словами или надиктуй войсом — нейросеть разложит по полям бренд, вкус и издание, а отзыв и тир возьмёт только из того, что ты сам сказал. Фото можно найти отдельно.</p>
         <label>Что за энергос?
           <textarea id="smart-input" rows="3" placeholder="Например: Burn тропический микс, кисло-сладкий, жахнул бодро, тир А"></textarea>
         </label>
@@ -80,7 +80,12 @@
           </label>
           <span class="voice-status" id="voice-status"></span>
         </div>
-        <audio id="voice-audio" controls hidden></audio>
+        <div class="voice-player" id="voice-player" hidden>
+          <audio id="voice-audio" controls preload="metadata"></audio>
+          <span class="voice-player__time" id="voice-duration">0:00</span>
+          <button class="btn btn--ghost" type="button" id="btn-voice-retry" hidden>Распознать ещё раз</button>
+          <button class="btn btn--ghost" type="button" id="btn-voice-clear" aria-label="Убрать запись">×</button>
+        </div>
         <button class="btn btn--big" type="submit" id="btn-smart">✦ Распознать и добавить</button>
         <p class="form-status" id="smart-status" aria-live="polite"></p>
 
@@ -153,6 +158,7 @@
     </section>
   </main>
 
+  <script src="confirm.js"></script>
   <script src="cabinet.js"></script>
 </body>
 </html>

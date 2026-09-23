@@ -29,7 +29,30 @@
     .admin-badge--off { border-color: #ff8a8a; color: #ff8a8a; }
     .admin-hint { font-size: 13px; opacity: .7; }
     .admin-temp { font-family: ui-monospace, monospace; background: rgba(255,255,255,.08); padding: 4px 8px; border-radius: 6px; user-select: all; }
+    .audit-toolbar { display: flex; gap: 8px; margin: 0 0 10px; flex-wrap: wrap; }
+    .audit-toolbar input, .audit-toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; }
+    .audit-toolbar input { flex: 1; min-width: 200px; }
+    .audit-day { margin: 22px 0 6px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; opacity: .55; }
+    .audit-list { list-style: none; margin: 0; padding: 0; }
+    .audit-item { display: grid; grid-template-columns: 52px 26px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .audit-item__time { font-size: 13px; opacity: .55; font-variant-numeric: tabular-nums; padding-top: 2px; }
+    .audit-item__icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; font-size: 13px; background: rgba(255,255,255,.08); }
+    .audit-item__icon--create { background: rgba(126,230,168,.18); color: #7ee6a8; }
+    .audit-item__icon--delete { background: rgba(255,138,138,.18); color: #ff8a8a; }
+    .audit-item__icon--update { background: rgba(159,183,255,.18); color: #9fb7ff; }
+    .audit-item__icon--undo { background: rgba(239,238,135,.18); color: #efee87; }
+    .audit-item__who { font-weight: 700; }
+    .audit-item__summary { font-size: 14px; line-height: 1.45; }
+    .audit-item__details { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.55; opacity: .7; }
+    .audit-item__details li::before { content: "· "; }
+    .audit-item__tag { display: inline-block; margin-top: 4px; font-size: 11.5px; opacity: .6; }
+    .audit-item.is-undone .audit-item__summary { text-decoration: line-through; opacity: .55; }
+    .audit-item .btn { padding: 5px 10px; font-size: 12px; white-space: nowrap; }
     @media (max-width: 720px) {
+      .audit-item { grid-template-columns: 26px minmax(0, 1fr); }
+      .audit-item__time { grid-column: 2; order: -1; padding: 0; }
+      .audit-item__icon { grid-row: span 2; }
+      .audit-item > :last-child { grid-column: 2; }
       .admin-page { padding: 5.5rem 12px 4rem; }
       .admin-tabs { gap: 6px; }
       .admin-tabs .btn { padding: .5rem .7rem; font-size: .62rem; }
@@ -165,11 +188,14 @@
         <div class="grid-2">
           <label>Заголовок сайта<input id="s-title" type="text"></label>
           <label>Описание<input id="s-description" type="text"></label>
-          <label>Модель OpenRouter<input id="s-model" type="text"></label>
-          <label>Ключ OpenRouter
+          <label>Base URL API (OpenAI-совместимый)<input id="s-base-url" type="url" placeholder="https://openrouter.ai/api/v1"></label>
+          <label>API-ключ
             <input id="s-key" type="password" placeholder="оставьте пустым — не менять">
           </label>
+          <label>Модель для разбора текста<input id="s-model" type="text" placeholder="openai/gpt-4o-mini"></label>
+          <label>Модель распознавания речи (STT)<input id="s-stt-model" type="text" placeholder="openai/whisper-large-v3-turbo"></label>
         </div>
+        <p class="admin-hint">Base URL — корень API без <code>/chat/completions</code>. Запросы идут на <code>{base}/chat/completions</code> и <code>{base}/audio/transcriptions</code>. Для OpenRouter аудио отправляется JSON-ом, для остальных — multipart, как в OpenAI API. Пустое поле — значение по умолчанию.</p>
         <div class="admin-actions">
           <button class="btn" type="submit">Сохранить</button>
           <button class="btn btn--ghost" type="button" id="btn-key-clear">Убрать ключ</button>
@@ -179,10 +205,23 @@
     </section>
 
     <section id="tab-audit" hidden>
+      <div class="audit-toolbar">
+        <input id="audit-search" type="search" placeholder="поиск: имя, напиток, действие…">
+        <select id="audit-filter">
+          <option value="">все объекты</option>
+          <option value="drink">напитки</option>
+          <option value="rating">оценки</option>
+          <option value="tier">тиры</option>
+          <option value="user">пользователи</option>
+          <option value="settings">настройки</option>
+        </select>
+      </div>
+      <p class="admin-hint">«Откатить» возвращает объект в состояние до действия. Откатывать можно по порядку: если объект менялся позже, сначала откатите более свежую запись.</p>
       <div id="audit-table"></div>
     </section>
   </main>
 
+  <script src="/confirm.js"></script>
   <script src="/admin.js"></script>
 </body>
 </html>

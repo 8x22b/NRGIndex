@@ -117,6 +117,15 @@ const MIGRATIONS = [
   `
   ALTER TABLE users ADD COLUMN is_public INTEGER NOT NULL DEFAULT 1;
   `,
+  `
+  ALTER TABLE audit_log ADD COLUMN summary TEXT NOT NULL DEFAULT '';
+  ALTER TABLE audit_log ADD COLUMN undo_data TEXT;
+  ALTER TABLE audit_log ADD COLUMN undo_of INTEGER;
+  ALTER TABLE audit_log ADD COLUMN undone_at TEXT;
+  ALTER TABLE audit_log ADD COLUMN undone_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+  ALTER TABLE audit_log ADD COLUMN target_key TEXT NOT NULL DEFAULT '';
+  CREATE INDEX idx_audit_target ON audit_log(target_key, id);
+  `,
 ];
 
 function migrate(db) {
@@ -151,10 +160,23 @@ function setSetting(db, key, value) {
   ).run(key, String(value));
 }
 
-function writeAudit(db, user, action, entity = "", entityId = "", details = "") {
-  db.prepare(
-    "INSERT INTO audit_log (user_id, action, entity, entity_id, details) VALUES (?, ?, ?, ?, ?)",
-  ).run(user?.id ?? null, action, entity, String(entityId ?? ""), details);
+function writeAudit(db, user, action, entity = "", entityId = "", details = "", extra = {}) {
+  return db
+    .prepare(
+      `INSERT INTO audit_log (user_id, action, entity, entity_id, details, summary, undo_data, undo_of, target_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      user?.id ?? null,
+      action,
+      entity,
+      String(entityId ?? ""),
+      details,
+      extra.summary || "",
+      extra.undoData ? JSON.stringify(extra.undoData) : null,
+      extra.undoOf ?? null,
+      extra.targetKey || "",
+    ).lastInsertRowid;
 }
 
 module.exports = { openDatabase, migrate, getSetting, setSetting, writeAudit, MIGRATIONS };

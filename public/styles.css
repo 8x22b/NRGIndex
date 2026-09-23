@@ -374,9 +374,22 @@ img { display: block; max-width: 100%; }
 .btn--big { width: 100%; margin-top: .4rem; padding: .9rem; font-size: .78rem; }
 .btn--danger { color: #ff8d8d; background: transparent; border: 1px solid rgba(255,93,93,.4); font-size: .62rem; }
 .btn--file { cursor: pointer; }
+.btn--danger-solid { color: #fff; background: #d63c3c; border-color: #d63c3c; }
+.btn:disabled { opacity: .5; cursor: progress; transform: none; }
+.confirm-dialog { width: min(28rem, calc(100% - 2rem)); padding: 0; border: 1px solid rgba(255,93,93,.35); border-radius: 1rem; color: var(--paper); background: #171310; box-shadow: 0 2rem 6rem rgba(0,0,0,.6); }
+.confirm-dialog::backdrop { background: rgba(6,5,4,.72); backdrop-filter: blur(6px); }
+.confirm-dialog__body { margin: 0; padding: 1.5rem 1.4rem 1.2rem; }
+.confirm-dialog h2 { margin: 0 0 .6rem; font: 500 1.9rem/1 var(--serif); letter-spacing: -.03em; }
+.confirm-dialog__message { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.6; }
+.confirm-dialog__details { margin: .8rem 0 0; padding-left: 1.1rem; color: var(--paper); font-size: .76rem; line-height: 1.6; }
+.confirm-dialog__actions { display: flex; justify-content: flex-end; gap: .6rem; margin-top: 1.3rem; }
+.voice-player { display: flex; align-items: center; gap: .7rem; margin: 0 0 .7rem; padding: .5rem .7rem; border: 1px solid var(--line); border-radius: .7rem; background: #0f0d0c; }
+.voice-player audio { flex: 1; min-width: 0; height: 2.2rem; }
+.voice-player__time { color: var(--muted); font-size: .7rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.btn--recording { color: #fff; background: #d63c3c; border-color: #d63c3c; animation: rec-pulse 1.2s ease-in-out infinite; }
+@keyframes rec-pulse { 50% { opacity: .7; } }
 .voice-row { display: flex; align-items: center; gap: .6rem; margin: .4rem 0 .7rem; flex-wrap: wrap; }
 .voice-status { color: var(--muted); font-size: .62rem; }
-#voice-audio { width: 100%; margin-bottom: .7rem; }
 .image-block { margin: 0 0 .8rem; padding: 1rem; border: 1px dashed rgba(255,255,255,.15); border-radius: .7rem; }
 .image-block legend { padding: 0 .5rem; color: var(--muted); font-size: .55rem; letter-spacing: .12em; text-transform: uppercase; }
 .image-block .btn--file { display: inline-block; margin-bottom: .7rem; }

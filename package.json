@@ -10,8 +10,7 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test --test-reporter=spec",
-    "create-admin": "node scripts/create-admin.js",
-    "seed": "node scripts/seed-legacy.js"
+    "create-admin": "node scripts/create-admin.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

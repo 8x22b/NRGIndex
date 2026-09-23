@@ -1,9 +1,16 @@
 const express = require("express");
 const { notFound, tooMany } = require("../lib/errors");
-const { str, oneOf, slugify } = require("../lib/validate");
-const { parseDrinkText, searchCanImages, TIERS } = require("../lib/ai");
+const { str, oneOf } = require("../lib/validate");
+const {
+  parseDrinkText,
+  transcribeAudio,
+  decodeAudio,
+  aiSettings,
+  searchCanImages,
+  TIERS,
+} = require("../lib/ai");
 const { saveProcessedImage } = require("../lib/images");
-const { writeAudit, getSetting } = require("../db");
+const history = require("../lib/history");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { drinkToAdmin } = require("../lib/serialize");
 
@@ -41,6 +48,8 @@ module.exports = (db, auth, config) => {
     return drink;
   }
 
+  const userRow = (user) => ({ id: user.id, username: user.username, display_name: user.displayName });
+
   router.get("/me", (req, res) => {
     const ratings = db
       .prepare(
@@ -59,23 +68,28 @@ module.exports = (db, auth, config) => {
     const drink = findDrink(req.params.slug);
     const tier = oneOf(String(req.body?.tier || ""), TIERS, "Тир");
     const review = str(req.body?.review ?? "", "Отзыв", { required: false, max: 1000 });
+    const before = history.snapRating(db, drink.id, req.user.id);
     db.prepare(
       `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)
        ON CONFLICT(drink_id, user_id)
        DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review, updated_at = datetime('now')`,
     ).run(drink.id, req.user.id, tier, review);
-    writeAudit(db, req.user, "rating.set", "drink", drink.slug, `tier=${tier}`);
+    history.recordRating(db, req.user, "rating.set", {
+      drink,
+      user: userRow(req.user),
+      before,
+      after: history.snapRating(db, drink.id, req.user.id),
+    });
     touchContent(db);
     res.json({ ok: true });
   });
 
   router.delete("/ratings/:slug", (req, res) => {
     const drink = findDrink(req.params.slug);
-    db.prepare("DELETE FROM ratings WHERE drink_id = ? AND user_id = ?").run(
-      drink.id,
-      req.user.id,
-    );
-    writeAudit(db, req.user, "rating.delete", "drink", drink.slug);
+    const before = history.snapRating(db, drink.id, req.user.id);
+    if (!before) throw notFound("Оценки нет");
+    db.prepare("DELETE FROM ratings WHERE drink_id = ? AND user_id = ?").run(drink.id, req.user.id);
+    history.recordRating(db, req.user, "rating.delete", { drink, user: userRow(req.user), before, after: null });
     touchContent(db);
     res.json({ ok: true });
   });
@@ -118,7 +132,7 @@ module.exports = (db, auth, config) => {
     });
 
     const id = create();
-    writeAudit(db, req.user, "drink.create", "drink", slug);
+    history.recordDrink(db, req.user, "drink.create", null, history.snapDrink(db, id));
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     res.status(201).json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
@@ -137,6 +151,8 @@ module.exports = (db, auth, config) => {
     const imagePath = image ? image.path : drink.image_path;
     const accentA = image ? image.accent[0] : drink.accent_a;
     const accentB = image ? image.accent[1] : drink.accent_b;
+    const before = history.snapDrink(db, drink.id);
+    const ratingBefore = history.snapRating(db, drink.id, req.user.id);
     db.prepare(
       `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
          accent_a = ?, accent_b = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -147,8 +163,17 @@ module.exports = (db, auth, config) => {
          ON CONFLICT(drink_id, user_id)
          DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review, updated_at = datetime('now')`,
       ).run(drink.id, req.user.id, fields.tier, fields.review);
+      const ratingAfter = history.snapRating(db, drink.id, req.user.id);
+      if (JSON.stringify(ratingBefore) !== JSON.stringify(ratingAfter)) {
+        history.recordRating(db, req.user, "rating.set", {
+          drink: { ...drink, name: fields.name },
+          user: userRow(req.user),
+          before: ratingBefore,
+          after: ratingAfter,
+        });
+      }
     }
-    writeAudit(db, req.user, "drink.update", "drink", drink.slug);
+    history.recordDrink(db, req.user, "drink.update", before, history.snapDrink(db, drink.id));
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(drink.id);
     res.json({ drink: drinkToAdmin(row, ratingsForDrink(db, drink.id), relationsForDrink(db, drink.id)) });
@@ -159,8 +184,9 @@ module.exports = (db, auth, config) => {
     const isOwner = drink.created_by === req.user.id;
     const canEditAny = req.user.role === "admin" || req.user.role === "editor";
     if (!isOwner && !canEditAny) throw notFound("Напиток не найден");
+    const before = history.snapDrink(db, drink.id, { full: true });
     db.prepare("DELETE FROM drinks WHERE id = ?").run(drink.id);
-    writeAudit(db, req.user, "drink.delete", "drink", drink.slug);
+    history.recordDrink(db, req.user, "drink.delete", before, null);
     touchContent(db);
     res.json({ ok: true });
   });
@@ -168,11 +194,16 @@ module.exports = (db, auth, config) => {
   router.post("/ai/parse", async (req, res) => {
     checkAiLimit(req.user.id);
     const text = str(req.body?.text, "Текст", { min: 2, max: 2000 });
-    const key = getSetting(db, "openrouter_key", process.env.OPENROUTER_KEY || "");
-    const model = getSetting(db, "openrouter_model", "openai/gpt-4o-mini");
-    const parsed = await parseDrinkText(text, { key, model });
-    writeAudit(db, req.user, "ai.parse", "drink", "", text.slice(0, 120));
+    const parsed = await parseDrinkText(text, aiSettings(db));
     res.json({ parsed });
+  });
+
+  router.post("/ai/transcribe", async (req, res) => {
+    checkAiLimit(req.user.id);
+    const mimeType = str(req.body?.mimeType, "Тип аудио", { max: 100 });
+    const buffer = decodeAudio(req.body?.audio);
+    const text = await transcribeAudio(buffer, mimeType, aiSettings(db));
+    res.json({ text });
   });
 
   router.get("/ai/photo-search", async (req, res) => {

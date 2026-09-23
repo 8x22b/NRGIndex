@@ -392,6 +392,121 @@ test("скрытый пользователь исчезает из публич
   assert.equal(back.json.user.isPublic, true);
 });
 
+test("журнал: понятное описание и откат удаления оценки", async () => {
+  const slug = createdDrink.slug;
+  const set = await request(ctx.base, "PUT", `/api/cabinet/ratings/${slug}`, {
+    cookie: userCookie,
+    body: { tier: "A", review: "Хорош" },
+  });
+  assert.equal(set.status, 200);
+  const del = await request(ctx.base, "DELETE", `/api/cabinet/ratings/${slug}`, { cookie: userCookie });
+  assert.equal(del.status, 200);
+
+  let data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  const entry = data.json.audit.find((row) => row.action === "rating.delete");
+  assert.match(entry.summary, /Удалил свою оценку/);
+  assert.match(entry.details, /Была: A/);
+  assert.equal(entry.canUndo, true);
+
+  const earlier = data.json.audit.find((row) => row.action === "rating.set" && row.id < entry.id);
+  assert.equal(earlier.canUndo, false, "более ранняя запись по тому же объекту заблокирована");
+
+  const undo = await request(ctx.base, "POST", `/api/admin/audit/${entry.id}/undo`, { cookie: adminCookie });
+  assert.equal(undo.status, 200);
+  const summary = await request(ctx.base, "GET", "/api/public/summary");
+  const drink = summary.json.drinks.find((d) => d.id === slug);
+  assert.equal(drink.ratings.sanya.tier, "A");
+  assert.equal(drink.ratings.sanya.review, "Хорош");
+
+  const again = await request(ctx.base, "POST", `/api/admin/audit/${entry.id}/undo`, { cookie: adminCookie });
+  assert.equal(again.status, 409);
+
+  data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  const undoRow = data.json.audit.find((row) => row.action === "audit.undo");
+  assert.equal(undoRow.undoOf, entry.id);
+  assert.ok(data.json.audit.find((row) => row.id === entry.id).undoneAt);
+});
+
+test("журнал: откат удаления напитка восстанавливает его вместе с оценками", async () => {
+  const created = await request(ctx.base, "POST", "/api/admin/drinks", {
+    cookie: adminCookie,
+    body: { brand: "Tornado", name: "Tornado Storm", flavor: "Кола" },
+  });
+  const drink = created.json.drink;
+  await request(ctx.base, "PUT", `/api/cabinet/ratings/${drink.slug}`, {
+    cookie: userCookie,
+    body: { tier: "C", review: "так себе" },
+  });
+  const removed = await request(ctx.base, "DELETE", `/api/admin/drinks/${drink.id}`, { cookie: adminCookie });
+  assert.equal(removed.status, 200);
+
+  const data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  const entry = data.json.audit.find((row) => row.action === "admin.drink.delete" && row.entityId === drink.slug);
+  assert.match(entry.summary, /Удалил напиток «Tornado Storm»/);
+  assert.match(entry.details, /оценок: 1/);
+
+  const editorUndo = await request(ctx.base, "POST", `/api/admin/audit/${entry.id}/undo`, { cookie: editorCookie });
+  assert.equal(editorUndo.status, 403);
+
+  const undo = await request(ctx.base, "POST", `/api/admin/audit/${entry.id}/undo`, { cookie: adminCookie });
+  assert.equal(undo.status, 200);
+  const summary = await request(ctx.base, "GET", "/api/public/summary");
+  const back = summary.json.drinks.find((d) => d.id === drink.slug);
+  assert.ok(back);
+  assert.equal(back.ratings.sanya.tier, "C");
+});
+
+test("журнал: изменение напитка показывает «было → стало» и откатывается", async () => {
+  const patched = await request(ctx.base, "PATCH", `/api/admin/drinks/${createdDrink.id}`, {
+    cookie: adminCookie,
+    body: { flavor: "Персик" },
+  });
+  assert.equal(patched.status, 200);
+  const data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  const entry = data.json.audit.find((row) => row.action === "admin.drink.update");
+  assert.match(entry.details, /Вкус: «Юдзу-клубника» → «Персик»/);
+  const undo = await request(ctx.base, "POST", `/api/admin/audit/${entry.id}/undo`, { cookie: adminCookie });
+  assert.equal(undo.status, 200);
+  const after = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(after.json.drinks.find((d) => d.id === createdDrink.id).flavor, "Юдзу-клубника");
+});
+
+test("настройки ИИ: base URL и STT-модель, кривой URL отклоняется", async () => {
+  const bad = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { aiBaseUrl: "javascript:alert(1)" },
+  });
+  assert.equal(bad.status, 400);
+
+  const ok = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { aiBaseUrl: "https://llm.example/v1/", sttModel: "" },
+  });
+  assert.equal(ok.status, 200);
+  const data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.aiBaseUrl, "https://llm.example/v1");
+  assert.equal(data.json.settings.sttModel, "openai/whisper-large-v3-turbo");
+  const entry = data.json.audit.find((row) => row.action === "admin.settings.update");
+  assert.match(entry.details, /Base URL: «https:\/\/openrouter.ai\/api\/v1» → «https:\/\/llm.example\/v1»/);
+});
+
+test("транскрибация: валидация входа", async () => {
+  const anon = await request(ctx.base, "POST", "/api/cabinet/ai/transcribe", {
+    body: { audio: "AAAA", mimeType: "audio/webm" },
+  });
+  assert.equal(anon.status, 401);
+  const badType = await request(ctx.base, "POST", "/api/cabinet/ai/transcribe", {
+    cookie: userCookie,
+    body: { audio: Buffer.alloc(400).toString("base64"), mimeType: "text/html" },
+  });
+  assert.equal(badType.status, 400);
+});
+
+test("CSP разрешает blob: для аудио", async () => {
+  const res = await fetch(`${ctx.base}/cabinet.html`);
+  assert.match(res.headers.get("content-security-policy"), /media-src 'self' blob:/);
+});
+
 test("несуществующий файл в /uploads отдаёт 404", async () => {
   const res = await fetch(`${ctx.base}/uploads/nope.png`);
   assert.equal(res.status, 404);
