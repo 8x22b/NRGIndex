@@ -366,14 +366,18 @@ test("смена логина: себе и другому, занятый лог
   assert.equal(stillIn.json.me.username, "boss");
 
   assert.equal((await login(ctx.base, "admin", "admin-pass-123")).res.status, 401);
-  assert.equal((await login(ctx.base, "boss", "admin-pass-123")).res.status, 200);
+  // вход завершает прежние сессии — дальше работаем с новой кукой
+  const bossLogin = await login(ctx.base, "boss", "admin-pass-123");
+  assert.equal(bossLogin.res.status, 200);
 
   const back = await request(ctx.base, "PATCH", "/api/admin/users/1", {
-    cookie: adminCookie,
+    cookie: bossLogin.cookie,
     body: { username: "admin" },
   });
   assert.equal(back.status, 200);
-  assert.equal((await login(ctx.base, "admin", "admin-pass-123")).res.status, 200);
+  const adminLogin = await login(ctx.base, "admin", "admin-pass-123");
+  assert.equal(adminLogin.res.status, 200);
+  adminCookie = adminLogin.cookie;
 });
 
 test("настройки: редактору нельзя, админ меняет, ключ не утекает", async () => {
