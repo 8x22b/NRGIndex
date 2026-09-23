@@ -625,3 +625,11 @@ test("сессия истекает после длительного прост
   const me = await request(ctx.base, "GET", "/api/auth/me", { cookie });
   assert.equal(me.json.user, null);
 });
+
+test("CSP разрешает blob: для картинок и медиа (превью фото и голос)", async () => {
+  const res = await fetch(`${ctx.base}/`);
+  const csp = res.headers.get("content-security-policy") || "";
+  const part = (name) => csp.split(";").find((piece) => piece.trim().startsWith(name)) || "";
+  assert.ok(part("img-src").includes("blob:"), `img-src должен разрешать blob: (${part("img-src")})`);
+  assert.ok(part("media-src").includes("blob:"), `media-src должен разрешать blob: (${part("media-src")})`);
+});

@@ -44,6 +44,7 @@ function createApp({ db, config }) {
           imgSrc: [
             "'self'",
             "data:",
+            "blob:",
             "https://upload.wikimedia.org",
             "https://thumb.wikimedia.org",
             "https://commons.wikimedia.org",
