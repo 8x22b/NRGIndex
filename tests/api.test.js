@@ -341,6 +341,41 @@ test("нельзя убрать последнего админа и удали�
   assert.equal(selfDelete.status, 409);
 });
 
+test("смена логина: себе и другому, занятый логин, сессия сохраняется", async () => {
+  const taken = await request(ctx.base, "PATCH", "/api/admin/users/1", {
+    cookie: adminCookie,
+    body: { username: "Editor" },
+  });
+  assert.equal(taken.status, 409);
+
+  const invalid = await request(ctx.base, "PATCH", "/api/admin/users/1", {
+    cookie: adminCookie,
+    body: { username: "a b" },
+  });
+  assert.equal(invalid.status, 400);
+
+  const renamed = await request(ctx.base, "PATCH", "/api/admin/users/1", {
+    cookie: adminCookie,
+    body: { username: "Boss" },
+  });
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.json.user.username, "boss");
+
+  const stillIn = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(stillIn.status, 200);
+  assert.equal(stillIn.json.me.username, "boss");
+
+  assert.equal((await login(ctx.base, "admin", "admin-pass-123")).res.status, 401);
+  assert.equal((await login(ctx.base, "boss", "admin-pass-123")).res.status, 200);
+
+  const back = await request(ctx.base, "PATCH", "/api/admin/users/1", {
+    cookie: adminCookie,
+    body: { username: "admin" },
+  });
+  assert.equal(back.status, 200);
+  assert.equal((await login(ctx.base, "admin", "admin-pass-123")).res.status, 200);
+});
+
 test("настройки: редактору нельзя, админ меняет, ключ не утекает", async () => {
   const denied = await request(ctx.base, "PUT", "/api/admin/settings", {
     cookie: editorCookie,

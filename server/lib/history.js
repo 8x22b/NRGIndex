@@ -17,7 +17,7 @@ const DRINK_COLS = [
   "created_at",
   "updated_at",
 ];
-const USER_PROFILE_COLS = ["display_name", "role", "title", "initials", "color", "is_active", "is_public"];
+const USER_PROFILE_COLS = ["username", "display_name", "role", "title", "initials", "color", "is_active", "is_public"];
 const TIER_COLS = ["title", "note", "score", "position"];
 
 const DRINK_LABELS = {
@@ -33,6 +33,7 @@ const DRINK_LABELS = {
   related: "Похожие",
 };
 const USER_LABELS = {
+  username: "Логин",
   display_name: "Имя",
   role: "Роль",
   title: "Должность",
