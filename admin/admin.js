@@ -436,7 +436,6 @@
     const user = id ? state.data.users.find((item) => item.id === id) : null;
     $("u-id").value = user ? user.id : "";
     $("u-username").value = user?.username || "";
-    $("u-username").disabled = Boolean(user);
     $("u-name").value = user?.displayName || "";
     $("u-role").value = user?.role || "user";
     $("u-title").value = user?.title || "";
@@ -463,6 +462,7 @@
       const id = $("u-id").value;
       if (id) {
         const payload = {
+          username: $("u-username").value.trim().toLowerCase(),
           displayName: $("u-name").value,
           role: $("u-role").value,
           title: $("u-title").value,
@@ -472,7 +472,15 @@
           isPublic: $("u-public").checked,
         };
         const current = state.data.users.find((item) => item.id === Number(id));
+        const isSelf = current.id === state.me?.id;
         const warnings = [];
+        if (payload.username !== current.username) {
+          warnings.push(
+            isSelf
+              ? `Ваш логин для входа станет «${payload.username}» — старый перестанет работать`
+              : `Логин для входа станет «${payload.username}» — сообщите пользователю`,
+          );
+        }
         if (current.isActive && !payload.isActive) warnings.push("Доступ будет отключён, все сессии завершатся");
         if (current.role === "admin" && payload.role !== "admin") warnings.push("Пользователь потеряет права админа");
         if (current.isPublic && !payload.isPublic) warnings.push("Он и его оценки пропадут с публичного сайта");

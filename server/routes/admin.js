@@ -345,6 +345,11 @@ module.exports = (db, auth, config) => {
     if (losesAdmin && activeAdmins() <= 1) throw conflict("Нельзя убрать последнего админа");
     if (id === req.user.id && !isActive) throw conflict("Нельзя отключить себя");
 
+    const uname = req.body?.username === undefined ? target.username : username(req.body.username);
+    if (uname !== target.username) {
+      const taken = db.prepare("SELECT 1 FROM users WHERE username = ? AND id != ?").get(uname, id);
+      if (taken) throw conflict("Логин уже занят");
+    }
     const displayName = str(req.body?.displayName ?? target.display_name, "Имя", { max: 80 });
     const title = str(req.body?.title ?? target.title, "Должность", { required: false, max: 80 });
     const initials = str(req.body?.initials ?? target.initials, "Инициалы", { required: false, max: 4 });
@@ -352,13 +357,18 @@ module.exports = (db, auth, config) => {
     const isPublic =
       req.body?.isPublic === undefined ? Boolean(target.is_public) : Boolean(req.body.isPublic);
 
-    db.prepare(
-      `UPDATE users SET display_name = ?, role = ?, title = ?, initials = ?, color = ?, is_active = ?,
-         is_public = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(displayName, role, title, initials, userColor, isActive ? 1 : 0, isPublic ? 1 : 0, id);
+    try {
+      db.prepare(
+        `UPDATE users SET username = ?, display_name = ?, role = ?, title = ?, initials = ?, color = ?, is_active = ?,
+           is_public = ?, updated_at = datetime('now') WHERE id = ?`,
+      ).run(uname, displayName, role, title, initials, userColor, isActive ? 1 : 0, isPublic ? 1 : 0, id);
+    } catch (error) {
+      if (String(error.message).includes("UNIQUE")) throw conflict("Логин уже занят");
+      throw error;
+    }
     if (!isActive) auth.destroyUserSessions(id);
     history.recordUser(db, req.user, "admin.user.update", { row: target }, history.snapUser(db, id));
-    if (target.is_public !== (isPublic ? 1 : 0)) touchContent(db);
+    if (target.is_public !== (isPublic ? 1 : 0) || target.username !== uname) touchContent(db);
     res.json({ user: userToApi(getUser(id)) });
   });
 
