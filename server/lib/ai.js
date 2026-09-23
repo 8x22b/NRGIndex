@@ -454,6 +454,7 @@ module.exports = {
   photoTerms,
   TIERS,
   SYSTEM_PROMPT,
+  STT_CLEANUP_PROMPT,
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
   DEFAULT_STT_MODEL,
