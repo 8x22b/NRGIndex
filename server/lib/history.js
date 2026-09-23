@@ -49,11 +49,13 @@ const SETTING_LABELS = {
   openrouter_model: "Текстовая модель",
   stt_model: "STT-модель",
   ai_base_url: "Base URL",
+  parse_base_url: "Base URL разбора",
   openrouter_key: "API-ключ",
+  parse_api_key: "API-ключ разбора",
   ai_proxy_url: "Прокси для ИИ",
 };
 // в прокси может быть логин:пароль — в журнал не пишем, откатить нельзя
-const SECRET_SETTINGS = new Set(["openrouter_key", "ai_proxy_url"]);
+const SECRET_SETTINGS = new Set(["openrouter_key", "parse_api_key", "ai_proxy_url"]);
 const ROLE_NAMES = { admin: "админ", editor: "редактор", user: "юзер" };
 
 const quote = (value) => {

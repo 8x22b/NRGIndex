@@ -92,12 +92,17 @@ module.exports = (db, auth, config) => {
       siteTitle: getSetting(db, "site_title", "NRG / INDEX"),
       siteDescription: getSetting(db, "site_description", ""),
       openrouterModel: ai.model,
+      textModel: ai.model,
       sttModel: ai.sttModel,
       aiBaseUrl: ai.baseUrl,
+      parseBaseUrl: ai.parseBaseUrl,
+      textBaseUrl: ai.parseBaseUrl,
       aiProxyUrl: maskProxyUrl(ai.proxyUrl),
       aiProxyFromEnv: !getSetting(db, "ai_proxy_url", "") && Boolean(process.env.AI_PROXY_URL),
       openrouterKeySet: Boolean(ai.key),
-      defaults: { aiBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
+      parseApiKeySet: Boolean(ai.parseKey),
+      textApiKeySet: Boolean(ai.parseKey),
+      defaults: { aiBaseUrl: DEFAULT_BASE_URL, parseBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
     };
     const audit = isAdmin(req) ? history.listAudit(db) : [];
     res.json({ me: req.user, drinks, tiers, users, settings, audit });
@@ -429,14 +434,29 @@ module.exports = (db, auth, config) => {
     if ("openrouterModel" in body) {
       next.openrouter_model = str(body.openrouterModel || DEFAULT_MODEL, "Модель", { max: 120 });
     }
+    if ("textModel" in body) {
+      next.openrouter_model = str(body.textModel || DEFAULT_MODEL, "Модель разбора", { max: 120 });
+    }
     if ("sttModel" in body) {
       next.stt_model = str(body.sttModel || DEFAULT_STT_MODEL, "STT-модель", { max: 120 });
     }
     if ("aiBaseUrl" in body) {
       next.ai_base_url = normalizeBaseUrl(str(body.aiBaseUrl || DEFAULT_BASE_URL, "Base URL", { max: 300 }));
     }
+    if ("parseBaseUrl" in body) {
+      next.parse_base_url = normalizeBaseUrl(str(body.parseBaseUrl || DEFAULT_BASE_URL, "Base URL разбора", { max: 300 }));
+    }
+    if ("textBaseUrl" in body) {
+      next.parse_base_url = normalizeBaseUrl(str(body.textBaseUrl || DEFAULT_BASE_URL, "Base URL разбора", { max: 300 }));
+    }
     if ("openrouterKey" in body) {
       next.openrouter_key = str(body.openrouterKey ?? "", "Ключ", { required: false, max: 300 });
+    }
+    if ("parseApiKey" in body) {
+      next.parse_api_key = str(body.parseApiKey ?? "", "Ключ разбора", { required: false, max: 300 });
+    }
+    if ("textApiKey" in body) {
+      next.parse_api_key = str(body.textApiKey ?? "", "Ключ разбора", { required: false, max: 300 });
     }
     if ("aiProxyUrl" in body) {
       const raw = str(body.aiProxyUrl ?? "", "Прокси", { required: false, max: 500 });
@@ -449,7 +469,9 @@ module.exports = (db, auth, config) => {
       openrouter_model: ai.model,
       stt_model: ai.sttModel,
       ai_base_url: ai.baseUrl,
+      parse_base_url: ai.parseBaseUrl,
       openrouter_key: getSetting(db, "openrouter_key", ""),
+      parse_api_key: getSetting(db, "parse_api_key", "") || process.env.PARSE_API_KEY || "",
       ai_proxy_url: getSetting(db, "ai_proxy_url", ""),
     };
     const before = Object.fromEntries(
@@ -477,8 +499,8 @@ module.exports = (db, auth, config) => {
     const started = Date.now();
     let response;
     try {
-      response = await proxiedFetch(proxyUrl)(`${ai.baseUrl}/models`, {
-        headers: ai.key ? { Authorization: `Bearer ${ai.key}` } : {},
+      response = await proxiedFetch(proxyUrl)(`${ai.parseBaseUrl}/models`, {
+        headers: ai.parseKey ? { Authorization: `Bearer ${ai.parseKey}` } : {},
         signal: AbortSignal.timeout(15_000),
       });
     } catch (error) {

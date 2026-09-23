@@ -62,11 +62,20 @@ function normalizeBaseUrl(value) {
 
 function aiSettings(db) {
   const proxyUrl = getSetting(db, "ai_proxy_url", "") || process.env.AI_PROXY_URL || "";
+  const sttKey = getSetting(db, "openrouter_key", "") || process.env.OPENROUTER_KEY || "";
+  const parseKey = getSetting(db, "parse_api_key", "") || getSetting(db, "text_api_key", "") || process.env.PARSE_API_KEY || sttKey;
+  const parseBaseUrl = getSetting(db, "parse_base_url", "") || getSetting(db, "text_base_url", "") || process.env.PARSE_BASE_URL || getSetting(db, "ai_base_url", "") || process.env.AI_BASE_URL || DEFAULT_BASE_URL;
   return {
-    key: getSetting(db, "openrouter_key", "") || process.env.OPENROUTER_KEY || "",
+    key: sttKey,
+    sttKey,
+    parseKey,
     model: getSetting(db, "openrouter_model", "") || DEFAULT_MODEL,
     sttModel: getSetting(db, "stt_model", "") || DEFAULT_STT_MODEL,
-    baseUrl: getSetting(db, "ai_base_url", "") || process.env.AI_BASE_URL || DEFAULT_BASE_URL,
+    baseUrl: parseBaseUrl,
+    parseBaseUrl,
+    textApiKey: parseKey,
+    textBaseUrl: parseBaseUrl,
+    sttBaseUrl: DEFAULT_BASE_URL,
     proxyUrl,
     // все запросы к ИИ-провайдеру идут через этот fetch: прозрачно, с прокси или без
     fetchImpl: proxiedFetch(proxyUrl),
@@ -165,15 +174,17 @@ async function requestParsedJson(messages, { key, model, baseUrl = DEFAULT_BASE_
   }
 }
 
-async function parseDrinkText(text, { key, model, baseUrl, fetchImpl = fetch } = {}) {
-  requireKey(key);
+async function parseDrinkText(text, { key, parseKey, model, baseUrl, parseBaseUrl, fetchImpl = fetch } = {}) {
+  const requestKey = parseKey || key;
+  const requestBaseUrl = parseBaseUrl || baseUrl || DEFAULT_BASE_URL;
+  requireKey(requestKey);
   const userText = String(text || "").slice(0, 4000);
   const parsed = await requestParsedJson(
     [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userText },
     ],
-    { key, model, baseUrl, fetchImpl },
+    { key: requestKey, model, baseUrl: requestBaseUrl, fetchImpl },
   );
   const clean = normalizeParsed(parsed);
   if (!clean.name) {
@@ -214,13 +225,15 @@ function decodeAudio(base64) {
   return buffer;
 }
 
-async function transcribeAudio(buffer, mimeType, { key, sttModel, baseUrl = DEFAULT_BASE_URL, fetchImpl = fetch } = {}) {
+async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, fetchImpl = fetch } = {}) {
+  key = sttKey || key;
+  const effectiveBaseUrl = sttBaseUrl || baseUrl || DEFAULT_BASE_URL;
   requireKey(key);
   const format = audioFormat(mimeType);
   const model = sttModel || DEFAULT_STT_MODEL;
-  const url = `${baseUrl}/audio/transcriptions`;
+  const url = `${effectiveBaseUrl}/audio/transcriptions`;
   let init;
-  if (isOpenRouter(baseUrl)) {
+  if (isOpenRouter(effectiveBaseUrl)) {
     init = {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders(key) },
