@@ -485,6 +485,10 @@ img { display: block; max-width: 100%; }
 .photo-tile.is-selected::after { content: "✓"; position: absolute; top: .35rem; right: .35rem; display: grid; place-items: center; width: 1.3rem; height: 1.3rem; border-radius: 50%; color: var(--ink); background: var(--acid); font-size: .7rem; font-weight: 700; }
 .photo-tile.is-loading { cursor: progress; background: linear-gradient(100deg, #1a1715 30%, #2a2420 50%, #1a1715 70%) 0 0 / 300% 100%; animation: photo-shimmer 1.3s linear infinite; }
 .photo-tile__badge { position: absolute; left: .35rem; bottom: .35rem; padding: .1rem .35rem; border-radius: .3rem; color: var(--paper); background: rgba(0,0,0,.6); font-size: .48rem; letter-spacing: .08em; text-transform: uppercase; }
+.photo-tile__badge--stock { color: var(--ink); background: var(--acid); }
+.photo-strip__track.is-stock-only .photo-tile:not(.is-stock):not(.is-loading) { display: none; }
+.cabinet-form .photo-strip__toggle { display: flex; align-items: center; gap: .35rem; margin: 0; cursor: pointer; white-space: nowrap; }
+.photo-strip__toggle input { width: auto; margin: 0; accent-color: var(--acid); }
 @keyframes photo-shimmer { to { background-position: -300% 0; } }
 @media (prefers-reduced-motion: reduce) { .photo-tile.is-loading { animation: none; } }
 

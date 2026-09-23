@@ -1,5 +1,6 @@
 const { ApiError, badRequest } = require("./errors");
 const { getSetting } = require("../db");
+const { proxiedFetch } = require("./proxy");
 
 const TIERS = ["S", "A", "B", "C", "D"];
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
@@ -60,11 +61,15 @@ function normalizeBaseUrl(value) {
 }
 
 function aiSettings(db) {
+  const proxyUrl = getSetting(db, "ai_proxy_url", "") || process.env.AI_PROXY_URL || "";
   return {
     key: getSetting(db, "openrouter_key", "") || process.env.OPENROUTER_KEY || "",
     model: getSetting(db, "openrouter_model", "") || DEFAULT_MODEL,
     sttModel: getSetting(db, "stt_model", "") || DEFAULT_STT_MODEL,
     baseUrl: getSetting(db, "ai_base_url", "") || process.env.AI_BASE_URL || DEFAULT_BASE_URL,
+    proxyUrl,
+    // все запросы к ИИ-провайдеру идут через этот fetch: прозрачно, с прокси или без
+    fetchImpl: proxiedFetch(proxyUrl),
   };
 }
 
@@ -89,7 +94,14 @@ async function postWithTimeout(fetchImpl, url, init, timeoutMs) {
     return await fetchImpl(url, { ...init, signal: controller.signal });
   } catch (error) {
     if (error?.name === "AbortError") throw new ApiError(504, "ИИ не ответил вовремя", "ai_timeout");
-    throw new ApiError(502, "Не удалось связаться с ИИ-провайдером", "ai_failed");
+    const viaProxy = String(error?.message || "").startsWith("прокси:");
+    throw new ApiError(
+      502,
+      viaProxy
+        ? `Не удалось связаться с ИИ через ${String(error.message).slice(0, 160)}`
+        : "Не удалось связаться с ИИ-провайдером",
+      "ai_failed",
+    );
   } finally {
     clearTimeout(timer);
   }
@@ -221,7 +233,7 @@ async function transcribeAudio(buffer, mimeType, { key, sttModel, baseUrl = DEFA
 
 const PHOTO_UA = "NRGIndex/2.0 (energy drink tier list)";
 const PHOTO_TIMEOUT_MS = 8000;
-const PHOTO_LIMIT = 16;
+const PHOTO_LIMIT = 24;
 const RASTER_MIME = /^image\/(jpeg|png|webp)$/;
 
 // Разбивает поля на уникальные слова без спецсимволов поискового синтаксиса.
@@ -285,6 +297,12 @@ async function searchOpenFoodFacts(terms, brand, fetchImpl) {
     }));
 }
 
+// Слова в названии/описании файла, намекающие на стоковый снимок на белом/прозрачном фоне.
+const STOCK_HINT = /white[\s_-]*background|transparent|isolated|cut[\s_-]*out|packshot|product[\s_-]*shot|на[\s_]*белом|прозрачн/i;
+
+// Отдельные «стоковые» запросы в Commons (filemime:png, "white background") проверял —
+// тянут мусор (скриншоты, ожоги), а OR там ломает выдачу. Поэтому один запрос,
+// а сток определяет браузер по пикселям рамки; stockHint только поднимает кандидатов.
 async function searchWikimedia(terms, fetchImpl) {
   const data = await fetchJson(
     fetchImpl,
@@ -296,13 +314,20 @@ async function searchWikimedia(terms, fetchImpl) {
     .sort((a, b) => (a.index || 0) - (b.index || 0))
     .map((page) => ({ page, info: page?.imageinfo?.[0] }))
     .filter(({ info }) => info && RASTER_MIME.test(info.mime || ""))
-    .map(({ page, info }) => ({
-      url: info.thumburl || info.url,
-      title: String(page.title || "").replace(/^File:/, "").replace(/\.\w+$/, "").slice(0, 120),
-      source: "wikimedia",
-    }))
+    .map(({ page, info }) => {
+      const title = String(page.title || "").replace(/^File:/, "").replace(/\.\w+$/, "").slice(0, 120);
+      return {
+        url: info.thumburl || info.url,
+        title,
+        source: "wikimedia",
+        // PNG на Commons почти всегда вырезка с альфой; плюс явные слова в названии
+        stockHint: info.mime === "image/png" || STOCK_HINT.test(page.title || ""),
+      };
+    })
     .filter((item) => /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(item.url));
 }
+
+
 
 /**
  * Ищет фото банки по бренду, названию и вкусу.
@@ -322,17 +347,28 @@ async function searchCanImages(query, { fetchImpl = fetch } = {}) {
   if (settled.every((item) => item.status === "rejected")) {
     throw new ApiError(502, "Поиск фото недоступен", "photo_search_failed");
   }
-  const seen = new Set();
+  const seen = new Map();
   const results = [];
   for (const item of settled) {
     if (item.status !== "fulfilled") continue;
     for (const hit of item.value) {
-      if (seen.has(hit.url)) continue;
-      seen.add(hit.url);
-      results.push(hit);
+      const clean = { url: hit.url, title: hit.title, source: hit.source, stockHint: Boolean(hit.stockHint) };
+      const prev = seen.get(clean.url);
+      if (prev) {
+        prev.stockHint ||= clean.stockHint;
+        continue;
+      }
+      seen.set(clean.url, clean);
+      results.push(clean);
     }
   }
-  return results.slice(0, PHOTO_LIMIT);
+  // Кандидаты в сток — вперёд. Окончательно фон проверяет браузер по пикселям рамки,
+  // а stockHint лишь поднимает вероятные варианты, чтобы они влезли в лимит.
+  return results
+    .map((hit, order) => ({ hit, order }))
+    .sort((a, b) => Number(b.hit.stockHint) - Number(a.hit.stockHint) || a.order - b.order)
+    .map(({ hit }) => hit)
+    .slice(0, PHOTO_LIMIT);
 }
 
 module.exports = {
