@@ -36,7 +36,8 @@
     return json;
   };
 
-  const state = { me: null, summary: null, addedSlugs: new Set() };
+  const TIER_COLORS = { S: "#ff5f5a", A: "#f1a653", B: "#e7d471", C: "#8ebd93", D: "#8093b7" };
+  const state = { me: null, summary: null, mine: [], addedSlugs: new Set() };
   const pending = {
     parsed: null,
     image: null,
@@ -68,6 +69,8 @@
     $("me-role").textContent = state.me.title || state.me.role;
     if (state.me.role === "admin") $("admin-button").hidden = false;
     if (state.me.role === "admin" || state.me.role === "editor") $("admin-link").hidden = false;
+    $("profile-link").href = `profile.html?u=${encodeURIComponent(state.me.username)}`;
+    $("profile-link").hidden = !state.me.isPublic;
     await refreshAll();
   };
 
@@ -77,9 +80,12 @@
       api("GET", "api/cabinet/me"),
     ]);
     state.summary = summary;
+    // мои оценки берём из /me: в summary их нет, если профиль скрыт
+    state.mine = mine.ratings || [];
     state.addedSlugs = new Set((mine.addedDrinks || []).map((drink) => drink.slug));
     if (summary.site?.title) document.title = `${summary.site.title} — личный кабинет`;
     renderMine();
+    renderUnrated();
   };
 
   /* ---------- auth ---------- */
@@ -152,8 +158,7 @@
 
   /* ---------- my ratings ---------- */
   const saveRating = async (slug, tier, review) => {
-    const drink = state.summary.drinks.find((item) => item.id === slug);
-    const current = drink?.ratings?.[state.me.username] || {};
+    const current = state.mine.find((item) => item.drink === slug) || {};
     try {
       await api("PUT", `api/cabinet/ratings/${encodeURIComponent(slug)}`, {
         tier: tier || current.tier || "B",
@@ -167,16 +172,25 @@
 
   const renderMine = () => {
     const container = $("cabinet-my-ratings");
-    const mine = state.summary.drinks.filter((drink) => drink.ratings?.[state.me.username]);
-    $("me-count").textContent = mine.length;
-    $("me-count-label").textContent = wordForm(mine.length, ["оценка", "оценки", "оценок"]);
+    const all = state.mine;
+    $("me-count").textContent = all.length;
+    $("me-count-label").textContent = wordForm(all.length, ["оценка", "оценки", "оценок"]);
+    if (!all.length) {
+      container.innerHTML = `<p class="hint">Пока пусто — опиши первую банку выше или оцени чужую ниже.</p>`;
+      return;
+    }
+    const needle = $("mine-filter").value.trim().toLowerCase();
+    const mine = needle
+      ? all.filter((item) => `${item.name} ${item.flavor}`.toLowerCase().includes(needle))
+      : all;
     if (!mine.length) {
-      container.innerHTML = `<p class="hint">Пока пусто — опиши первую банку выше.</p>`;
+      container.innerHTML = `<p class="hint">Ничего не нашлось по «${esc(needle)}».</p>`;
       return;
     }
     container.innerHTML = mine
-      .map((drink) => {
-        const rating = drink.ratings[state.me.username];
+      .map((item) => {
+        const drink = { id: item.drink, name: item.name, flavor: item.flavor, image: item.image };
+        const rating = item;
         const own = state.addedSlugs.has(drink.id);
         return `
         <div class="mine-row" data-drink="${esc(drink.id)}">
@@ -200,8 +214,8 @@
       const slug = row.dataset.drink;
       row.querySelector("[data-m-tier]").onchange = (e) => saveRating(slug, e.target.value, null);
       row.querySelector("[data-m-review]").onchange = (e) => saveRating(slug, null, e.target.value);
-      const drink = state.summary.drinks.find((item) => item.id === slug);
-      const rating = drink?.ratings?.[state.me.username] || {};
+      const rating = state.mine.find((item) => item.drink === slug) || {};
+      const drink = state.summary.drinks.find((item) => item.id === slug) || { name: rating.name };
       row.querySelector("[data-m-del-rating]").onclick = async () => {
         const ok = await window.nrgConfirm({
           title: "Удалить оценку?",
@@ -237,6 +251,62 @@
         }
       });
     });
+  };
+
+  $("mine-filter").addEventListener("input", () => renderMine());
+
+  /* ---------- unrated ---------- */
+  // Банки, которые завели другие, а я ещё не оценил. Тир — одним кликом.
+  const UNRATED_PAGE = 12;
+  let unratedShown = UNRATED_PAGE;
+
+  const renderUnrated = () => {
+    const rated = new Set(state.mine.map((item) => item.drink));
+    const list = state.summary.drinks.filter((drink) => !rated.has(drink.id)).reverse();
+    $("unrated-block").hidden = !list.length;
+    if (!list.length) return;
+    $("unrated-count").textContent = `${list.length} ${wordForm(list.length, ["банка", "банки", "банок"])}`;
+    const tiers = state.summary.tiers.map((tier) => tier.id);
+    $("unrated-list").innerHTML = list
+      .slice(0, unratedShown)
+      .map(
+        (drink) => `
+        <div class="unrated-card" data-drink="${esc(drink.id)}">
+          <img src="${esc(drink.image)}" alt="" loading="lazy">
+          <b>${esc(drink.name)}</b>
+          <small>${esc(drink.flavor)}</small>
+          <div class="unrated-card__tiers" role="group" aria-label="Тир для ${esc(drink.name)}">
+            ${tiers.map((tier) => `<button type="button" data-tier="${esc(tier)}" style="--tier-color:${TIER_COLORS[tier] || "#ff4f79"}">${esc(tier)}</button>`).join("")}
+          </div>
+        </div>`,
+      )
+      .join("");
+    $("unrated-more").hidden = list.length <= unratedShown;
+  };
+
+  $("unrated-list").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-tier]");
+    if (!button) return;
+    const card = button.closest(".unrated-card");
+    card.querySelectorAll("button").forEach((b) => {
+      b.disabled = true;
+    });
+    try {
+      await api("PUT", `api/cabinet/ratings/${encodeURIComponent(card.dataset.drink)}`, {
+        tier: button.dataset.tier,
+        review: "",
+      });
+      await refreshAll();
+    } catch (error) {
+      card.querySelectorAll("button").forEach((b) => {
+        b.disabled = false;
+      });
+      alert(error.message);
+    }
+  });
+  $("unrated-more").onclick = () => {
+    unratedShown += UNRATED_PAGE;
+    renderUnrated();
   };
 
   /* ---------- images ---------- */
@@ -701,6 +771,12 @@
     };
     if (pending.image && pending.image.startsWith("data:")) body.imageDataUrl = pending.image;
     await api("POST", "api/cabinet/drinks", body);
+    resetSmart();
+    $("smart-status").textContent = "В индексе ✓";
+    await refreshAll();
+  };
+
+  const resetSmart = () => {
     pending.parsed = null;
     pending.image = null;
     pending.userPhoto = false;
@@ -712,10 +788,52 @@
     });
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
+    renderSimilar([]);
     clearVoice();
-    $("smart-status").textContent = "В индексе ✓";
-    await refreshAll();
   };
+
+  // Если ИИ распознал банку, которая уже есть в индексе, — предлагаем оценить её,
+  // а не заводить дубль. Тир и отзыв берём из того же разбора.
+  const renderSimilar = (similar) => {
+    const box = $("similar-box");
+    box.hidden = !similar.length;
+    if (!similar.length) {
+      $("similar-list").innerHTML = "";
+      return;
+    }
+    $("similar-list").innerHTML = similar
+      .map(
+        (drink) => `
+        <div class="similar-row" data-drink="${esc(drink.slug)}">
+          <img src="${esc(drink.image)}" alt="" loading="lazy">
+          <div><b>${esc(drink.name)}</b><small>${esc(drink.flavor)}${drink.myTier ? ` · у тебя уже ${esc(drink.myTier)}` : ""}</small></div>
+          <button class="btn" type="button" data-rate-existing>${drink.myTier ? "Обновить оценку" : "Оценить эту"}</button>
+        </div>`,
+      )
+      .join("");
+  };
+
+  $("similar-list").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-rate-existing]");
+    if (!button || !pending.parsed) return;
+    const slug = button.closest(".similar-row").dataset.drink;
+    const parsed = pending.parsed;
+    button.disabled = true;
+    try {
+      await api("PUT", `api/cabinet/ratings/${encodeURIComponent(slug)}`, {
+        tier: TIERS.includes(parsed.tier) ? parsed.tier : "B",
+        review: parsed.review || "",
+      });
+      resetSmart();
+      $("smart-status").textContent = parsed.tierGuessed
+        ? "Оценка сохранена ✓ Тир не был назван — стоит B, поправь в «Моих оценках»."
+        : "Оценка сохранена ✓";
+      await refreshAll();
+    } catch (error) {
+      button.disabled = false;
+      $("smart-status").textContent = error.message;
+    }
+  });
 
   const submitSmart = async (event) => {
     event.preventDefault();
@@ -724,10 +842,13 @@
       $("smart-status").textContent = "Напиши хоть пару слов или надиктуй войсом.";
       return;
     }
+    if ($("btn-smart").disabled) return;
     $("smart-status").textContent = "Нейросеть разбирает…";
+    $("btn-smart").disabled = true;
     try {
-      const { parsed } = await api("POST", "api/cabinet/ai/parse", { text });
+      const { parsed, similar } = await api("POST", "api/cabinet/ai/parse", { text });
       pending.parsed = parsed;
+      renderSimilar(similar || []);
       if (!pending.userPhoto) {
         pending.image = null;
         pending.photoSource = "auto";
@@ -738,8 +859,18 @@
       refreshPhotos();
     } catch (error) {
       $("smart-status").textContent = `${error.message}. Заполни вручную ниже.`;
+      document.querySelector("details.cabinet-ai").open = true;
+    } finally {
+      $("btn-smart").disabled = false;
     }
   };
+
+  $("smart-input").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      $("smart-form").requestSubmit();
+    }
+  });
 
   const submitManual = async () => {
     const parsed = {
@@ -763,11 +894,15 @@
 
   $("smart-form").addEventListener("submit", submitSmart);
   $("btn-confirm").onclick = async () => {
-    if (!pending.parsed) return;
+    if (!pending.parsed || $("btn-confirm").disabled) return;
+    $("btn-confirm").disabled = true;
+    $("smart-status").textContent = "Сохраняю…";
     try {
       await saveDrink(pending.parsed);
     } catch (error) {
       $("smart-status").textContent = error.message;
+    } finally {
+      $("btn-confirm").disabled = false;
     }
   };
   $("btn-retry-photo").onclick = retryPhoto;
@@ -784,6 +919,16 @@
     $(id).addEventListener("input", (event) => {
       if (pending.parsed) {
         pending.parsed[field] = event.target.value;
+        if (field === "tier") {
+          pending.parsed.tierGuessed = false;
+          $("parsed-tier").textContent = event.target.value;
+          $("parsed-tier").style.opacity = "";
+          $("parsed-tier").title = "Тир выбран вручную";
+          updatePreviewImage();
+        }
+        if (field === "review") {
+          $("parsed-review").textContent = event.target.value || "Отзыва нет.";
+        }
         $("parsed-title").textContent = `${pending.parsed.brand} — ${pending.parsed.name}`;
         $("parsed-sub").textContent = [pending.parsed.flavor, pending.parsed.edition]
           .filter(Boolean)

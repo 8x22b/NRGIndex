@@ -11,7 +11,14 @@ const {
 } = require("../lib/ai");
 const { saveProcessedImage } = require("../lib/images");
 const history = require("../lib/history");
-const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
+const {
+  ACCENTS,
+  touchContent,
+  uniqueSlug,
+  ratingsForDrink,
+  relationsForDrink,
+  findSimilarDrinks,
+} = require("../lib/content");
 const { drinkToAdmin } = require("../lib/serialize");
 
 function drinkFields(body) {
@@ -53,11 +60,12 @@ module.exports = (db, auth, config) => {
   router.get("/me", (req, res) => {
     const ratings = db
       .prepare(
-        `SELECT d.slug AS drink, r.tier_id AS tier, r.review
+        `SELECT d.slug AS drink, d.name, d.flavor, d.image_path AS image, r.tier_id AS tier, r.review
          FROM ratings r JOIN drinks d ON d.id = r.drink_id
-         WHERE r.user_id = ? ORDER BY r.updated_at DESC`,
+         WHERE r.user_id = ? ORDER BY r.updated_at DESC, d.id DESC`,
       )
-      .all(req.user.id);
+      .all(req.user.id)
+      .map((row) => ({ ...row, image: row.image || "assets/favicon.svg" }));
     const added = db
       .prepare("SELECT id, slug FROM drinks WHERE created_by = ? ORDER BY id DESC")
       .all(req.user.id);
@@ -195,7 +203,15 @@ module.exports = (db, auth, config) => {
     checkAiLimit(req.user.id);
     const text = str(req.body?.text, "Текст", { min: 2, max: 2000 });
     const parsed = await parseDrinkText(text, aiSettings(db));
-    res.json({ parsed });
+    const similar = findSimilarDrinks(db, parsed).map((drink) => ({
+      ...drink,
+      myTier: db
+        .prepare(
+          "SELECT r.tier_id AS tier FROM ratings r JOIN drinks d ON d.id = r.drink_id WHERE d.slug = ? AND r.user_id = ?",
+        )
+        .get(drink.slug, req.user.id)?.tier || null,
+    }));
+    res.json({ parsed, similar });
   });
 
   router.post("/ai/transcribe", async (req, res) => {

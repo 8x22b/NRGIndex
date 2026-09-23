@@ -46,4 +46,74 @@ function relationsForDrink(db, drinkId) {
     .map((row) => row.related_id);
 }
 
-module.exports = { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink };
+// Слова для сравнения названий: нижний регистр, ё→е, без знаков, без «шумовых» слов.
+const NOISE_WORDS = new Set([
+  "energy", "drink", "энергетик", "энергетический", "напиток", "вкус", "со", "и", "the",
+  "original", "classic", "оригинал", "оригинальный", "классический", "классика",
+]);
+function matchWords(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 1 && !NOISE_WORDS.has(word));
+}
+
+/**
+ * Ищет уже заведённые банки, похожие на { brand, name, flavor } — чтобы ИИ-поток
+ * не плодил дубли. Бренд должен совпасть хотя бы одним словом; дальше считаем
+ * долю совпавших слов названия/вкуса. Возвращает до `limit` лучших с score 0..1.
+ */
+function findSimilarDrinks(db, { brand = "", name = "", flavor = "" } = {}, { limit = 3, min = 0.6 } = {}) {
+  const brandWords = new Set(matchWords(brand));
+  const wanted = new Set(matchWords(`${name} ${flavor}`).filter((word) => !brandWords.has(word)));
+  if (!brandWords.size && !wanted.size) return [];
+  const rows = db
+    .prepare("SELECT id, slug, brand, name, flavor, edition, image_path FROM drinks WHERE is_published = 1")
+    .all();
+  const scored = [];
+  for (const row of rows) {
+    const rowBrand = new Set(matchWords(row.brand));
+    if (brandWords.size && ![...brandWords].some((word) => rowBrand.has(word))) continue;
+    const words = (text) => new Set(matchWords(text).filter((word) => !rowBrand.has(word)));
+    const nameWords = words(row.name);
+    let score;
+    if (!wanted.size) {
+      // назвали только бренд: похожа лишь «голая» банка бренда
+      score = nameWords.size ? 0 : 1;
+    } else {
+      // вкус часто продублирован по-русски («Apple Kiwi» / «яблоко киви»),
+      // поэтому сравниваем с названием, вкусом и их объединением — берём лучшее
+      const variants = [nameWords, words(row.flavor), words(`${row.name} ${row.flavor} ${row.edition}`)];
+      score = 0;
+      for (const have of variants) {
+        if (!have.size) continue;
+        let hit = 0;
+        for (const word of wanted) if (have.has(word)) hit++;
+        score = Math.max(score, hit / Math.max(wanted.size, have.size));
+      }
+    }
+    if (score >= min) scored.push({ row, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score || a.row.id - b.row.id)
+    .slice(0, limit)
+    .map(({ row, score }) => ({
+      slug: row.slug,
+      brand: row.brand,
+      name: row.name,
+      flavor: row.flavor,
+      image: row.image_path || "assets/favicon.svg",
+      score: Math.round(score * 100) / 100,
+    }));
+}
+
+module.exports = {
+  ACCENTS,
+  touchContent,
+  uniqueSlug,
+  ratingsForDrink,
+  relationsForDrink,
+  findSimilarDrinks,
+  matchWords,
+};

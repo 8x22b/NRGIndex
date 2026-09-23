@@ -1,5 +1,6 @@
 const express = require("express");
 const { formatDate, userToParticipant, drinkToPublic } = require("../lib/serialize");
+const { notFound } = require("../lib/errors");
 
 function ratingsMap(db) {
   const rows = db
@@ -78,6 +79,98 @@ module.exports = (db) => {
       drinks: drinks.map((drink) =>
         drinkToPublic(drink, ratings.get(drink.id) || {}, relations.get(drink.id) || []),
       ),
+    });
+  });
+
+  // Публичный профиль участника: личные оценки, распределение по тирам,
+  // совпадение с общим мнением и добавленные банки. Скрытые/неактивные — 404.
+  router.get("/profile/:username", (req, res) => {
+    const user = db
+      .prepare(
+        `SELECT id, username, display_name, initials, title, color, created_at
+         FROM users WHERE username = ? AND is_active = 1 AND is_public = 1`,
+      )
+      .get(String(req.params.username || "").slice(0, 64));
+    if (!user) throw notFound("Профиль не найден");
+
+    const tiers = db.prepare("SELECT id, title, note, score FROM tiers ORDER BY position, id").all();
+    const scoreOf = new Map(tiers.map((tier) => [tier.id, tier.score]));
+    const rows = db
+      .prepare(
+        `SELECT d.id, d.slug, d.brand, d.name, d.flavor, d.edition, d.image_path, d.accent_a, d.accent_b,
+                d.created_by, r.tier_id AS tier, r.review, r.updated_at
+         FROM ratings r JOIN drinks d ON d.id = r.drink_id
+         WHERE r.user_id = ? AND d.is_published = 1
+         ORDER BY r.updated_at DESC, d.id DESC`,
+      )
+      .all(user.id);
+
+    // средний балл остальных публичных участников по каждой банке
+    const others = new Map(
+      db
+        .prepare(
+          `SELECT r.drink_id, AVG(t.score) AS avg, COUNT(*) AS n
+           FROM ratings r JOIN users u ON u.id = r.user_id JOIN tiers t ON t.id = r.tier_id
+           WHERE u.is_active = 1 AND u.is_public = 1 AND r.user_id <> ?
+           GROUP BY r.drink_id`,
+        )
+        .all(user.id)
+        .map((row) => [row.drink_id, row]),
+    );
+
+    const distribution = Object.fromEntries(tiers.map((tier) => [tier.id, 0]));
+    let scoreSum = 0;
+    let diffSum = 0;
+    let compared = 0;
+    const ratings = rows.map((row) => {
+      distribution[row.tier] = (distribution[row.tier] || 0) + 1;
+      const score = scoreOf.get(row.tier) || 0;
+      scoreSum += score;
+      const other = others.get(row.id);
+      let othersAvg = null;
+      if (other) {
+        othersAvg = Math.round(other.avg * 10) / 10;
+        diffSum += Math.abs(score - other.avg);
+        compared += 1;
+      }
+      return {
+        drink: row.slug,
+        brand: row.brand,
+        name: row.name,
+        flavor: row.flavor,
+        edition: row.edition,
+        image: row.image_path || "assets/favicon.svg",
+        accent: [row.accent_a, row.accent_b],
+        tier: row.tier,
+        review: row.review,
+        othersAvg,
+        othersVotes: other?.n || 0,
+        addedByUser: row.created_by === user.id,
+        updatedAt: formatDate(row.updated_at),
+      };
+    });
+    const added = db
+      .prepare("SELECT COUNT(*) AS n FROM drinks WHERE created_by = ? AND is_published = 1")
+      .get(user.id).n;
+    const avg = ratings.length ? scoreSum / ratings.length : null;
+    // 100% — ставит ровно как все; каждый тир расхождения в среднем = минус 25%
+    const agreement = compared ? Math.max(0, Math.round(100 - (diffSum / compared) * 25)) : null;
+
+    res.json({
+      profile: {
+        ...userToParticipant(user),
+        since: formatDate(user.created_at),
+      },
+      tiers,
+      stats: {
+        ratings: ratings.length,
+        reviews: ratings.filter((rating) => rating.review.trim()).length,
+        added,
+        average: avg === null ? null : Math.round(avg * 10) / 10,
+        agreement,
+        distribution,
+      },
+      ratings,
     });
   });
 

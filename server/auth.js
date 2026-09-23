@@ -53,7 +53,7 @@ function createAuth(db, config) {
     deleteUserSessions: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
     findSession: db.prepare(`
       SELECT u.id, u.username, u.display_name, u.role, u.title, u.is_active,
-             u.must_change_password, u.initials, u.color
+             u.must_change_password, u.initials, u.color, u.is_public
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > datetime('now')
@@ -110,6 +110,7 @@ function createAuth(db, config) {
       mustChangePassword: Boolean(row.must_change_password),
       initials: row.initials,
       color: row.color,
+      isPublic: Boolean(row.is_public),
     };
   }
 
