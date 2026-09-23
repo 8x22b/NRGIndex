@@ -219,17 +219,120 @@ async function transcribeAudio(buffer, mimeType, { key, sttModel, baseUrl = DEFA
   return text.slice(0, 2000);
 }
 
-async function searchCanImages(query, { fetchImpl = fetch } = {}) {
-  const url =
-    "https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*" +
-    `&generator=search&gsrsearch=${encodeURIComponent(`${query} energy drink can`)}` +
-    "&gsrnamespace=6&gsrlimit=20&prop=imageinfo&iiprop=url%7Csize&iiurlwidth=480";
-  const res = await fetchImpl(url);
-  if (!res.ok) throw new ApiError(502, "Поиск фото недоступен", "photo_search_failed");
-  const data = await res.json();
+const PHOTO_UA = "NRGIndex/2.0 (energy drink tier list)";
+const PHOTO_TIMEOUT_MS = 8000;
+const PHOTO_LIMIT = 16;
+const RASTER_MIME = /^image\/(jpeg|png|webp)$/;
+
+// Разбивает поля на уникальные слова без спецсимволов поискового синтаксиса.
+function photoTerms(...parts) {
+  const seen = new Set();
+  const words = [];
+  for (const word of parts.join(" ").split(/\s+/)) {
+    const clean = word.replace(/[^\p{L}\p{N}'.-]/gu, "").slice(0, 40);
+    const key = clean.toLowerCase();
+    if (clean.length < 2 || seen.has(key)) continue;
+    seen.add(key);
+    words.push(clean);
+  }
+  return words.slice(0, 12).join(" ");
+}
+
+async function fetchJson(fetchImpl, url) {
+  const res = await fetchImpl(url, {
+    headers: { "user-agent": PHOTO_UA, accept: "application/json" },
+    signal: AbortSignal.timeout(PHOTO_TIMEOUT_MS),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+const lowerWords = (text) =>
+  String(text || "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 1);
+
+// Open Food Facts: фронтальные фото упаковок. Фильтр категории режет слишком много
+// (у половины банок её нет), поэтому ищем шире, отсекаем чужие бренды и
+// поднимаем выше те, где в названии совпали слова названия/вкуса.
+async function searchOpenFoodFacts(terms, brand, fetchImpl) {
+  const data = await fetchJson(
+    fetchImpl,
+    `https://search.openfoodfacts.org/search?q=${encodeURIComponent(terms)}` +
+      "&page_size=30&fields=code,product_name,brands,image_front_url",
+  );
+  const brandWords = lowerWords(brand);
+  const wanted = new Set(lowerWords(terms).filter((word) => !brandWords.includes(word)));
+  return (data?.hits || [])
+    .filter((hit) => /^https:\/\/images\.openfoodfacts\.org\//.test(hit?.image_front_url || ""))
+    .map((hit, order) => {
+      const brands = [].concat(hit.brands || []).join(", ");
+      const name = String(hit.product_name || "");
+      const score = lowerWords(name).filter((word) => wanted.has(word)).length;
+      return { hit, brands, name, score, order };
+    })
+    .filter(({ brands }) => {
+      if (!brandWords.length) return true;
+      const have = lowerWords(brands);
+      return brandWords.some((word) => have.includes(word));
+    })
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .map(({ hit, brands, name }) => ({
+      url: hit.image_front_url,
+      title: [brands, name].filter(Boolean).join(" · ").slice(0, 120),
+      source: "openfoodfacts",
+    }));
+}
+
+async function searchWikimedia(terms, fetchImpl) {
+  const data = await fetchJson(
+    fetchImpl,
+    "https://commons.wikimedia.org/w/api.php?action=query&format=json" +
+      `&generator=search&gsrsearch=${encodeURIComponent(`${terms} energy drink`)}` +
+      "&gsrnamespace=6&gsrlimit=12&prop=imageinfo&iiprop=url%7Cmime&iiurlwidth=480",
+  );
   return Object.values(data?.query?.pages || {})
-    .map((page) => page?.imageinfo?.[0]?.thumburl || page?.imageinfo?.[0]?.url)
-    .filter(Boolean);
+    .sort((a, b) => (a.index || 0) - (b.index || 0))
+    .map((page) => ({ page, info: page?.imageinfo?.[0] }))
+    .filter(({ info }) => info && RASTER_MIME.test(info.mime || ""))
+    .map(({ page, info }) => ({
+      url: info.thumburl || info.url,
+      title: String(page.title || "").replace(/^File:/, "").replace(/\.\w+$/, "").slice(0, 120),
+      source: "wikimedia",
+    }))
+    .filter((item) => /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(item.url));
+}
+
+/**
+ * Ищет фото банки по бренду, названию и вкусу.
+ * Принимает строку (старый формат) или { brand, name, flavor }.
+ * Источники опрашиваются параллельно; упавший источник не валит весь поиск.
+ */
+async function searchCanImages(query, { fetchImpl = fetch } = {}) {
+  const fields = typeof query === "string" ? { name: query } : query || {};
+  const product = photoTerms(fields.brand || "", fields.name || "");
+  const full = photoTerms(fields.brand || "", fields.name || "", fields.flavor || "");
+  if (!full) return [];
+
+  const settled = await Promise.allSettled([
+    searchOpenFoodFacts(full, fields.brand || "", fetchImpl),
+    searchWikimedia(product || full, fetchImpl),
+  ]);
+  if (settled.every((item) => item.status === "rejected")) {
+    throw new ApiError(502, "Поиск фото недоступен", "photo_search_failed");
+  }
+  const seen = new Set();
+  const results = [];
+  for (const item of settled) {
+    if (item.status !== "fulfilled") continue;
+    for (const hit of item.value) {
+      if (seen.has(hit.url)) continue;
+      seen.add(hit.url);
+      results.push(hit);
+    }
+  }
+  return results.slice(0, PHOTO_LIMIT);
 }
 
 module.exports = {
@@ -241,6 +344,7 @@ module.exports = {
   audioFormat,
   aiSettings,
   searchCanImages,
+  photoTerms,
   TIERS,
   SYSTEM_PROMPT,
   DEFAULT_BASE_URL,

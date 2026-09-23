@@ -1,5 +1,5 @@
 const express = require("express");
-const { notFound, tooMany } = require("../lib/errors");
+const { notFound, tooMany, badRequest } = require("../lib/errors");
 const { str, oneOf } = require("../lib/validate");
 const {
   parseDrinkText,
@@ -206,10 +206,42 @@ module.exports = (db, auth, config) => {
     res.json({ text });
   });
 
+  // Поиск фото дёргается на каждую правку полей — свой лимит и короткий кэш,
+  // чтобы не съедать ИИ-лимит и не долбить внешние API одинаковыми запросами.
+  const photoUsage = new Map();
+  const PHOTO_LIMIT = 300;
+  const photoCache = new Map();
+  const PHOTO_CACHE_MS = 30 * 60 * 1000;
+  const PHOTO_CACHE_MAX = 300;
+
+  function checkPhotoLimit(userId) {
+    const now = Date.now();
+    const entry = photoUsage.get(userId);
+    if (!entry || entry.resetAt < now) {
+      photoUsage.set(userId, { count: 1, resetAt: now + AI_WINDOW_MS });
+      return;
+    }
+    entry.count += 1;
+    if (entry.count > PHOTO_LIMIT) throw tooMany("Лимит поиска фото: 300 в час");
+  }
+
   router.get("/ai/photo-search", async (req, res) => {
-    checkAiLimit(req.user.id);
-    const query = str(req.query?.q, "Запрос", { min: 2, max: 120 });
-    const images = await searchCanImages(query);
+    const opt = (key, label) => str(req.query?.[key] ?? "", label, { required: false, max: 120 });
+    const fields = {
+      brand: opt("brand", "Бренд"),
+      name: opt("name", "Название") || opt("q", "Запрос"),
+      flavor: opt("flavor", "Вкус"),
+    };
+    const key = [fields.brand, fields.name, fields.flavor].join("|").toLowerCase().trim();
+    if (key.replace(/\|/g, "").length < 2) throw badRequest("Запрос: минимум 2 символа");
+
+    const cached = photoCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return res.json({ images: cached.images });
+
+    checkPhotoLimit(req.user.id);
+    const images = await searchCanImages(fields);
+    if (photoCache.size >= PHOTO_CACHE_MAX) photoCache.delete(photoCache.keys().next().value);
+    photoCache.set(key, { images, expiresAt: Date.now() + PHOTO_CACHE_MS });
     res.json({ images });
   });
 
