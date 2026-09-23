@@ -633,3 +633,24 @@ test("CSP разрешает blob: для картинок и медиа (пре
   assert.ok(part("img-src").includes("blob:"), `img-src должен разрешать blob: (${part("img-src")})`);
   assert.ok(part("media-src").includes("blob:"), `media-src должен разрешать blob: (${part("media-src")})`);
 });
+
+test("шрифты отдаются локально и кешируются надолго", async () => {
+  const page = await fetch(`${ctx.base}/`);
+  const html = await page.text();
+  assert.ok(html.includes("fonts/fonts.css"), "страница должна подключать локальные шрифты");
+  assert.ok(!html.includes("fonts.googleapis.com"), "внешние Google Fonts больше не нужны");
+
+  const css = await fetch(`${ctx.base}/fonts/fonts.css`);
+  assert.equal(css.status, 200);
+  assert.ok((await css.text()).includes("@font-face"));
+
+  const font = await fetch(`${ctx.base}/fonts/xn7gYHE41ni1AdIRggexSg.woff2`);
+  assert.equal(font.status, 200);
+  assert.ok((font.headers.get("cache-control") || "").includes("immutable"));
+});
+
+test("текстовые ответы сжимаются gzip", async () => {
+  const res = await fetch(`${ctx.base}/styles.css`, { headers: { "accept-encoding": "gzip" } });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("content-encoding"), "gzip");
+});
