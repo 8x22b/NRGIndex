@@ -225,12 +225,35 @@ function decodeAudio(base64) {
   return buffer;
 }
 
-async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, fetchImpl = fetch } = {}) {
+const STT_CLEANUP_PROMPT = [
+  "Ты аккуратно редактируешь результат распознавания русской речи.",
+  "Исправь только очевидные ошибки распознавания, регистр и пунктуацию.",
+  "Сохрани все исходные слова и смысл. Не добавляй факты, названия, оценки или слова, которых нет в исходнике.",
+  "Если фраза неясна, оставь сомнительный фрагмент как есть. Верни только JSON без markdown: {\\\"text\\\":\\\"...\\\"}.",
+].join("\n");
+
+async function refineTranscription(text, { parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model, fetchImpl = fetch } = {}) {
+  const key = parseKey || textApiKey;
+  if (!key) return text;
+  const baseUrl = parseBaseUrl || textBaseUrl || DEFAULT_BASE_URL;
+  const result = await requestParsedJson(
+    [
+      { role: "system", content: STT_CLEANUP_PROMPT },
+      { role: "user", content: String(text).slice(0, 2000) },
+    ],
+    { key, model: parseModel || model || DEFAULT_MODEL, baseUrl, fetchImpl },
+  );
+  const cleaned = String(result?.text ?? "").trim();
+  if (!cleaned) throw new ApiError(502, "Модель исправления STT вернула пустой текст", "ai_bad_response");
+  return cleaned.slice(0, 2000);
+}
+
+async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, textModel, fetchImpl = fetch } = {}) {
   key = sttKey || key;
   const effectiveBaseUrl = sttBaseUrl || baseUrl || DEFAULT_BASE_URL;
   requireKey(key);
   const format = audioFormat(mimeType);
-  const model = sttModel || DEFAULT_STT_MODEL;
+  const sttModelEffective = sttModel || DEFAULT_STT_MODEL;
   const url = `${effectiveBaseUrl}/audio/transcriptions`;
   let init;
   if (isOpenRouter(effectiveBaseUrl)) {
@@ -238,7 +261,7 @@ async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBas
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders(key) },
       body: JSON.stringify({
-        model,
+        model: sttModelEffective,
         input_audio: { data: buffer.toString("base64"), format },
         language: "ru",
         temperature: 0,
@@ -248,7 +271,7 @@ async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBas
     // OpenAI-совместимые провайдеры принимают multipart/form-data
     const form = new FormData();
     form.append("file", new Blob([buffer], { type: String(mimeType).split(";")[0] }), `voice.${format}`);
-    form.append("model", model);
+    form.append("model", sttModelEffective);
     form.append("language", "ru");
     form.append("temperature", "0");
     init = { method: "POST", headers: authHeaders(key), body: form };
@@ -258,7 +281,15 @@ async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBas
   const json = await res.json();
   const text = String(json?.text || "").trim();
   if (!text) throw new ApiError(422, "В записи не удалось разобрать речь", "stt_empty");
-  return text.slice(0, 2000);
+  return refineTranscription(text.slice(0, 2000), {
+    parseKey,
+    textApiKey,
+    parseBaseUrl,
+    textBaseUrl,
+    parseModel,
+    model: parseModel || textModel,
+    fetchImpl,
+  });
 }
 
 const PHOTO_UA = "NRGIndex/2.0 (energy drink tier list)";
@@ -311,7 +342,9 @@ async function searchOpenFoodFacts(terms, brand, fetchImpl) {
     .map((hit, order) => {
       const brands = [].concat(hit.brands || []).join(", ");
       const name = String(hit.product_name || "");
-      const score = lowerWords(name).filter((word) => wanted.has(word)).length;
+      const nameWords = lowerWords(name);
+      const brandMatches = lowerWords(brands).filter((word) => brandWords.includes(word)).length;
+      const score = nameWords.filter((word) => wanted.has(word)).length + brandMatches * 3;
       return { hit, brands, name, score, order };
     })
     .filter(({ brands }) => {
@@ -344,14 +377,18 @@ async function searchWikimedia(terms, fetchImpl) {
     .sort((a, b) => (a.index || 0) - (b.index || 0))
     .map((page) => ({ page, info: page?.imageinfo?.[0] }))
     .filter(({ info }) => info && RASTER_MIME.test(info.mime || ""))
-    .map(({ page, info }) => {
+    .map(({ page, info }, order) => {
       const title = String(page.title || "").replace(/^File:/, "").replace(/\.\w+$/, "").slice(0, 120);
+      const wanted = new Set(lowerWords(terms));
+      const relevance = lowerWords(title).filter((word) => wanted.has(word)).length;
       return {
         url: info.thumburl || info.url,
         title,
         source: "wikimedia",
         // PNG на Commons почти всегда вырезка с альфой; плюс явные слова в названии
         stockHint: info.mime === "image/png" || STOCK_HINT.test(page.title || ""),
+        relevance,
+        order,
       };
     })
     .filter((item) => /^https:\/\/(upload|thumb)\.wikimedia\.org\//.test(item.url));
@@ -382,13 +419,15 @@ async function searchCanImages(query, { fetchImpl = fetch } = {}) {
   for (const item of settled) {
     if (item.status !== "fulfilled") continue;
     for (const hit of item.value) {
-      const clean = { url: hit.url, title: hit.title, source: hit.source, stockHint: Boolean(hit.stockHint) };
-      const prev = seen.get(clean.url);
+      if (!hit?.url) continue;
+      const canonicalUrl = String(hit.url).split("?")[0];
+      const clean = { url: hit.url, title: hit.title, source: hit.source, stockHint: Boolean(hit.stockHint), relevance: Number(hit.relevance) || 0 };
+      const prev = seen.get(canonicalUrl);
       if (prev) {
         prev.stockHint ||= clean.stockHint;
         continue;
       }
-      seen.set(clean.url, clean);
+      seen.set(canonicalUrl, clean);
       results.push(clean);
     }
   }
@@ -407,6 +446,7 @@ module.exports = {
   normalizeBaseUrl,
   providerFailureDetail,
   transcribeAudio,
+  refineTranscription,
   decodeAudio,
   audioFormat,
   aiSettings,
