@@ -567,14 +567,18 @@
     const settings = state.data.settings;
     $("s-title").value = settings.siteTitle || "";
     $("s-description").value = settings.siteDescription || "";
-    $("s-model").value = settings.openrouterModel || "";
+    $("s-model").value = settings.textModel || settings.openrouterModel || "";
     $("s-stt-model").value = settings.sttModel || "";
-    $("s-base-url").value = settings.aiBaseUrl || "";
-    $("s-model").placeholder = settings.defaults?.openrouterModel || "";
+    $("s-base-url").value = settings.textBaseUrl || settings.aiBaseUrl || "";
+    $("s-model").placeholder = settings.defaults?.textModel || settings.defaults?.openrouterModel || "";
     $("s-stt-model").placeholder = settings.defaults?.sttModel || "";
-    $("s-base-url").placeholder = settings.defaults?.aiBaseUrl || "";
+    $("s-base-url").placeholder = settings.defaults?.textBaseUrl || settings.defaults?.aiBaseUrl || "";
     $("s-key").value = "";
-    $("s-key").placeholder = settings.openrouterKeySet
+    $("s-key").placeholder = settings.textApiKeySet
+      ? "задан — оставьте пустым, чтобы не менять"
+      : "не задан";
+    $("s-openrouter-key").value = "";
+    $("s-openrouter-key").placeholder = settings.openrouterKeySet
       ? "задан — оставьте пустым, чтобы не менять"
       : "не задан";
     // прокси из env в поле не подставляем, иначе при сохранении он «переедет» в БД
@@ -601,12 +605,13 @@
     const payload = {
       siteTitle: $("s-title").value,
       siteDescription: $("s-description").value,
-      openrouterModel: $("s-model").value.trim(),
+      textModel: $("s-model").value.trim(),
       sttModel: $("s-stt-model").value.trim(),
-      aiBaseUrl: $("s-base-url").value.trim(),
+      textBaseUrl: $("s-base-url").value.trim(),
       aiProxyUrl: $("s-proxy").value.trim(),
     };
-    if ($("s-key").value) payload.openrouterKey = $("s-key").value;
+    if ($("s-key").value) payload.textApiKey = $("s-key").value;
+    if ($("s-openrouter-key").value) payload.openrouterKey = $("s-openrouter-key").value;
     try {
       await api("PUT", "api/admin/settings", payload);
       await refresh();
@@ -618,8 +623,8 @@
 
   $("btn-key-clear").onclick = async () => {
     const ok = await window.nrgConfirm({
-      title: "Убрать API-ключ?",
-      message: "Разбор текста и распознавание голоса перестанут работать, пока не задан новый ключ.",
+      title: "Убрать ключ STT?",
+      message: "Распознавание голоса перестанет работать, пока не задан новый OpenRouter ключ.",
       details: ["Ключ не сохраняется в журнале — откатить не получится"],
       confirmText: "Убрать ключ",
     });
@@ -628,6 +633,22 @@
       await api("PUT", "api/admin/settings", { openrouterKey: "" });
       await refresh();
       status("settings-status", "Ключ убран");
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
+  };
+
+  $("btn-text-key-clear").onclick = async () => {
+    const ok = await window.nrgConfirm({
+      title: "Убрать ключ разбора?",
+      message: "Разбор текста перестанет работать, пока не задан новый ключ.",
+      confirmText: "Убрать ключ",
+    });
+    if (!ok) return;
+    try {
+      await api("PUT", "api/admin/settings", { textApiKey: "" });
+      await refresh();
+      status("settings-status", "Ключ разбора убран");
     } catch (error) {
       status("settings-status", error.message, true);
     }

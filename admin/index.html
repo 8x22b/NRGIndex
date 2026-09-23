@@ -197,11 +197,14 @@
         <div class="grid-2">
           <label>Заголовок сайта<input id="s-title" type="text"></label>
           <label>Описание<input id="s-description" type="text"></label>
-          <label>Base URL API (OpenAI-совместимый)<input id="s-base-url" type="url" placeholder="https://openrouter.ai/api/v1"></label>
-          <label>API-ключ
+          <label>Base URL API для разбора текста (OpenAI-совместимый)<input id="s-base-url" type="url" placeholder="https://api.example.com/v1"></label>
+          <label>API-ключ для разбора текста
             <input id="s-key" type="password" placeholder="оставьте пустым — не менять">
           </label>
           <label>Модель для разбора текста<input id="s-model" type="text" placeholder="openai/gpt-4o-mini"></label>
+          <label>OpenRouter API-ключ для STT
+            <input id="s-openrouter-key" type="password" placeholder="оставьте пустым — не менять">
+          </label>
           <label>Модель распознавания речи (STT)<input id="s-stt-model" type="text" placeholder="openai/whisper-large-v3-turbo"></label>
           <label>Прокси для запросов к ИИ<input id="s-proxy" type="text" spellcheck="false" autocapitalize="none" placeholder="пусто — напрямую; http://user:pass@host:3128 или socks5://host:1080"></label>
         </div>
@@ -210,7 +213,8 @@
         <div class="admin-actions">
           <button class="btn" type="submit">Сохранить</button>
           <button class="btn btn--ghost" type="button" id="btn-ai-check">Проверить связь с ИИ</button>
-          <button class="btn btn--ghost" type="button" id="btn-key-clear">Убрать ключ</button>
+          <button class="btn btn--ghost" type="button" id="btn-key-clear">Убрать ключ STT</button>
+          <button class="btn btn--ghost" type="button" id="btn-text-key-clear">Убрать ключ разбора</button>
         </div>
         <p class="form-status" id="settings-status" aria-live="polite"></p>
       </form>

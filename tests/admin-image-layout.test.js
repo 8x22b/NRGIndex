@@ -25,3 +25,11 @@ test("поле похожих занимает отдельную строку �
   assert.match(adminHtml, /class="drink-related"/);
   assert.match(adminHtml, /class="grid-2 drink-accent-fields"/);
 });
+
+test("настройки AI разделяют ключ OpenRouter для STT и ключ разбора текста", () => {
+  assert.match(adminHtml, /id="s-openrouter-key"/);
+  assert.match(adminHtml, /id="s-key"/);
+  assert.match(adminJs, /payload\.textApiKey = \$\("s-key"\)\.value/);
+  assert.match(adminJs, /payload\.openrouterKey = \$\("s-openrouter-key"\)\.value/);
+  assert.match(adminJs, /textBaseUrl: \$\("s-base-url"\)\.value/);
+});
