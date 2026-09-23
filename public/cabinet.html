@@ -61,6 +61,7 @@
           <small id="me-role">—</small>
         </div>
         <div class="cab-profile__meta"><b id="me-count">0</b><span id="me-count-label">оценок</span></div>
+        <a class="btn btn--ghost" id="profile-link" href="profile.html">Мой профиль</a>
         <a class="btn" id="admin-button" href="/admin" hidden>Админ-панель</a>
         <button class="btn btn--ghost" type="button" id="btn-logout">Выйти</button>
       </div>
@@ -86,6 +87,11 @@
         </div>
         <button class="btn btn--big" type="submit" id="btn-smart">✦ Распознать и добавить</button>
         <p class="form-status" id="smart-status" aria-live="polite"></p>
+
+        <div class="similar-box" id="similar-box" hidden>
+          <p class="similar-box__title">Похоже, такая банка уже в индексе — может, просто оценить её?</p>
+          <div id="similar-list"></div>
+        </div>
 
         <div class="parsed-card" id="smart-preview" hidden>
           <img id="parsed-img" alt="Фото банки">
@@ -123,8 +129,8 @@
           <label>Тир
             <select id="m-tier">
               <option value="S">S — запасай ящик</option>
-              <option value="A" selected>A — берём ещё</option>
-              <option value="B">B — рабочий вариант</option>
+              <option value="A">A — берём ещё</option>
+              <option value="B" selected>B — рабочий вариант</option>
               <option value="C">C — по ситуации</option>
               <option value="D">D — энергия ошибки</option>
             </select>
@@ -140,8 +146,21 @@
       </form>
 
       <div class="cabinet-mine">
-        <h3>Мои оценки</h3>
+        <div class="cabinet-mine__head">
+          <h3>Мои оценки</h3>
+          <input id="mine-filter" type="search" placeholder="фильтр по названию" autocomplete="off">
+        </div>
         <div id="cabinet-my-ratings"></div>
+      </div>
+
+      <div class="cabinet-mine" id="unrated-block" hidden>
+        <div class="cabinet-mine__head">
+          <h3>Ещё не оценил</h3>
+          <span class="hint" id="unrated-count"></span>
+        </div>
+        <p class="hint">Банки, которые завели другие. Выбери тир — оценка сразу уйдёт в индекс, отзыв можно дописать потом в «Моих оценках».</p>
+        <div class="unrated-grid" id="unrated-list"></div>
+        <button class="btn btn--ghost" type="button" id="unrated-more" hidden>Показать ещё</button>
       </div>
 
       <details class="cabinet-ai">

@@ -27,6 +27,9 @@ jobs:
       - name: Unit and API tests
         run: npm test
 
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
       - name: "Smoke: сервер стартует и отвечает"
         run: |
           DB_PATH="$RUNNER_TEMP/nrg-ci.db" UPLOADS_DIR="$RUNNER_TEMP/nrg-ci-uploads" PORT=3210 \

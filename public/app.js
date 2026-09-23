@@ -157,6 +157,10 @@
         ? `Личный тирлист участника «${person?.name || ""}». Здесь чужие голоса ни на что не влияют.`
         : `У ${person?.name || "участника"} пока нет выставленных оценок. Места уже накрыты — осталось начать дегустацию.`;
       document.querySelector("#rating-title").textContent = `Стол: ${person?.name || ""}`;
+      viewDescription.insertAdjacentHTML(
+        "beforeend",
+        ` <a class="header-cab" href="profile.html?u=${encodeURIComponent(activeView)}">Профиль и отзывы →</a>`,
+      );
     }
   };
 
@@ -221,7 +225,10 @@
           </div>
           <div class="review-tier ${rating ? "" : "is-empty"}">${esc(rating?.tier || "—")}</div>
           <p class="review-text">${hasReview ? `«${esc(rating.review)}»` : rating ? "Подробное мнение пока не записано." : "Ещё не пробовал или не выставил оценку."}</p>
-          <button class="review-link" type="button" data-person-view="${esc(person.id)}">тирлист →</button>
+          <span class="review-links">
+            <button class="review-link" type="button" data-person-view="${esc(person.id)}">тирлист →</button>
+            <a class="review-link" href="profile.html?u=${encodeURIComponent(person.id)}">профиль →</a>
+          </span>
         </article>
       `;
       })
@@ -272,6 +279,11 @@
     createTabs();
     headerCount.textContent = `${data.drinks.length} ${wordForm(data.drinks.length, ["образец", "образца", "образцов"])}`;
     headerPeople.textContent = `${data.participants.length} ${participantWord(data.participants.length)}`;
+    const heroPeople = document.querySelector("#hero-people");
+    if (heroPeople && data.participants.length) {
+      const n = data.participants.length;
+      heroPeople.textContent = `${n} ${participantWord(n)}. Один общий рейтинг. Никакой объективности — только вкус, настроение и последствия.`;
+    }
     updateNode.textContent = data.updatedAt;
   };
 
@@ -358,6 +370,15 @@
     const meta = document.querySelector('meta[name="description"]');
     if (meta && data.site?.description) meta.setAttribute("content", data.site.description);
     refreshChrome();
+    // диплинки: ?view=<username> — чей тирлист, ?drink=<slug> — сразу открыть карточку
+    const params = new URLSearchParams(location.search);
+    const view = params.get("view");
+    if (view && getParticipant(view)) activeView = view;
     renderBoard();
+    const drinkParam = params.get("drink");
+    if (drinkParam && getDrink(drinkParam)) {
+      history.replaceState(null, "", location.pathname + location.hash);
+      openDrink(drinkParam);
+    }
   })();
 })();
