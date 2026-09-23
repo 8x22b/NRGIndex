@@ -248,7 +248,7 @@ async function refineTranscription(text, { parseKey, textApiKey, parseBaseUrl, t
   return cleaned.slice(0, 2000);
 }
 
-async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, textModel, fetchImpl = fetch } = {}) {
+async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model: textModel, fetchImpl = fetch } = {}) {
   key = sttKey || key;
   const effectiveBaseUrl = sttBaseUrl || baseUrl || DEFAULT_BASE_URL;
   requireKey(key);
