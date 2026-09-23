@@ -27,6 +27,27 @@
   };
 
   const state = { me: null, data: null, tab: "drinks", removeImage: false };
+  const remoteImageToDataUrl = async (value) => {
+    let url;
+    try {
+      url = new URL(value);
+    } catch {
+      throw new Error("Укажите корректную ссылку на картинку");
+    }
+    if (!["http:", "https:"].includes(url.protocol)) {
+      throw new Error("Ссылка должна начинаться с http:// или https://");
+    }
+    const response = await fetch(url, { mode: "cors" });
+    if (!response.ok) throw new Error(`Не удалось загрузить картинку (HTTP ${response.status})`);
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) throw new Error("Ссылка ведёт не на изображение");
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Не удалось прочитать картинку"));
+      reader.readAsDataURL(blob);
+    });
+  };
   const status = (id, message, isError = false) => {
     const node = $(id);
     if (!node) return;
@@ -210,6 +231,25 @@
       event.target.value = "";
     }
   });
+
+  $("btn-drink-image-url").onclick = async () => {
+    const value = $("d-image-url").value.trim();
+    if (!value) return;
+    try {
+      status("drink-status", "Загружаю картинку по ссылке…");
+      const dataUrl = await remoteImageToDataUrl(value);
+      const { path, accent } = await api("POST", "api/uploads", { dataUrl });
+      state.removeImage = false;
+      $("d-image-path").value = path;
+      $("d-accent-a").value = accent[0];
+      $("d-accent-b").value = accent[1];
+      $("d-image-preview").src = path;
+      $("d-image-preview").hidden = false;
+      status("drink-status", "Картинка загружена и обработана ✓");
+    } catch (error) {
+      status("drink-status", error.message, true);
+    }
+  };
 
   $("d-image-path").addEventListener("input", () => {
     const preview = $("d-image-preview");

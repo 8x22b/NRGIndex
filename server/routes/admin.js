@@ -62,6 +62,22 @@ module.exports = (db, auth, config) => {
     };
   }
 
+  function imageReference(value) {
+    const image = str(value ?? "", "Картинка", { required: false, max: 300 });
+    if (!image) return image;
+    if (image.startsWith("/") || image.startsWith("assets/")) return image;
+    let parsed;
+    try {
+      parsed = new URL(image);
+    } catch {
+      throw badRequest("Картинка должна быть URL или путём /uploads/... или assets/...");
+    }
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw badRequest("Картинка должна использовать http:// или https://");
+    }
+    return parsed.toString();
+  }
+
   router.get("/data", (req, res) => {
     const drinks = db
       .prepare("SELECT * FROM drinks ORDER BY id")
@@ -104,7 +120,7 @@ module.exports = (db, auth, config) => {
       : null;
     const imagePath = image
       ? image.path
-      : str(req.body?.image ?? "", "Картинка", { required: false, max: 300 });
+      : imageReference(req.body?.image);
     const accent =
       image?.accent ||
       ACCENTS[db.prepare("SELECT COUNT(*) AS n FROM drinks").get().n % ACCENTS.length];
@@ -154,6 +170,7 @@ module.exports = (db, auth, config) => {
       : req.body?.removeImage
         ? ""
         : drink.image_path;
+    const externalImage = req.body?.imageDataUrl ? imagePath : imageReference(req.body?.image ?? imagePath);
     const accentA = fields.accentA || image?.accent?.[0] || drink.accent_a;
     const accentB = fields.accentB || image?.accent?.[1] || drink.accent_b;
     db.prepare(
@@ -165,7 +182,7 @@ module.exports = (db, auth, config) => {
       fields.name,
       fields.flavor,
       fields.edition,
-      imagePath,
+      externalImage,
       fields.sourceLabel,
       accentA,
       accentB,
