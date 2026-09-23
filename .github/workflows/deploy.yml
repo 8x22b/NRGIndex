@@ -30,6 +30,9 @@ jobs:
       - name: Unit and API tests
         run: npm test
 
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
   deploy:
     name: Deploy site
     needs: test
