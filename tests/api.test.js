@@ -490,6 +490,42 @@ test("настройки ИИ: base URL и STT-модель, кривой URL о
   assert.match(entry.details, /Base URL: «https:\/\/openrouter.ai\/api\/v1» → «https:\/\/llm.example\/v1»/);
 });
 
+test("настройки ИИ: прокси — пароль скрыт, маска не затирает, журнал без секрета", async () => {
+  const bad = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { aiProxyUrl: "ftp://x:21" },
+  });
+  assert.equal(bad.status, 400);
+
+  const set = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { aiProxyUrl: "http://nrg:pr0xy-pass@10.0.0.5:3128" },
+  });
+  assert.equal(set.status, 200);
+  let data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.aiProxyUrl, "http://nrg:***@10.0.0.5:3128");
+  assert.equal(JSON.stringify(data.json).includes("pr0xy-pass"), false);
+
+  // форма шлёт обратно замаскированный адрес — сохранённый пароль не должен пропасть
+  const again = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { aiProxyUrl: data.json.settings.aiProxyUrl },
+  });
+  assert.equal(again.status, 200);
+  assert.deepEqual(again.json.changed, []);
+
+  const off = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { aiProxyUrl: "" },
+  });
+  assert.deepEqual(off.json.changed, ["ai_proxy_url"]);
+  data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.aiProxyUrl, "");
+  const entries = data.json.audit.filter((row) => row.action === "admin.settings.update");
+  assert.ok(entries.some((row) => /Прокси для ИИ: (задан|убран)/.test(row.details)));
+  assert.equal(entries.some((row) => row.details.includes("10.0.0.5")), false);
+});
+
 test("транскрибация: валидация входа", async () => {
   const anon = await request(ctx.base, "POST", "/api/cabinet/ai/transcribe", {
     body: { audio: "AAAA", mimeType: "audio/webm" },

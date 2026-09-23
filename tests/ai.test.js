@@ -191,3 +191,26 @@ test("searchCanImages: один источник упал — отдаём вт�
   const down = async () => ({ ok: false, status: 503 });
   await assert.rejects(() => searchCanImages("burn", { fetchImpl: down }), /недоступен/);
 });
+
+test("searchCanImages: PNG и «white background» с Commons идут первыми как stockHint", async () => {
+  const fetchImpl = async (url) =>
+    url.includes("openfoodfacts")
+      ? { ok: true, json: async () => ({ hits: [{ brands: "Burn", image_front_url: "https://images.openfoodfacts.org/o.jpg" }] }) }
+      : {
+          ok: true,
+          json: async () => ({
+            query: {
+              pages: {
+                1: { index: 1, title: "File:Burn can.jpg", imageinfo: [{ mime: "image/jpeg", thumburl: "https://upload.wikimedia.org/j.jpg" }] },
+                2: { index: 2, title: "File:Burn can.png", imageinfo: [{ mime: "image/png", thumburl: "https://upload.wikimedia.org/p.png" }] },
+                3: { index: 3, title: "File:Burn on white background.jpg", imageinfo: [{ mime: "image/jpeg", thumburl: "https://upload.wikimedia.org/w.jpg" }] },
+              },
+            },
+          }),
+        };
+  const images = await searchCanImages({ brand: "Burn", name: "Burn" }, { fetchImpl });
+  assert.deepEqual(
+    images.map((item) => [item.url.split("/").pop(), item.stockHint]),
+    [["p.png", true], ["w.jpg", true], ["o.jpg", false], ["j.jpg", false]],
+  );
+});

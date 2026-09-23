@@ -194,10 +194,13 @@
           </label>
           <label>Модель для разбора текста<input id="s-model" type="text" placeholder="openai/gpt-4o-mini"></label>
           <label>Модель распознавания речи (STT)<input id="s-stt-model" type="text" placeholder="openai/whisper-large-v3-turbo"></label>
+          <label>Прокси для запросов к ИИ<input id="s-proxy" type="text" spellcheck="false" autocapitalize="none" placeholder="пусто — напрямую; http://user:pass@host:3128 или socks5://host:1080"></label>
         </div>
         <p class="admin-hint">Base URL — корень API без <code>/chat/completions</code>. Запросы идут на <code>{base}/chat/completions</code> и <code>{base}/audio/transcriptions</code>. Для OpenRouter аудио отправляется JSON-ом, для остальных — multipart, как в OpenAI API. Пустое поле — значение по умолчанию.</p>
+        <p class="admin-hint">Прокси прозрачный: разбор текста и распознавание голоса идут через него целиком (HTTPS туннелируется через CONNECT, ключ и данные прокси не видит). Поддерживаются <code>http://</code>, <code>https://</code> и <code>socks5://</code>, логин и пароль — прямо в адресе. Поиск фото ходит напрямую. Пароль в поле показан как <code>***</code> — не трогай его, и он сохранится. Можно задать и через <code>AI_PROXY_URL</code> в env.</p>
         <div class="admin-actions">
           <button class="btn" type="submit">Сохранить</button>
+          <button class="btn btn--ghost" type="button" id="btn-ai-check">Проверить связь с ИИ</button>
           <button class="btn btn--ghost" type="button" id="btn-key-clear">Убрать ключ</button>
         </div>
         <p class="form-status" id="settings-status" aria-live="polite"></p>

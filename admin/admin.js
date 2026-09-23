@@ -529,6 +529,23 @@
     $("s-key").placeholder = settings.openrouterKeySet
       ? "задан — оставьте пустым, чтобы не менять"
       : "не задан";
+    // прокси из env в поле не подставляем, иначе при сохранении он «переедет» в БД
+    $("s-proxy").value = settings.aiProxyFromEnv ? "" : settings.aiProxyUrl || "";
+    if (settings.aiProxyFromEnv) $("s-proxy").placeholder = `из AI_PROXY_URL: ${settings.aiProxyUrl}`;
+  };
+
+  $("btn-ai-check").onclick = async () => {
+    status("settings-status", "Проверяю связь…");
+    try {
+      const result = await api("POST", "api/admin/settings/ai-check", {
+        aiProxyUrl: $("s-proxy").value.trim(),
+      });
+      const via = result.viaProxy ? "через прокси" : "напрямую";
+      if (result.ok) status("settings-status", `ИИ отвечает ${via} ✓ (${result.ms} мс)`);
+      else status("settings-status", `Нет связи ${via}: ${result.error}`, true);
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
   };
 
   $("settings-form").addEventListener("submit", async (event) => {
@@ -539,6 +556,7 @@
       openrouterModel: $("s-model").value.trim(),
       sttModel: $("s-stt-model").value.trim(),
       aiBaseUrl: $("s-base-url").value.trim(),
+      aiProxyUrl: $("s-proxy").value.trim(),
     };
     if ($("s-key").value) payload.openrouterKey = $("s-key").value;
     try {

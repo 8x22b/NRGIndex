@@ -249,7 +249,29 @@
       img.src = src;
     });
 
-  const cutWhiteBg = (img, maxSide = 640) => {
+  // Стоковое фото = края картинки прозрачные или ровно белые/светло-серые.
+  // Поисковики такого фильтра не дают, поэтому меряем сами по пикселям рамки.
+  const STOCK_MIN = 0.8;
+  const borderStats = (px, w, h) => {
+    const border = [];
+    for (let x = 0; x < w; x += 2) border.push(x * 4, ((h - 1) * w + x) * 4);
+    for (let y = 0; y < h; y += 2) border.push(y * w * 4, (y * w + w - 1) * 4);
+    let clear = 0;
+    let white = 0;
+    for (const offset of border) {
+      if (px[offset + 3] < 16) clear++;
+      else if (
+        Math.min(px[offset], px[offset + 1], px[offset + 2]) > 225 &&
+        Math.max(px[offset], px[offset + 1], px[offset + 2]) - Math.min(px[offset], px[offset + 1], px[offset + 2]) < 18
+      ) {
+        white++;
+      }
+    }
+    const n = border.length || 1;
+    return { border, transparent: clear / n, white: white / n, stock: (clear + white) / n };
+  };
+
+  const drawScaled = (img, maxSide) => {
     const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
     const w = Math.max(1, Math.round(img.naturalWidth * scale));
     const h = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -258,18 +280,38 @@
     canvas.height = h;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(img, 0, 0, w, h);
+    return { canvas, ctx, w, h };
+  };
+
+  /**
+   * Готовит фото: прозрачный PNG берём как есть, иначе режем белый фон заливкой от краёв.
+   * Возвращает { dataUrl, cut, stock } — stock (0..1) = доля «стоковой» рамки.
+   */
+  const prepareImage = (img, maxSide = 640) => {
+    const { canvas, ctx, w, h } = drawScaled(img, maxSide);
+    const stats = borderStats(ctx.getImageData(0, 0, w, h).data, w, h);
+    if (stats.transparent > 0.6) {
+      // фон уже прозрачный: заливка по «цвету» прозрачных пикселей (обычно чёрному) съела бы банку
+      return { dataUrl: canvas.toDataURL("image/png"), cut: true, stock: stats.stock };
+    }
+    const cut = cutWhiteBg(img, maxSide);
+    return { dataUrl: cut || shrinkOnly(img, maxSide), cut: Boolean(cut), stock: stats.stock };
+  };
+
+  const cutWhiteBg = (img, maxSide = 640) => {
+    const { canvas, ctx, w, h } = drawScaled(img, maxSide);
     const imageData = ctx.getImageData(0, 0, w, h);
     const px = imageData.data;
 
-    const border = [];
-    for (let x = 0; x < w; x += 2) border.push(x * 4, ((h - 1) * w + x) * 4);
-    for (let y = 0; y < h; y += 2) border.push(y * w * 4, (y * w + w - 1) * 4);
+    const { border } = borderStats(px, w, h);
     const channels = [[], [], []];
     for (const offset of border) {
+      if (px[offset + 3] < 16) continue;
       channels[0].push(px[offset]);
       channels[1].push(px[offset + 1]);
       channels[2].push(px[offset + 2]);
     }
+    if (!channels[0].length) return null;
     const median = (arr) => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)];
     const bg = [median(channels[0]), median(channels[1]), median(channels[2])];
 
@@ -277,6 +319,7 @@
     const BRIGHT_MIN = 120;
     const NEUTRAL_MAX = 34;
     const isBgish = (offset) => {
+      if (px[offset + 3] < 16) return true;
       const r = px[offset];
       const g = px[offset + 1];
       const b = px[offset + 2];
@@ -358,10 +401,7 @@
     return canvas.toDataURL("image/jpeg", 0.85);
   };
 
-  const processImageUrl = async (url) => {
-    const img = await loadImage(url);
-    return cutWhiteBg(img) || shrinkOnly(img);
-  };
+  const processImageUrl = async (url) => prepareImage(await loadImage(url)).dataUrl;
 
   /* ---------- smart flow ---------- */
   const TIERS = ["S", "A", "B", "C", "D"];
@@ -399,7 +439,7 @@
   // прогоняется через cutWhiteBg, выбор — кликом. Перезапрашивается при правке полей.
   // photoSource: "auto" — выбрано лентой само, "strip" — кликом, "user"/"url" — своё.
   const strip = { gen: 0, key: "", items: [], selected: -1, timer: null };
-  const STRIP_CONCURRENCY = 3;
+  const STRIP_CONCURRENCY = 4;
   const STRIP_DEBOUNCE_MS = 700;
 
   const photoQuery = () => ({
@@ -449,7 +489,7 @@
     pending.userPhoto = false;
     pending.photoNote =
       (source === "auto" ? "фото найдено автоматически ✓" : "фото выбрано из ленты ✓") +
-      (item.cut ? "" : " · фон не вырезан");
+      (item.isStock ? " · стоковое" : item.cut ? "" : " · фон не вырезан");
     markSelected();
     updatePreviewImage();
   };
@@ -464,13 +504,37 @@
     }
     tile.classList.toggle("is-loading", item.state === "loading");
     if (item.state !== "ready") return;
-    tile.innerHTML = `<img src="${item.dataUrl}" alt="">${
-      item.cut ? "" : `<span class="photo-tile__badge">фон</span>`
-    }`;
+    const badge = item.isStock
+      ? `<span class="photo-tile__badge photo-tile__badge--stock">сток</span>`
+      : item.cut
+        ? ""
+        : `<span class="photo-tile__badge">фон</span>`;
+    tile.innerHTML = `<img src="${item.dataUrl}" alt="">${badge}`;
+    tile.classList.toggle("is-stock", item.isStock);
     tile.disabled = false;
+    applyStockFilter();
   };
 
   const readyCount = () => strip.items.filter((item) => item.state === "ready").length;
+  const stockCount = () => strip.items.filter((item) => item.state === "ready" && item.isStock).length;
+
+  // «только сток»: прячем фото из жизни, но если стоковых нет вовсе — показываем всё
+  const applyStockFilter = () => {
+    const only = $("photo-stock-only").checked && stockCount() > 0;
+    $("photo-track").classList.toggle("is-stock-only", only);
+  };
+
+  // стоковые — в начало ленты (порядок внутри групп сохраняем)
+  const sortTiles = () => {
+    const track = $("photo-track");
+    const tiles = [...track.querySelectorAll(".photo-tile")];
+    const rank = (tile) => (strip.items[Number(tile.dataset.index)]?.isStock ? 0 : 1);
+    tiles
+      .map((tile, order) => ({ tile, order }))
+      .sort((a, b) => rank(a.tile) - rank(b.tile) || a.order - b.order)
+      .forEach(({ tile }) => track.appendChild(tile));
+    track.scrollLeft = 0;
+  };
 
   const finishStrip = () => {
     const ready = readyCount();
@@ -483,7 +547,12 @@
       }
       return;
     }
-    setStripStatus(`${ready} ${wordForm(ready, ["фото", "фото", "фото"])} · листай вправо, жми нужное`);
+    sortTiles();
+    applyStockFilter();
+    const stock = stockCount();
+    setStripStatus(
+      `${ready} фото, ${stock ? `стоковых ${stock}` : "стоковых нет"} · листай вправо, жми нужное`,
+    );
   };
 
   const processStrip = async (gen) => {
@@ -494,10 +563,10 @@
         const index = next++;
         const item = strip.items[index];
         try {
-          const img = await loadImage(item.url);
-          const cut = cutWhiteBg(img);
-          item.dataUrl = cut || shrinkOnly(img);
-          item.cut = Boolean(cut);
+          const result = prepareImage(await loadImage(item.url));
+          item.dataUrl = result.dataUrl;
+          item.cut = result.cut;
+          item.isStock = result.stock >= STOCK_MIN;
           item.state = "ready";
         } catch {
           item.state = "failed";
@@ -506,9 +575,11 @@
         done++;
         setStripStatus(`режу фон… ${done} / ${strip.items.length}`);
         renderTile(index);
-        // первое готовое фото подставляем само, пока пользователь ничего не выбрал
-        if (item.state === "ready" && pending.photoSource === "auto" && strip.selected < 0) {
-          selectTile(index, "auto");
+        // пока пользователь ничего не выбрал: берём первое готовое, а как появится
+        // стоковое (белый/прозрачный фон) — переключаемся на него
+        if (item.state === "ready" && pending.photoSource === "auto") {
+          const current = strip.items[strip.selected];
+          if (strip.selected < 0 || (!current?.isStock && item.isStock)) selectTile(index, "auto");
         }
       }
     };
@@ -559,6 +630,7 @@
       state: "loading",
       dataUrl: "",
       cut: false,
+      isStock: false,
     }));
     if (!strip.items.length) {
       finishStrip();
@@ -598,9 +670,14 @@
     { passive: false },
   );
   $("btn-photo-refresh").onclick = () => refreshPhotos({ force: true });
+  $("photo-stock-only").addEventListener("change", applyStockFilter);
 
   const retryPhoto = () => {
-    const ready = strip.items.map((item, index) => (item.state === "ready" ? index : -1)).filter((i) => i >= 0);
+    const onlyStock = $("photo-track").classList.contains("is-stock-only");
+    const ready = strip.items
+      .map((item, index) => (item.state === "ready" && (!onlyStock || item.isStock) ? index : -1))
+      .filter((i) => i >= 0)
+      .sort((a, b) => Number(!strip.items[a].isStock) - Number(!strip.items[b].isStock) || a - b);
     if (!ready.length) {
       $("smart-status").textContent = "Вариантов нет — приложи своё фото или вставь ссылку.";
       return;
@@ -722,9 +799,8 @@
     $("smart-status").textContent = "Режу фон…";
     const objectUrl = URL.createObjectURL(file);
     try {
-      const img = await loadImage(objectUrl);
-      const cut = cutWhiteBg(img);
-      pending.image = cut || shrinkOnly(img);
+      const { dataUrl, cut } = prepareImage(await loadImage(objectUrl));
+      pending.image = dataUrl;
       pending.userPhoto = true;
       pending.photoSource = "user";
       pending.photoNote = cut ? "твоё фото · фон вырезан ✓" : "твоё фото ✓";

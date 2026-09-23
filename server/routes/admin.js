@@ -9,6 +9,7 @@ const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
 const { userToApi, drinkToAdmin } = require("../lib/serialize");
 const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl } = require("../lib/ai");
 const history = require("../lib/history");
+const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../lib/proxy");
 
 const ROLES = ["admin", "editor", "user"];
 
@@ -77,6 +78,8 @@ module.exports = (db, auth, config) => {
       openrouterModel: ai.model,
       sttModel: ai.sttModel,
       aiBaseUrl: ai.baseUrl,
+      aiProxyUrl: maskProxyUrl(ai.proxyUrl),
+      aiProxyFromEnv: !getSetting(db, "ai_proxy_url", "") && Boolean(process.env.AI_PROXY_URL),
       openrouterKeySet: Boolean(ai.key),
       defaults: { aiBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
     };
@@ -408,12 +411,19 @@ module.exports = (db, auth, config) => {
     if ("openrouterKey" in body) {
       next.openrouter_key = str(body.openrouterKey ?? "", "Ключ", { required: false, max: 300 });
     }
+    if ("aiProxyUrl" in body) {
+      const raw = str(body.aiProxyUrl ?? "", "Прокси", { required: false, max: 500 });
+      const stored = getSetting(db, "ai_proxy_url", "");
+      // админка получает адрес с *** вместо пароля — если его не трогали, оставляем как есть
+      if (!(stored && raw === maskProxyUrl(stored))) next.ai_proxy_url = normalizeProxyUrl(raw);
+    }
     const ai = aiSettings(db);
     const effective = {
       openrouter_model: ai.model,
       stt_model: ai.sttModel,
       ai_base_url: ai.baseUrl,
       openrouter_key: getSetting(db, "openrouter_key", ""),
+      ai_proxy_url: getSetting(db, "ai_proxy_url", ""),
     };
     const before = Object.fromEntries(
       Object.keys(next).map((key) => [key, key in effective ? effective[key] : getSetting(db, key, "")]),
@@ -426,6 +436,39 @@ module.exports = (db, auth, config) => {
     if ("site_title" in next || "site_description" in next) touchContent(db);
     const changed = Object.keys(next).filter((key) => before[key] !== next[key]);
     res.json({ ok: true, changed });
+  });
+
+  // Проверка связи с ИИ-провайдером (через прокси, если задан): GET {base}/models.
+  // Можно передать несохранённый прокси из формы — проверим его, ничего не сохраняя.
+  router.post("/settings/ai-check", requireAdmin, async (req, res) => {
+    const ai = aiSettings(db);
+    let proxyUrl = ai.proxyUrl;
+    if (req.body && "aiProxyUrl" in req.body) {
+      const raw = str(req.body.aiProxyUrl ?? "", "Прокси", { required: false, max: 500 });
+      proxyUrl = ai.proxyUrl && raw === maskProxyUrl(ai.proxyUrl) ? ai.proxyUrl : normalizeProxyUrl(raw);
+    }
+    const started = Date.now();
+    let response;
+    try {
+      response = await proxiedFetch(proxyUrl)(`${ai.baseUrl}/models`, {
+        headers: ai.key ? { Authorization: `Bearer ${ai.key}` } : {},
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      const timeout = error?.name === "TimeoutError" || error?.name === "AbortError";
+      return res.json({
+        ok: false,
+        viaProxy: Boolean(proxyUrl),
+        error: timeout ? "нет ответа за 15 с" : String(error?.message || "ошибка сети").slice(0, 200),
+      });
+    }
+    res.json({
+      ok: response.ok,
+      viaProxy: Boolean(proxyUrl),
+      status: response.status,
+      ms: Date.now() - started,
+      error: response.ok ? "" : `HTTP ${response.status}`,
+    });
   });
 
   return router;
