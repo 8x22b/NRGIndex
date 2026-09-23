@@ -566,12 +566,22 @@
 
   const renderTile = (index) => {
     const item = strip.items[index];
-    const tile = $("photo-track").querySelector(`[data-index="${index}"]`);
-    if (!tile) return;
+    let tile = $("photo-track").querySelector(`[data-index="${index}"]`);
     if (item.state === "failed") {
-      tile.remove();
+      tile?.remove();
       return;
     }
+    if (!tile && item.state === "ready") {
+      tile = document.createElement("button");
+      tile.className = "photo-tile";
+      tile.type = "button";
+      tile.setAttribute("role", "option");
+      tile.setAttribute("aria-selected", "false");
+      tile.dataset.index = String(index);
+      tile.title = item.title;
+      $("photo-track").appendChild(tile);
+    }
+    if (!tile) return;
     tile.classList.toggle("is-loading", item.state === "loading");
     if (item.state !== "ready") return;
     const badge = item.isStock
@@ -633,6 +643,7 @@
         const index = next++;
         const item = strip.items[index];
         try {
+          await new Promise((resolve) => setTimeout(resolve, 0));
           const result = prepareImage(await loadImage(item.url));
           item.dataUrl = result.dataUrl;
           item.cut = result.cut;
@@ -706,13 +717,7 @@
       finishStrip();
       return;
     }
-    $("photo-track").innerHTML = strip.items
-      .map(
-        (item, index) =>
-          `<button class="photo-tile is-loading" type="button" role="option" aria-selected="false"
-             data-index="${index}" title="${esc(item.title)}" disabled></button>`,
-      )
-      .join("");
+    $("photo-track").innerHTML = "";
     $("photo-track").scrollLeft = 0;
     setStripStatus(`режу фон… 0 / ${strip.items.length}`);
     processStrip(gen);
