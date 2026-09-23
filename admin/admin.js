@@ -98,6 +98,14 @@
     container.querySelectorAll("[data-toggle]").forEach((button) => {
       button.onclick = async () => {
         const drink = state.data.drinks.find((item) => item.id === Number(button.dataset.toggle));
+        if (drink.published) {
+          const ok = await window.nrgConfirm({
+            title: "Скрыть напиток?",
+            message: `«${drink.name}» пропадёт с публичного сайта вместе с оценками. Вернуть можно кнопкой «Опубликовать».`,
+            confirmText: "Скрыть",
+          });
+          if (!ok) return;
+        }
         try {
           await api("PATCH", `api/admin/drinks/${drink.id}`, { published: !drink.published });
           await refresh();
@@ -121,10 +129,21 @@
     container.querySelectorAll("[data-delete]").forEach((button) => {
       button.onclick = async () => {
         const drink = state.data.drinks.find((item) => item.id === Number(button.dataset.delete));
-        if (!confirm(`Удалить «${drink.name}» целиком?`)) return;
+        const votes = Object.keys(drink.ratings || {}).length;
+        const ok = await window.nrgConfirm({
+          title: "Удалить напиток?",
+          message: `«${drink.name}» будет удалён целиком.`,
+          details: [
+            votes ? `Вместе с ним удалятся оценки: ${votes}` : "Оценок у напитка нет",
+            state.me.role === "admin" ? "Откатить можно в «Журнале»" : "",
+          ],
+          confirmText: "Удалить напиток",
+        });
+        if (!ok) return;
         try {
           await api("DELETE", `api/admin/drinks/${drink.id}`);
           await refresh();
+          status("global-status", `«${drink.name}» удалён`);
         } catch (error) {
           status("global-status", error.message, true);
         }
@@ -275,7 +294,13 @@
     });
     container.querySelectorAll("[data-delete]").forEach((button) => {
       button.onclick = async () => {
-        if (!confirm(`Удалить тир ${button.dataset.delete}?`)) return;
+        const tier = state.data.tiers.find((item) => item.id === button.dataset.delete);
+        const ok = await window.nrgConfirm({
+          title: `Удалить тир ${tier.id}?`,
+          message: `Тир «${tier.title}» исчезнет со всех досок. Если он используется в оценках, сервер не даст удалить.`,
+          confirmText: "Удалить тир",
+        });
+        if (!ok) return;
         try {
           await api("DELETE", `api/admin/tiers/${encodeURIComponent(button.dataset.delete)}`);
           await refresh();
@@ -367,7 +392,13 @@
     container.querySelectorAll("[data-reset]").forEach((button) => {
       button.onclick = async () => {
         const user = state.data.users.find((item) => item.id === Number(button.dataset.reset));
-        if (!confirm(`Сбросить пароль ${user.username}? Старые сессии завершатся.`)) return;
+        const ok = await window.nrgConfirm({
+          title: "Сбросить пароль?",
+          message: `${user.displayName} (@${user.username}) получит временный пароль.`,
+          details: ["Все его сессии завершатся", "Это действие не откатывается"],
+          confirmText: "Сбросить",
+        });
+        if (!ok) return;
         try {
           const { tempPassword } = await api("POST", `api/admin/users/${user.id}/password`, {});
           $("global-status").innerHTML = `Временный пароль для <b>${esc(user.username)}</b>: <span class="admin-temp">${esc(tempPassword)}</span> — передайте и попросите сменить.`;
@@ -380,7 +411,17 @@
     container.querySelectorAll("[data-delete]").forEach((button) => {
       button.onclick = async () => {
         const user = state.data.users.find((item) => item.id === Number(button.dataset.delete));
-        if (!confirm(`Удалить пользователя ${user.username}? Его оценки тоже удалятся.`)) return;
+        const ratedCount = state.data.drinks.filter((drink) => drink.ratings?.[user.username]).length;
+        const ok = await window.nrgConfirm({
+          title: "Удалить пользователя?",
+          message: `${user.displayName} (@${user.username}) потеряет доступ, аккаунт будет удалён.`,
+          details: [
+            ratedCount ? `Вместе с ним удалятся оценки: ${ratedCount}` : "Оценок у него нет",
+            "Откатить можно в «Журнале»",
+          ],
+          confirmText: "Удалить пользователя",
+        });
+        if (!ok) return;
         try {
           await api("DELETE", `api/admin/users/${user.id}`);
           await refresh();
@@ -430,6 +471,20 @@
           isActive: $("u-active").checked,
           isPublic: $("u-public").checked,
         };
+        const current = state.data.users.find((item) => item.id === Number(id));
+        const warnings = [];
+        if (current.isActive && !payload.isActive) warnings.push("Доступ будет отключён, все сессии завершатся");
+        if (current.role === "admin" && payload.role !== "admin") warnings.push("Пользователь потеряет права админа");
+        if (current.isPublic && !payload.isPublic) warnings.push("Он и его оценки пропадут с публичного сайта");
+        if (warnings.length) {
+          const ok = await window.nrgConfirm({
+            title: "Сохранить изменения?",
+            message: `${current.displayName} (@${current.username}):`,
+            details: warnings,
+            confirmText: "Сохранить",
+          });
+          if (!ok) return;
+        }
         await api("PATCH", `api/admin/users/${id}`, payload);
         $("user-form").hidden = true;
         await refresh();
@@ -465,6 +520,11 @@
     $("s-title").value = settings.siteTitle || "";
     $("s-description").value = settings.siteDescription || "";
     $("s-model").value = settings.openrouterModel || "";
+    $("s-stt-model").value = settings.sttModel || "";
+    $("s-base-url").value = settings.aiBaseUrl || "";
+    $("s-model").placeholder = settings.defaults?.openrouterModel || "";
+    $("s-stt-model").placeholder = settings.defaults?.sttModel || "";
+    $("s-base-url").placeholder = settings.defaults?.aiBaseUrl || "";
     $("s-key").value = "";
     $("s-key").placeholder = settings.openrouterKeySet
       ? "задан — оставьте пустым, чтобы не менять"
@@ -476,7 +536,9 @@
     const payload = {
       siteTitle: $("s-title").value,
       siteDescription: $("s-description").value,
-      openrouterModel: $("s-model").value,
+      openrouterModel: $("s-model").value.trim(),
+      sttModel: $("s-stt-model").value.trim(),
+      aiBaseUrl: $("s-base-url").value.trim(),
     };
     if ($("s-key").value) payload.openrouterKey = $("s-key").value;
     try {
@@ -489,7 +551,13 @@
   });
 
   $("btn-key-clear").onclick = async () => {
-    if (!confirm("Убрать OpenRouter-ключ? ИИ-функции перестанут работать.")) return;
+    const ok = await window.nrgConfirm({
+      title: "Убрать API-ключ?",
+      message: "Разбор текста и распознавание голоса перестанут работать, пока не задан новый ключ.",
+      details: ["Ключ не сохраняется в журнале — откатить не получится"],
+      confirmText: "Убрать ключ",
+    });
+    if (!ok) return;
     try {
       await api("PUT", "api/admin/settings", { openrouterKey: "" });
       await refresh();
@@ -500,31 +568,158 @@
   };
 
   /* ---------- audit ---------- */
+  // Старые записи (до нового формата) не имеют summary — описываем их по коду действия.
+  const LEGACY_ACTIONS = {
+    "drink.create": "Добавил напиток",
+    "drink.update": "Изменил напиток",
+    "drink.delete": "Удалил напиток",
+    "drink.reprocess": "Переобработал картинку",
+    "rating.set": "Поставил оценку",
+    "rating.delete": "Удалил оценку",
+    "tier.create": "Создал тир",
+    "tier.update": "Изменил тир",
+    "tier.delete": "Удалил тир",
+    "user.create": "Создал пользователя",
+    "user.update": "Изменил пользователя",
+    "user.password": "Сбросил пароль",
+    "user.delete": "Удалил пользователя",
+    "settings.update": "Изменил настройки",
+    "ai.parse": "Разобрал текст через ИИ",
+    "audit.undo": "Откатил действие",
+  };
+  const ENTITY_NAMES = { drink: "напиток", rating: "оценка", tier: "тир", user: "пользователь", settings: "настройки" };
+
+  const actionKind = (action) => {
+    if (action === "audit.undo") return "undo";
+    if (/\.(create|set)$/.test(action)) return "create";
+    if (/\.delete$/.test(action)) return "delete";
+    return "update";
+  };
+  const KIND_ICONS = { create: "+", delete: "−", update: "✎", undo: "↺" };
+
+  const parseUtc = (value) => new Date(`${String(value).replace(" ", "T")}Z`);
+  const dayLabel = (date) => {
+    const today = new Date();
+    const yesterday = new Date(Date.now() - 86_400_000);
+    const same = (a, b) => a.toDateString() === b.toDateString();
+    if (same(date, today)) return "Сегодня";
+    if (same(date, yesterday)) return "Вчера";
+    return date.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  };
+
+  const legacySummary = (row) => {
+    const base = LEGACY_ACTIONS[row.action.replace(/^admin\./, "")] || row.action;
+    const target = row.entityId ? ` ${ENTITY_NAMES[row.entity] || row.entity} ${row.entityId}` : "";
+    return `${base}${target}`;
+  };
+
+  const legacyDetails = (details) =>
+    String(details || "")
+      .replace(/\buser=(\d+)/g, (_, id) => {
+        const user = state.data.users.find((item) => item.id === Number(id));
+        return `пользователь: ${user ? user.displayName : `#${id}`}`;
+      })
+      .replace(/\btier=/g, "тир: ")
+      .replace(/\brole=/g, "роль: ")
+      .replace(/\bactive=(true|false)/g, (_, v) => `доступ: ${v === "true" ? "активен" : "отключён"}`)
+      .replace(/\bpublic=(true|false)/g, (_, v) => `на сайте: ${v === "true" ? "да" : "нет"}`)
+      .replace(/\blogin=/g, "логин: ");
+
+  const auditRowHtml = (row) => {
+    const kind = actionKind(row.action);
+    const date = parseUtc(row.createdAt);
+    const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const summary = row.summary || legacySummary(row);
+    const details = (row.summary ? row.details : legacyDetails(row.details))
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const tags = [];
+    if (row.undoneAt) {
+      tags.push(`откачено${row.undoneBy ? ` · ${esc(row.undoneBy)}` : ""} · ${parseUtc(row.undoneAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`);
+    }
+    if (row.undoOf) tags.push(`отмена записи #${row.undoOf}`);
+    let action = "";
+    if (row.canUndo) action = `<button class="btn btn--ghost" type="button" data-undo="${row.id}">↺ Откатить</button>`;
+    else if (row.undoable && !row.undoneAt && !row.undoOf) {
+      action = `<span class="admin-hint" title="Объект менялся позже — сначала откатите более свежие записи">позже менялось</span>`;
+    }
+    return `
+      <li class="audit-item ${row.undoneAt ? "is-undone" : ""}">
+        <span class="audit-item__time" title="${esc(date.toLocaleString("ru-RU"))} · запись #${row.id}">${esc(time)}</span>
+        <span class="audit-item__icon audit-item__icon--${kind}" aria-hidden="true">${KIND_ICONS[kind]}</span>
+        <div>
+          <div class="audit-item__summary"><span class="audit-item__who">${esc(row.displayName || row.username || "система")}</span> ${esc(summary.charAt(0).toLowerCase() + summary.slice(1))}</div>
+          ${details.length ? `<ul class="audit-item__details">${details.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+          ${tags.map((tag) => `<span class="audit-item__tag">${tag}</span>`).join(" ")}
+        </div>
+        <div>${action}</div>
+      </li>`;
+  };
+
   const renderAudit = () => {
-    const rows = state.data.audit || [];
-    if (!rows.length) {
+    const all = (state.data.audit || []).filter((row) => row.action !== "ai.parse");
+    if (!all.length) {
       $("audit-table").innerHTML = `<p class="admin-hint">Журнал пуст или недоступен (нужна роль admin).</p>`;
       return;
     }
-    $("audit-table").innerHTML = `
-      <table class="admin-table">
-        <thead><tr><th>Время</th><th>Кто</th><th>Действие</th><th>Объект</th><th>Детали</th></tr></thead>
-        <tbody>
-          ${rows
-            .map(
-              (row) => `
-            <tr>
-              <td class="muted">${esc(row.created_at)} UTC</td>
-              <td>${esc(row.username || "—")}</td>
-              <td>${esc(row.action)}</td>
-              <td>${esc(row.entity)}${row.entity_id ? ` #${esc(row.entity_id)}` : ""}</td>
-              <td class="muted">${esc(row.details)}</td>
-            </tr>`,
-            )
-            .join("")}
-        </tbody>
-      </table>`;
+    const query = $("audit-search").value.trim().toLowerCase();
+    const entity = $("audit-filter").value;
+    const rows = all.filter((row) => {
+      if (entity && row.entity !== entity) return false;
+      if (!query) return true;
+      return [row.summary || legacySummary(row), row.details, row.displayName, row.username]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+    if (!rows.length) {
+      $("audit-table").innerHTML = `<p class="admin-hint">Ничего не нашлось.</p>`;
+      return;
+    }
+    const groups = [];
+    for (const row of rows) {
+      const label = dayLabel(parseUtc(row.createdAt));
+      if (groups.at(-1)?.label !== label) groups.push({ label, rows: [] });
+      groups.at(-1).rows.push(row);
+    }
+    $("audit-table").innerHTML = groups
+      .map(
+        (group) => `
+        <h3 class="audit-day">${esc(group.label)}</h3>
+        <ul class="audit-list">${group.rows.map(auditRowHtml).join("")}</ul>`,
+      )
+      .join("");
+
+    $("audit-table").querySelectorAll("[data-undo]").forEach((button) => {
+      button.onclick = async () => {
+        const row = state.data.audit.find((item) => item.id === Number(button.dataset.undo));
+        const ok = await window.nrgConfirm({
+          title: "Откатить действие?",
+          message: `${row.displayName || row.username || "Система"}: ${row.summary}`,
+          details: [
+            ...String(row.details || "").split("\n").filter(Boolean).slice(0, 6),
+            "Объект вернётся в состояние до этого действия",
+          ],
+          confirmText: "Откатить",
+          danger: false,
+        });
+        if (!ok) return;
+        button.disabled = true;
+        try {
+          const { notes } = await api("POST", `api/admin/audit/${row.id}/undo`, {});
+          await refresh();
+          status("global-status", `Откачено ✓${notes?.length ? ` (${notes.join("; ")})` : ""}`);
+        } catch (error) {
+          button.disabled = false;
+          status("global-status", error.message, true);
+        }
+      };
+    });
   };
+
+  $("audit-search").addEventListener("input", () => renderAudit());
+  $("audit-filter").addEventListener("change", () => renderAudit());
 
   /* ---------- helpers ---------- */
   const fileToDataUrl = (file, maxSide) =>

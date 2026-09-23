@@ -203,7 +203,19 @@
       const slug = row.dataset.drink;
       row.querySelector("[data-m-tier]").onchange = (e) => saveRating(slug, e.target.value, null);
       row.querySelector("[data-m-review]").onchange = (e) => saveRating(slug, null, e.target.value);
+      const drink = state.summary.drinks.find((item) => item.id === slug);
+      const rating = drink?.ratings?.[state.me.username] || {};
       row.querySelector("[data-m-del-rating]").onclick = async () => {
+        const ok = await window.nrgConfirm({
+          title: "Удалить оценку?",
+          message: `Твоя оценка для «${drink?.name || slug}» пропадёт из индекса.`,
+          details: [
+            `Тир: ${rating.tier || "—"}`,
+            rating.review ? `Отзыв: «${String(rating.review).slice(0, 140)}»` : "",
+          ],
+          confirmText: "Удалить оценку",
+        });
+        if (!ok) return;
         try {
           await api("DELETE", `api/cabinet/ratings/${encodeURIComponent(slug)}`);
           await refreshAll();
@@ -212,7 +224,14 @@
         }
       };
       row.querySelector("[data-m-del-drink]")?.addEventListener("click", async () => {
-        if (!confirm("Удалить банку из индекса целиком?")) return;
+        const votes = Object.keys(drink?.ratings || {}).length;
+        const ok = await window.nrgConfirm({
+          title: "Удалить банку?",
+          message: `«${drink?.name || slug}» исчезнет из индекса целиком.`,
+          details: [votes ? `Вместе с ней удалятся все оценки: ${votes}` : ""],
+          confirmText: "Удалить банку",
+        });
+        if (!ok) return;
         try {
           await api("DELETE", `api/cabinet/drinks/${encodeURIComponent(slug)}`);
           await refreshAll();
@@ -374,9 +393,19 @@
     }
     $("parsed-title").textContent = `${parsed.brand} — ${parsed.name}`;
     $("parsed-sub").textContent = [parsed.flavor, parsed.edition].filter(Boolean).join(" · ");
-    $("parsed-review").textContent = parsed.review || "—";
+    $("parsed-review").textContent =
+      parsed.review || "Отзыва в сообщении не было — допиши вручную ниже, если хочешь.";
     $("parsed-tier").textContent = parsed.tier;
-    $("parsed-photo-note").textContent = pending.photoNote;
+    $("parsed-tier").title = parsed.tierGuessed
+      ? "Тир не был назван — стоит B по умолчанию, поправь ниже"
+      : "Тир из твоего сообщения";
+    $("parsed-tier").style.opacity = parsed.tierGuessed ? ".55" : "";
+    $("parsed-photo-note").textContent = [
+      pending.photoNote,
+      parsed.tierGuessed ? "тир не назван — стоит B по умолчанию" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
     fillManual(parsed);
     $("smart-preview").scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
@@ -448,7 +477,7 @@
     pending.searchIndex = 0;
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
-    $("voice-audio").hidden = true;
+    clearVoice();
     $("smart-status").textContent = "В индексе ✓";
     await refreshAll();
   };
@@ -614,86 +643,181 @@
   };
 
   /* ---------- voice ---------- */
-  const voice = { recorder: null, chunks: [], recording: false, recognizer: null };
-  const srSupported = () => window.SpeechRecognition || window.webkitSpeechRecognition;
+  // Запись через MediaRecorder, распознавание — на сервере (Whisper через OpenRouter).
+  const MAX_RECORD_MS = 120_000;
+  const RECORD_LABEL = "● Войс вместо текста";
+  const voice = {
+    recorder: null,
+    stream: null,
+    chunks: [],
+    recording: false,
+    startedAt: 0,
+    durationMs: 0,
+    timer: null,
+    blob: null,
+    url: "",
+    busy: false,
+  };
 
-  const toggleRecord = async () => {
+  const fmtTime = (ms) => {
+    const total = Math.max(0, Math.round(ms / 1000));
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  };
+
+  const pickMimeType = () => {
+    if (typeof MediaRecorder === "undefined" || !MediaRecorder.isTypeSupported) return "";
+    return (
+      ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4", "audio/webm"].find((type) =>
+        MediaRecorder.isTypeSupported(type),
+      ) || ""
+    );
+  };
+
+  const blobToBase64 = (blob) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1] || "");
+      reader.onerror = () => reject(new Error("Не удалось прочитать запись"));
+      reader.readAsDataURL(blob);
+    });
+
+  const setRecordButton = (recording) => {
     const button = $("btn-record");
+    button.classList.toggle("btn--recording", recording);
+    button.textContent = recording ? "■ Стоп" : RECORD_LABEL;
+  };
+
+  const clearVoice = () => {
+    if (voice.url) URL.revokeObjectURL(voice.url);
+    voice.url = "";
+    voice.blob = null;
+    voice.durationMs = 0;
+    const audio = $("voice-audio");
+    audio.removeAttribute("src");
+    audio.load();
+    $("voice-player").hidden = true;
+    $("btn-voice-retry").hidden = true;
+    $("voice-status").textContent = "";
+  };
+
+  // У webm из MediaRecorder в заголовке нет длительности: браузер отдаёт Infinity и плеер пишет 0:00.
+  // Прыжок в «бесконечность» заставляет его просканировать файл и вычислить настоящую длительность.
+  const fixDuration = (audio) => {
+    if (Number.isFinite(audio.duration) && audio.duration > 0) return;
+    const reset = () => {
+      if (!Number.isFinite(audio.duration)) return;
+      audio.removeEventListener("durationchange", reset);
+      audio.currentTime = 0;
+    };
+    audio.addEventListener("durationchange", reset);
+    try {
+      audio.currentTime = Number.MAX_SAFE_INTEGER;
+    } catch {
+      /* плеер ещё не готов — останется наш таймер */
+    }
+  };
+
+  const showRecording = () => {
+    const audio = $("voice-audio");
+    voice.url = URL.createObjectURL(voice.blob);
+    audio.addEventListener("loadedmetadata", () => fixDuration(audio), { once: true });
+    audio.src = voice.url;
+    $("voice-duration").textContent = fmtTime(voice.durationMs);
+    $("voice-player").hidden = false;
+  };
+
+  const transcribe = async () => {
+    if (!voice.blob || voice.busy) return;
     const status = $("voice-status");
-    if (voice.recording) {
-      voice.recording = false;
-      voice.recorder?.stop();
-      voice.recognizer?.stop();
+    voice.busy = true;
+    $("btn-record").disabled = true;
+    $("btn-voice-retry").hidden = true;
+    status.textContent = "Распознаю голос…";
+    try {
+      const audio = await blobToBase64(voice.blob);
+      const { text } = await api("POST", "api/cabinet/ai/transcribe", {
+        audio,
+        mimeType: voice.blob.type || "audio/webm",
+      });
+      const area = $("smart-input");
+      area.value = (area.value.trim() ? `${area.value.trim()} ` : "") + text;
+      status.textContent = "Распознано ✓ Проверь текст и жми «Распознать и добавить».";
+      area.focus();
+    } catch (error) {
+      status.textContent = `${error.message}. Можно повторить или вписать текст руками.`;
+      $("btn-voice-retry").hidden = false;
+    } finally {
+      voice.busy = false;
+      $("btn-record").disabled = false;
+    }
+  };
+
+  const stopRecording = () => {
+    if (!voice.recording) return;
+    voice.recording = false;
+    voice.durationMs = Date.now() - voice.startedAt;
+    clearInterval(voice.timer);
+    setRecordButton(false);
+    voice.recorder?.stop();
+  };
+
+  const startRecording = async () => {
+    const status = $("voice-status");
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      status.textContent = "Браузер не умеет записывать звук — впиши текст руками.";
       return;
     }
-    let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voice.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       status.textContent = "Нет доступа к микрофону.";
       return;
     }
-
+    clearVoice();
+    const mimeType = pickMimeType();
     voice.chunks = [];
-    voice.recorder = new MediaRecorder(stream);
+    voice.recorder = new MediaRecorder(voice.stream, mimeType ? { mimeType } : undefined);
     voice.recorder.ondataavailable = (event) => {
       if (event.data.size) voice.chunks.push(event.data);
     };
     voice.recorder.onstop = () => {
-      stream.getTracks().forEach((track) => track.stop());
-      const blob = new Blob(voice.chunks, { type: voice.recorder.mimeType || "audio/webm" });
-      if (blob.size) {
-        const audio = $("voice-audio");
-        audio.src = URL.createObjectURL(blob);
-        audio.hidden = false;
+      voice.stream?.getTracks().forEach((track) => track.stop());
+      voice.stream = null;
+      const type = voice.recorder.mimeType || mimeType || "audio/webm";
+      voice.blob = new Blob(voice.chunks, { type });
+      voice.chunks = [];
+      if (!voice.blob.size || voice.durationMs < 600) {
+        clearVoice();
+        status.textContent = "Слишком коротко — зажми подольше.";
+        return;
       }
-      status.textContent = srSupported()
-        ? "Готово."
-        : "Записано. Диктовка тут не поддерживается — вбей текст руками.";
+      showRecording();
+      transcribe();
     };
-    voice.recorder.start();
+    voice.recorder.start(250);
     voice.recording = true;
-    button.textContent = "■ Стоп";
-    status.textContent = "Слушаю…";
-
-    if (srSupported()) {
-      try {
-        const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        voice.recognizer = new Recognition();
-        voice.recognizer.lang = "ru-RU";
-        voice.recognizer.interimResults = true;
-        voice.recognizer.onresult = (event) => {
-          let finalText = "";
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            if (event.results[i].isFinal) finalText += event.results[i][0].transcript;
-          }
-          if (finalText) {
-            const area = $("smart-input");
-            area.value = (area.value ? area.value.replace(/\s+$/, "") + " " : "") + finalText.trim();
-          }
-          const last = event.results[event.results.length - 1];
-          status.textContent = last?.isFinal ? "…" : `… ${String(last?.[0]?.transcript || "").slice(-60)}`;
-        };
-        voice.recognizer.onend = () => {
-          if (voice.recording) {
-            try {
-              voice.recognizer.start();
-            } catch {
-              /* уже остановлен */
-            }
-          } else {
-            const buttonNode = $("btn-record");
-            if (buttonNode) buttonNode.textContent = "● Войс вместо текста";
-          }
-        };
-        voice.recognizer.start();
-      } catch {
-        status.textContent = "Запись идёт, диктовка не завелась.";
-      }
-    }
+    voice.startedAt = Date.now();
+    setRecordButton(true);
+    status.textContent = "Запись 0:00 — говори, потом жми «Стоп»";
+    voice.timer = setInterval(() => {
+      const elapsed = Date.now() - voice.startedAt;
+      status.textContent = `Запись ${fmtTime(elapsed)} — говори, потом жми «Стоп»`;
+      if (elapsed >= MAX_RECORD_MS) stopRecording();
+    }, 250);
   };
 
-  $("btn-record").onclick = toggleRecord;
+  $("btn-record").onclick = () => (voice.recording ? stopRecording() : startRecording());
+  $("btn-voice-retry").onclick = transcribe;
+  $("btn-voice-clear").onclick = clearVoice;
+  $("voice-audio").addEventListener("timeupdate", (event) => {
+    const audio = event.target;
+    if (!voice.durationMs) return;
+    const total = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : voice.durationMs;
+    $("voice-duration").textContent =
+      audio.currentTime > 0 && !audio.paused
+        ? `${fmtTime(audio.currentTime * 1000)} / ${fmtTime(total)}`
+        : fmtTime(total);
+  });
 
   /* ---------- init ---------- */
   (async () => {

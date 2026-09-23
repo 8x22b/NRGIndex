@@ -48,6 +48,7 @@ function createApp({ db, config }) {
             "https://commons.wikimedia.org",
           ],
           connectSrc: ["'self'"],
+          mediaSrc: ["'self'", "blob:"],
           objectSrc: ["'none'"],
           frameAncestors: ["'none'"],
           baseUri: ["'self'"],

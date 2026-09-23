@@ -7,7 +7,8 @@ const { writeAudit, getSetting, setSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
 const { userToApi, drinkToAdmin } = require("../lib/serialize");
-const { TIERS } = require("../lib/ai");
+const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl } = require("../lib/ai");
+const history = require("../lib/history");
 
 const ROLES = ["admin", "editor", "user"];
 
@@ -69,22 +70,25 @@ module.exports = (db, auth, config) => {
       .prepare("SELECT id, title, note, score, position FROM tiers ORDER BY position, id")
       .all();
     const users = db.prepare("SELECT * FROM users ORDER BY id").all().map(userToApi);
+    const ai = aiSettings(db);
     const settings = {
       siteTitle: getSetting(db, "site_title", "NRG / INDEX"),
       siteDescription: getSetting(db, "site_description", ""),
-      openrouterModel: getSetting(db, "openrouter_model", "openai/gpt-4o-mini"),
-      openrouterKeySet: Boolean(getSetting(db, "openrouter_key", process.env.OPENROUTER_KEY || "")),
+      openrouterModel: ai.model,
+      sttModel: ai.sttModel,
+      aiBaseUrl: ai.baseUrl,
+      openrouterKeySet: Boolean(ai.key),
+      defaults: { aiBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
     };
-    const audit = isAdmin(req)
-      ? db
-          .prepare(
-            `SELECT a.id, a.action, a.entity, a.entity_id, a.details, a.created_at, u.username
-             FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
-             ORDER BY a.id DESC LIMIT 200`,
-          )
-          .all()
-      : [];
+    const audit = isAdmin(req) ? history.listAudit(db) : [];
     res.json({ me: req.user, drinks, tiers, users, settings, audit });
+  });
+
+  router.post("/audit/:id/undo", requireAdmin, (req, res) => {
+    const id = int(req.params.id, "id", { min: 1 });
+    const { notes } = history.undoEntry(db, id, { actor: req.user, auth });
+    touchContent(db);
+    res.json({ ok: true, notes });
   });
 
   // ---------- drinks (editor+) ----------
@@ -127,7 +131,7 @@ module.exports = (db, auth, config) => {
     });
 
     const id = create();
-    writeAudit(db, req.user, "admin.drink.create", "drink", slug);
+    history.recordDrink(db, req.user, "admin.drink.create", null, history.snapDrink(db, id));
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     res.status(201).json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
@@ -137,6 +141,7 @@ module.exports = (db, auth, config) => {
     const id = int(req.params.id, "id", { min: 1 });
     const drink = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     if (!drink) throw notFound("Напиток не найден");
+    const before = history.snapDrink(db, id);
     const fields = drinkFields(req.body, drink);
     const image = req.body?.imageDataUrl
       ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
@@ -167,7 +172,7 @@ module.exports = (db, auth, config) => {
     if (req.body?.relatedIds !== undefined) {
       setRelations(id, idArray(req.body.relatedIds, "Похожие", { max: 50 }));
     }
-    writeAudit(db, req.user, "admin.drink.update", "drink", drink.slug);
+    history.recordDrink(db, req.user, "admin.drink.update", before, history.snapDrink(db, id));
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     res.json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
@@ -179,10 +184,11 @@ module.exports = (db, auth, config) => {
     if (!drink) throw notFound("Напиток не найден");
     const result = await reprocessStoredImage(config.uploadsDir, drink.image_path);
     if (!result) throw badRequest("Переобработать можно только картинки из /uploads");
+    const before = history.snapDrink(db, id);
     db.prepare(
       "UPDATE drinks SET image_path = ?, accent_a = ?, accent_b = ?, updated_at = datetime('now') WHERE id = ?",
     ).run(result.path, result.accent[0], result.accent[1], id);
-    writeAudit(db, req.user, "admin.drink.reprocess", "drink", drink.slug);
+    history.recordDrink(db, req.user, "admin.drink.reprocess", before, history.snapDrink(db, id));
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     res.json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
@@ -192,8 +198,9 @@ module.exports = (db, auth, config) => {
     const id = int(req.params.id, "id", { min: 1 });
     const drink = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     if (!drink) throw notFound("Напиток не найден");
+    const before = history.snapDrink(db, id, { full: true });
     db.prepare("DELETE FROM drinks WHERE id = ?").run(id);
-    writeAudit(db, req.user, "admin.drink.delete", "drink", drink.slug);
+    history.recordDrink(db, req.user, "admin.drink.delete", before, null);
     touchContent(db);
     res.json({ ok: true });
   });
@@ -201,17 +208,23 @@ module.exports = (db, auth, config) => {
   router.put("/ratings/:drinkId/:userId", (req, res) => {
     const drinkId = int(req.params.drinkId, "drinkId", { min: 1 });
     const userId = int(req.params.userId, "userId", { min: 1 });
-    const drink = db.prepare("SELECT id, slug FROM drinks WHERE id = ?").get(drinkId);
+    const drink = db.prepare("SELECT id, slug, name FROM drinks WHERE id = ?").get(drinkId);
     if (!drink) throw notFound("Напиток не найден");
-    getUser(userId);
+    const user = getUser(userId);
     const tier = oneOf(String(req.body?.tier || ""), TIERS, "Тир");
     const review = str(req.body?.review ?? "", "Отзыв", { required: false, max: 1000 });
+    const before = history.snapRating(db, drinkId, userId);
     db.prepare(
       `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)
        ON CONFLICT(drink_id, user_id)
        DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review, updated_at = datetime('now')`,
     ).run(drinkId, userId, tier, review);
-    writeAudit(db, req.user, "admin.rating.set", "drink", drink.slug, `user=${userId} tier=${tier}`);
+    history.recordRating(db, req.user, "admin.rating.set", {
+      drink,
+      user,
+      before,
+      after: history.snapRating(db, drinkId, userId),
+    });
     touchContent(db);
     res.json({ ok: true });
   });
@@ -219,8 +232,13 @@ module.exports = (db, auth, config) => {
   router.delete("/ratings/:drinkId/:userId", (req, res) => {
     const drinkId = int(req.params.drinkId, "drinkId", { min: 1 });
     const userId = int(req.params.userId, "userId", { min: 1 });
+    const drink = db.prepare("SELECT id, slug, name FROM drinks WHERE id = ?").get(drinkId);
+    if (!drink) throw notFound("Напиток не найден");
+    const user = getUser(userId);
+    const before = history.snapRating(db, drinkId, userId);
+    if (!before) throw notFound("Оценки нет");
     db.prepare("DELETE FROM ratings WHERE drink_id = ? AND user_id = ?").run(drinkId, userId);
-    writeAudit(db, req.user, "admin.rating.delete", "drink", drinkId, `user=${userId}`);
+    history.recordRating(db, req.user, "admin.rating.delete", { drink, user, before, after: null });
     touchContent(db);
     res.json({ ok: true });
   });
@@ -246,7 +264,8 @@ module.exports = (db, auth, config) => {
       if (String(error.message).includes("UNIQUE")) throw conflict("Такой тир уже есть");
       throw error;
     }
-    writeAudit(db, req.user, "admin.tier.create", "tier", id);
+    history.recordTier(db, req.user, "admin.tier.create", null, history.snapTier(db, id));
+    touchContent(db);
     res.status(201).json({ ok: true });
   });
 
@@ -265,7 +284,7 @@ module.exports = (db, auth, config) => {
       position,
       id,
     );
-    writeAudit(db, req.user, "admin.tier.update", "tier", id);
+    history.recordTier(db, req.user, "admin.tier.update", tier, history.snapTier(db, id));
     touchContent(db);
     res.json({ ok: true });
   });
@@ -274,8 +293,10 @@ module.exports = (db, auth, config) => {
     const id = req.params.id.toUpperCase();
     const used = db.prepare("SELECT COUNT(*) AS n FROM ratings WHERE tier_id = ?").get(id).n;
     if (used) throw conflict("Тир используется в оценках — сначала переведите их");
+    const before = history.snapTier(db, id);
+    if (!before) throw notFound("Тир не найден");
     db.prepare("DELETE FROM tiers WHERE id = ?").run(id);
-    writeAudit(db, req.user, "admin.tier.delete", "tier", id);
+    history.recordTier(db, req.user, "admin.tier.delete", before, null);
     touchContent(db);
     res.json({ ok: true });
   });
@@ -307,7 +328,7 @@ module.exports = (db, auth, config) => {
       if (String(error.message).includes("UNIQUE")) throw conflict("Логин уже занят");
       throw error;
     }
-    writeAudit(db, req.user, "admin.user.create", "user", String(id), `role=${role}`);
+    history.recordUser(db, req.user, "admin.user.create", null, history.snapUser(db, id));
     const row = getUser(id);
     res.status(201).json({ user: userToApi(row), tempPassword: generated || undefined });
   });
@@ -333,14 +354,8 @@ module.exports = (db, auth, config) => {
          is_public = ?, updated_at = datetime('now') WHERE id = ?`,
     ).run(displayName, role, title, initials, userColor, isActive ? 1 : 0, isPublic ? 1 : 0, id);
     if (!isActive) auth.destroyUserSessions(id);
-    writeAudit(
-      db,
-      req.user,
-      "admin.user.update",
-      "user",
-      String(id),
-      `role=${role} active=${isActive} public=${isPublic}`,
-    );
+    history.recordUser(db, req.user, "admin.user.update", { row: target }, history.snapUser(db, id));
+    if (target.is_public !== (isPublic ? 1 : 0)) touchContent(db);
     res.json({ user: userToApi(getUser(id)) });
   });
 
@@ -353,7 +368,10 @@ module.exports = (db, auth, config) => {
       "UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = datetime('now') WHERE id = ?",
     ).run(hash, id);
     auth.destroyUserSessions(id);
-    writeAudit(db, req.user, "admin.user.password", "user", String(id));
+    const target = getUser(id);
+    writeAudit(db, req.user, "admin.user.password", "user", String(id), "Старые сессии завершены, при входе потребуется сменить пароль", {
+      summary: `Сбросил пароль ${target.display_name} (@${target.username})`,
+    });
     res.json({ tempPassword: req.body?.password ? undefined : generated });
   });
 
@@ -362,8 +380,9 @@ module.exports = (db, auth, config) => {
     const target = getUser(id);
     if (id === req.user.id) throw conflict("Нельзя удалить себя");
     if (target.role === "admin" && activeAdmins() <= 1) throw conflict("Нельзя удалить последнего админа");
+    const before = history.snapUser(db, id, { full: true });
     db.prepare("DELETE FROM users WHERE id = ?").run(id);
-    writeAudit(db, req.user, "admin.user.delete", "user", String(id), `login=${target.username}`);
+    history.recordUser(db, req.user, "admin.user.delete", before, null);
     touchContent(db);
     res.json({ ok: true });
   });
@@ -372,32 +391,40 @@ module.exports = (db, auth, config) => {
 
   router.put("/settings", requireAdmin, (req, res) => {
     const body = req.body || {};
-    const changed = [];
-    if ("siteTitle" in body) {
-      setSetting(db, "site_title", str(body.siteTitle, "Заголовок", { max: 120 }));
-      changed.push("site_title");
-    }
+    const next = {};
+    if ("siteTitle" in body) next.site_title = str(body.siteTitle, "Заголовок", { max: 120 });
     if ("siteDescription" in body) {
-      setSetting(
-        db,
-        "site_description",
-        str(body.siteDescription ?? "", "Описание", { required: false, max: 300 }),
-      );
-      changed.push("site_description");
+      next.site_description = str(body.siteDescription ?? "", "Описание", { required: false, max: 300 });
     }
     if ("openrouterModel" in body) {
-      setSetting(db, "openrouter_model", str(body.openrouterModel, "Модель", { max: 120 }));
-      changed.push("openrouter_model");
+      next.openrouter_model = str(body.openrouterModel || DEFAULT_MODEL, "Модель", { max: 120 });
+    }
+    if ("sttModel" in body) {
+      next.stt_model = str(body.sttModel || DEFAULT_STT_MODEL, "STT-модель", { max: 120 });
+    }
+    if ("aiBaseUrl" in body) {
+      next.ai_base_url = normalizeBaseUrl(str(body.aiBaseUrl || DEFAULT_BASE_URL, "Base URL", { max: 300 }));
     }
     if ("openrouterKey" in body) {
-      setSetting(
-        db,
-        "openrouter_key",
-        str(body.openrouterKey ?? "", "Ключ", { required: false, max: 300 }),
-      );
-      changed.push("openrouter_key");
+      next.openrouter_key = str(body.openrouterKey ?? "", "Ключ", { required: false, max: 300 });
     }
-    writeAudit(db, req.user, "admin.settings.update", "settings", "", changed.join(","));
+    const ai = aiSettings(db);
+    const effective = {
+      openrouter_model: ai.model,
+      stt_model: ai.sttModel,
+      ai_base_url: ai.baseUrl,
+      openrouter_key: getSetting(db, "openrouter_key", ""),
+    };
+    const before = Object.fromEntries(
+      Object.keys(next).map((key) => [key, key in effective ? effective[key] : getSetting(db, key, "")]),
+    );
+    const save = db.transaction(() => {
+      for (const [key, value] of Object.entries(next)) setSetting(db, key, value);
+      history.recordSettings(db, req.user, before, next);
+    });
+    save();
+    if ("site_title" in next || "site_description" in next) touchContent(db);
+    const changed = Object.keys(next).filter((key) => before[key] !== next[key]);
     res.json({ ok: true, changed });
   });
 

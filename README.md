@@ -17,10 +17,9 @@
 server/          Express-приложение: app.js, db.js, auth.js, routes/, lib/
 public/          Публичный сайт и кабинет (статика)
 admin/           Админ-панель (отдаётся только ролям editor/admin)
-scripts/         create-admin.js, seed-legacy.js
+scripts/         create-admin.js
 tests/           node:test — unit и интеграционные API-тесты
 deploy/          systemd-юнит для сервера
-legacy/          Старые data.js/participants.js для однократного переноса в БД
 ```
 
 ## Локальный запуск
@@ -47,15 +46,15 @@ npm run create-admin -- --username admin --name "Ваше имя"
 
 Пользователей создаёт админ в панели: выдаётся временный пароль, при первом входе требуется сменить его.
 
-## Перенос старых данных
+## ИИ
 
-Данные из `legacy/data.js` и `legacy/participants.js` заливаются один раз:
+- Разбор текста — `{base}/chat/completions`, модель по умолчанию `openai/gpt-4o-mini`. Промпт запрещает модели придумывать мнение: отзыв и тир берутся только из сообщения автора, пустое поле лучше выдуманного.
+- Голосовые — запись в браузере (MediaRecorder), распознавание на сервере через `{base}/audio/transcriptions`, модель по умолчанию `openai/whisper-large-v3-turbo`.
+- Base URL (по умолчанию `https://openrouter.ai/api/v1`), ключ и обе модели настраиваются в админке → Настройки. Для OpenRouter аудио уходит JSON-ом (`input_audio`), для других OpenAI-совместимых API — multipart.
 
-```bash
-npm run seed        # откажется работать, если база не пуста
-```
+## Журнал
 
-Пользователи создаются без паролей: админ выдаёт им временные пароли в панели (или `npm run create-admin`). После переноса папку `legacy/` можно удалить.
+Админка → Журнал: кто что сделал, по-русски, с разницей «было → стало». Большинство действий (напитки, оценки, тиры, пользователи, настройки кроме ключа) можно откатить; откат идёт по порядку — если объект менялся позже, сначала откатывается более свежая запись.
 
 ## Деплой
 
@@ -75,6 +74,7 @@ COOKIE_SECURE=auto
 SESSION_TTL_DAYS=30
 SESSION_IDLE_DAYS=14
 OPENROUTER_KEY=            # можно задать в админке (Настройки)
+AI_BASE_URL=               # необязательно; в админке приоритетнее
 ```
 
 systemd-юнит обновляется вручную: скопировать `deploy/nrgindex.service` в `/etc/systemd/system/`, затем `systemctl daemon-reload && systemctl restart nrgindex`. Деплой обновляет только код — у runner'а нет прав на изменение юнита.
