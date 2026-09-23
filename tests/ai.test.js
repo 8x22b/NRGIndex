@@ -5,6 +5,7 @@ const {
   parseDrinkText,
   transcribeAudio,
   normalizeBaseUrl,
+  providerFailureDetail,
   audioFormat,
   decodeAudio,
   searchCanImages,
@@ -213,4 +214,27 @@ test("searchCanImages: PNG и «white background» с Commons идут перв�
     images.map((item) => [item.url.split("/").pop(), item.stockHint]),
     [["p.png", true], ["w.jpg", true], ["o.jpg", false], ["j.jpg", false]],
   );
+});
+
+test("providerFailureDetail достаёт текст ошибки из JSON провайдера", async () => {
+  const res = new Response(
+    JSON.stringify({ success: false, error: "Access denied by security policy." }),
+    { status: 403 },
+  );
+  assert.equal(await providerFailureDetail(res), "Access denied by security policy.");
+});
+
+test("providerFailureDetail чистит HTML и режет длину", async () => {
+  const html = new Response("<html><head><title>Blocked</title></head><body>no</body></html>", {
+    status: 403,
+  });
+  const detail = await providerFailureDetail(html);
+  assert.ok(detail.includes("Blocked"));
+  assert.ok(!detail.includes("<"));
+  const long = new Response("z".repeat(400), { status: 500 });
+  assert.equal((await providerFailureDetail(long, 50)).length, 50);
+});
+
+test("providerFailureDetail: пустое тело — пустая строка", async () => {
+  assert.equal(await providerFailureDetail(new Response("", { status: 500 })), "");
 });

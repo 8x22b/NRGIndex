@@ -7,7 +7,7 @@ const { writeAudit, getSetting, setSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
 const { userToApi, drinkToAdmin } = require("../lib/serialize");
-const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl } = require("../lib/ai");
+const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl, providerFailureDetail } = require("../lib/ai");
 const history = require("../lib/history");
 const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../lib/proxy");
 
@@ -472,12 +472,14 @@ module.exports = (db, auth, config) => {
         error: timeout ? "нет ответа за 15 с" : String(error?.message || "ошибка сети").slice(0, 200),
       });
     }
+    let detail = "";
+    if (!response.ok) detail = await providerFailureDetail(response);
     res.json({
       ok: response.ok,
       viaProxy: Boolean(proxyUrl),
       status: response.status,
       ms: Date.now() - started,
-      error: response.ok ? "" : `HTTP ${response.status}`,
+      error: response.ok ? "" : [`HTTP ${response.status}`, detail].filter(Boolean).join(" — "),
     });
   });
 
