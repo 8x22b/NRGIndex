@@ -203,7 +203,7 @@
             <select data-m-tier>${state.summary.tiers
               .map((tier) => `<option ${tier.id === rating.tier ? "selected" : ""}>${esc(tier.id)}</option>`)
               .join("")}</select>
-            <button class="btn btn--ghost" type="button" data-m-del-rating>− оценка</button>
+            <button class="btn btn--danger" type="button" data-m-del-rating>удалить</button>
             ${own ? `<button class="btn btn--danger" type="button" data-m-del-drink>× банка</button>` : ""}
           </div>
         </div>`;
