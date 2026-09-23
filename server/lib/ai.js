@@ -107,14 +107,31 @@ async function postWithTimeout(fetchImpl, url, init, timeoutMs) {
   }
 }
 
-async function providerError(res, what) {
-  let detail = "";
+async function providerFailureDetail(res, maxLength = 200) {
+  let text = "";
   try {
-    const body = await res.json();
-    detail = String(body?.error?.message || body?.error || "").slice(0, 200);
+    text = await res.text();
+  } catch {
+    return "";
+  }
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+  try {
+    const json = JSON.parse(trimmed);
+    const fromJson = json?.error?.message || json?.error || json?.message || json?.detail;
+    if (fromJson) return String(fromJson).replace(/\s+/g, " ").slice(0, maxLength);
   } catch {
     /* тело не JSON */
   }
+  const withoutTags = trimmed
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return withoutTags.slice(0, maxLength);
+}
+
+async function providerError(res, what) {
+  const detail = await providerFailureDetail(res);
   return new ApiError(502, `${what}: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`, "ai_failed");
 }
 
@@ -375,6 +392,7 @@ module.exports = {
   parseDrinkText,
   normalizeParsed,
   normalizeBaseUrl,
+  providerFailureDetail,
   transcribeAudio,
   decodeAudio,
   audioFormat,
