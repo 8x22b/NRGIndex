@@ -7,19 +7,30 @@ function formatDate(value) {
 }
 
 function initialsOf(displayName) {
-  return String(displayName || "")
+  const parts = String(displayName || "")
+    .trim()
     .split(/\s+/)
-    .filter(Boolean)
+    .filter(Boolean);
+  if (!parts.length) return "";
+  if (parts.length === 1) return [...parts[0]].slice(0, 2).join("").toUpperCase();
+  return parts
     .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
+    .map((part) => [...part][0].toUpperCase())
     .join("");
+}
+
+// В кружок помещается максимум два символа: «ДАУН» -> «ДА», «F» -> «F»
+function normalizeInitials(value, displayName) {
+  const clean = String(value || "").replace(/\s+/g, "");
+  if (clean) return [...clean].slice(0, 2).join("").toUpperCase();
+  return initialsOf(displayName);
 }
 
 function userToParticipant(row) {
   return {
     id: row.username,
     name: row.display_name,
-    initials: row.initials || initialsOf(row.display_name),
+    initials: normalizeInitials(row.initials, row.display_name),
     role: row.title || "",
     color: row.color || "#9fb7ff",
   };
@@ -32,7 +43,7 @@ function userToApi(row) {
     displayName: row.display_name,
     role: row.role,
     title: row.title,
-    initials: row.initials || initialsOf(row.display_name),
+    initials: normalizeInitials(row.initials, row.display_name),
     color: row.color || "#9fb7ff",
     isActive: Boolean(row.is_active),
     isPublic: Boolean(row.is_public),
@@ -77,4 +88,4 @@ function drinkToAdmin(row, ratings, relatedIds) {
   };
 }
 
-module.exports = { formatDate, initialsOf, userToParticipant, userToApi, drinkToPublic, drinkToAdmin };
+module.exports = { formatDate, initialsOf, normalizeInitials, userToParticipant, userToApi, drinkToPublic, drinkToAdmin };

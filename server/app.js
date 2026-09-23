@@ -1,6 +1,7 @@
 const path = require("node:path");
 const express = require("express");
 const helmet = require("helmet");
+const compression = require("compression");
 const cookieParser = require("cookie-parser");
 const { createAuth } = require("./auth");
 const { ApiError } = require("./lib/errors");
@@ -39,8 +40,8 @@ function createApp({ db, config }) {
         directives: {
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
-          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          fontSrc: ["'self'"],
           imgSrc: [
             "'self'",
             "data:",
@@ -64,6 +65,7 @@ function createApp({ db, config }) {
       xFrameOptions: { action: "deny" },
     }),
   );
+  app.use(compression());
   app.use(express.json({ limit: config.jsonLimit }));
   app.use(cookieParser());
   app.use((req, res, next) => {
@@ -100,9 +102,14 @@ function createApp({ db, config }) {
     express.static(config.publicDir, {
       extensions: ["html"],
       setHeaders(res, filePath) {
-        if (filePath.endsWith(".html")) res.setHeader("Cache-Control", "no-cache");
-        else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
           res.setHeader("Cache-Control", "public, max-age=2592000");
+        } else if (filePath.includes(`${path.sep}fonts${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (/\.(css|js)$/.test(filePath)) {
+          res.setHeader("Cache-Control", "public, max-age=600");
         }
       },
     }),
