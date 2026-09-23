@@ -41,11 +41,8 @@
     parsed: null,
     image: null,
     photoNote: "",
-    searchResults: [],
-    searchIndex: 0,
+    photoSource: "auto",
     userPhoto: false,
-    manualResults: [],
-    manualIndex: 0,
   };
 
   /* ---------- views ---------- */
@@ -383,14 +380,6 @@
     const parsed = pending.parsed;
     if (!parsed) return;
     $("smart-preview").hidden = false;
-    const img = $("parsed-img");
-    if (pending.image) {
-      img.src = pending.image;
-      img.hidden = false;
-    } else {
-      img.removeAttribute("src");
-      img.hidden = true;
-    }
     $("parsed-title").textContent = `${parsed.brand} — ${parsed.name}`;
     $("parsed-sub").textContent = [parsed.flavor, parsed.edition].filter(Boolean).join(" · ");
     $("parsed-review").textContent =
@@ -400,63 +389,228 @@
       ? "Тир не был назван — стоит B по умолчанию, поправь ниже"
       : "Тир из твоего сообщения";
     $("parsed-tier").style.opacity = parsed.tierGuessed ? ".55" : "";
-    $("parsed-photo-note").textContent = [
-      pending.photoNote,
-      parsed.tierGuessed ? "тир не назван — стоит B по умолчанию" : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
     fillManual(parsed);
+    updatePreviewImage();
     $("smart-preview").scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
-  const autoPhoto = async (parsed) => {
-    if (pending.userPhoto) {
-      showPreview();
-      return;
+  /* ---------- photo strip ---------- */
+  // Лента найденных фото: ищет по бренду + названию + вкусу, каждое фото сразу
+  // прогоняется через cutWhiteBg, выбор — кликом. Перезапрашивается при правке полей.
+  // photoSource: "auto" — выбрано лентой само, "strip" — кликом, "user"/"url" — своё.
+  const strip = { gen: 0, key: "", items: [], selected: -1, timer: null };
+  const STRIP_CONCURRENCY = 3;
+  const STRIP_DEBOUNCE_MS = 700;
+
+  const photoQuery = () => ({
+    brand: $("m-brand").value.trim(),
+    name: $("m-name").value.trim(),
+    flavor: $("m-flavor").value.trim(),
+  });
+
+  const updatePreviewImage = () => {
+    const img = $("parsed-img");
+    if (pending.image) {
+      img.src = pending.image;
+      img.hidden = false;
+    } else {
+      img.removeAttribute("src");
+      img.hidden = true;
     }
-    try {
-      const { images } = await api(
-        "GET",
-        `api/cabinet/ai/photo-search?q=${encodeURIComponent(`${parsed.brand} ${parsed.name}`)}`,
-      );
-      pending.searchResults = images || [];
-      pending.searchIndex = 0;
-      if (!pending.searchResults.length) {
-        pending.image = null;
-        pending.photoNote = "фото не нашлось — приложи своё или выбери вручную ниже";
-      } else {
-        try {
-          pending.image = await processImageUrl(pending.searchResults[0]);
-          pending.photoNote = "фото найдено автоматически ✓";
-        } catch {
-          pending.image = null;
-          pending.photoNote = "фото нашлось, но не обработалось — приложи своё";
-        }
-      }
-    } catch {
-      pending.photoNote = "поиск фото не ответил — приложи своё или выбери вручную ниже";
-    }
-    showPreview();
+    if (!pending.parsed) return;
+    $("parsed-photo-note").textContent = [
+      pending.photoNote,
+      pending.parsed.tierGuessed ? "тир не назван — стоит B по умолчанию" : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
   };
 
-  const retryPhoto = async () => {
-    const list = pending.searchResults;
-    if (!list.length) {
-      $("smart-status").textContent = "Вариантов больше нет — вставь ссылку вручную ниже.";
+  const setStripStatus = (text) => {
+    $("photo-strip-status").textContent = text;
+  };
+
+  const markSelected = () => {
+    $("photo-track")
+      .querySelectorAll(".photo-tile")
+      .forEach((tile) => {
+        const on = Number(tile.dataset.index) === strip.selected;
+        tile.classList.toggle("is-selected", on);
+        tile.setAttribute("aria-selected", on ? "true" : "false");
+      });
+  };
+
+  const selectTile = (index, source) => {
+    const item = strip.items[index];
+    if (!item?.dataUrl) return;
+    strip.selected = index;
+    pending.image = item.dataUrl;
+    pending.photoSource = source;
+    pending.userPhoto = false;
+    pending.photoNote =
+      (source === "auto" ? "фото найдено автоматически ✓" : "фото выбрано из ленты ✓") +
+      (item.cut ? "" : " · фон не вырезан");
+    markSelected();
+    updatePreviewImage();
+  };
+
+  const renderTile = (index) => {
+    const item = strip.items[index];
+    const tile = $("photo-track").querySelector(`[data-index="${index}"]`);
+    if (!tile) return;
+    if (item.state === "failed") {
+      tile.remove();
       return;
     }
-    pending.searchIndex = (pending.searchIndex + 1) % list.length;
-    $("smart-status").textContent = `Фото ${pending.searchIndex + 1} / ${list.length}…`;
-    try {
-      pending.image = await processImageUrl(list[pending.searchIndex]);
-      pending.photoNote = `фото найдено автоматически ✓ (${pending.searchIndex + 1}/${list.length})`;
-    } catch {
-      pending.image = null;
-      pending.photoNote = `фото ${pending.searchIndex + 1}/${list.length} не обработалось`;
+    tile.classList.toggle("is-loading", item.state === "loading");
+    if (item.state !== "ready") return;
+    tile.innerHTML = `<img src="${item.dataUrl}" alt="">${
+      item.cut ? "" : `<span class="photo-tile__badge">фон</span>`
+    }`;
+    tile.disabled = false;
+  };
+
+  const readyCount = () => strip.items.filter((item) => item.state === "ready").length;
+
+  const finishStrip = () => {
+    const ready = readyCount();
+    if (!ready) {
+      setStripStatus("ничего подходящего — приложи своё фото или ссылку");
+      if (pending.photoSource === "auto") {
+        pending.image = null;
+        pending.photoNote = "фото не нашлось — приложи своё или выбери ссылкой";
+        updatePreviewImage();
+      }
+      return;
     }
-    $("smart-status").textContent = "";
-    showPreview();
+    setStripStatus(`${ready} ${wordForm(ready, ["фото", "фото", "фото"])} · листай вправо, жми нужное`);
+  };
+
+  const processStrip = async (gen) => {
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < strip.items.length) {
+        const index = next++;
+        const item = strip.items[index];
+        try {
+          const img = await loadImage(item.url);
+          const cut = cutWhiteBg(img);
+          item.dataUrl = cut || shrinkOnly(img);
+          item.cut = Boolean(cut);
+          item.state = "ready";
+        } catch {
+          item.state = "failed";
+        }
+        if (gen !== strip.gen) return;
+        done++;
+        setStripStatus(`режу фон… ${done} / ${strip.items.length}`);
+        renderTile(index);
+        // первое готовое фото подставляем само, пока пользователь ничего не выбрал
+        if (item.state === "ready" && pending.photoSource === "auto" && strip.selected < 0) {
+          selectTile(index, "auto");
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: STRIP_CONCURRENCY }, worker));
+    if (gen === strip.gen) finishStrip();
+  };
+
+  const clearStrip = () => {
+    strip.gen++;
+    strip.key = "";
+    strip.items = [];
+    strip.selected = -1;
+    clearTimeout(strip.timer);
+    $("photo-track").innerHTML = "";
+    $("photo-strip").hidden = true;
+  };
+
+  const refreshPhotos = async ({ force = false } = {}) => {
+    const query = photoQuery();
+    const key = [query.brand, query.name, query.flavor].join("|").toLowerCase();
+    if (key.replace(/\|/g, "").length < 2) {
+      clearStrip();
+      return;
+    }
+    if (!force && key === strip.key) return;
+    strip.key = key;
+    const gen = ++strip.gen;
+    strip.items = [];
+    strip.selected = -1;
+    $("photo-strip").hidden = false;
+    $("photo-track").innerHTML = "";
+    setStripStatus("ищу фото…");
+
+    const params = new URLSearchParams();
+    for (const [field, value] of Object.entries(query)) if (value) params.set(field, value);
+    let images;
+    try {
+      ({ images } = await api("GET", `api/cabinet/ai/photo-search?${params}`));
+    } catch (error) {
+      if (gen === strip.gen) setStripStatus(`поиск не ответил: ${error.message}`);
+      return;
+    }
+    if (gen !== strip.gen) return;
+
+    strip.items = (images || []).map((hit) => ({
+      url: typeof hit === "string" ? hit : hit.url,
+      title: typeof hit === "string" ? "" : hit.title || "",
+      state: "loading",
+      dataUrl: "",
+      cut: false,
+    }));
+    if (!strip.items.length) {
+      finishStrip();
+      return;
+    }
+    $("photo-track").innerHTML = strip.items
+      .map(
+        (item, index) =>
+          `<button class="photo-tile is-loading" type="button" role="option" aria-selected="false"
+             data-index="${index}" title="${esc(item.title)}" disabled></button>`,
+      )
+      .join("");
+    $("photo-track").scrollLeft = 0;
+    setStripStatus(`режу фон… 0 / ${strip.items.length}`);
+    processStrip(gen);
+  };
+
+  const schedulePhotos = () => {
+    clearTimeout(strip.timer);
+    strip.timer = setTimeout(() => refreshPhotos(), STRIP_DEBOUNCE_MS);
+  };
+
+  $("photo-track").addEventListener("click", (event) => {
+    const tile = event.target.closest(".photo-tile");
+    if (tile && !tile.disabled) selectTile(Number(tile.dataset.index), "strip");
+  });
+  // колесо мыши листает ленту вбок
+  $("photo-track").addEventListener(
+    "wheel",
+    (event) => {
+      const track = event.currentTarget;
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      if (track.scrollWidth <= track.clientWidth) return;
+      event.preventDefault();
+      track.scrollLeft += event.deltaY;
+    },
+    { passive: false },
+  );
+  $("btn-photo-refresh").onclick = () => refreshPhotos({ force: true });
+
+  const retryPhoto = () => {
+    const ready = strip.items.map((item, index) => (item.state === "ready" ? index : -1)).filter((i) => i >= 0);
+    if (!ready.length) {
+      $("smart-status").textContent = "Вариантов нет — приложи своё фото или вставь ссылку.";
+      return;
+    }
+    const pos = ready.indexOf(strip.selected);
+    const index = ready[(pos + 1) % ready.length];
+    selectTile(index, "strip");
+    $("photo-track")
+      .querySelector(`[data-index="${index}"]`)
+      ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   };
 
   const saveDrink = async (parsed) => {
@@ -473,8 +627,12 @@
     pending.parsed = null;
     pending.image = null;
     pending.userPhoto = false;
-    pending.searchResults = [];
-    pending.searchIndex = 0;
+    pending.photoSource = "auto";
+    pending.photoNote = "";
+    clearStrip();
+    ["m-brand", "m-name", "m-flavor", "m-edition", "m-review", "m-image-url"].forEach((id) => {
+      $(id).value = "";
+    });
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
     clearVoice();
@@ -493,10 +651,14 @@
     try {
       const { parsed } = await api("POST", "api/cabinet/ai/parse", { text });
       pending.parsed = parsed;
-      pending.userPhoto = Boolean(pending.image);
-      $("smart-status").textContent = "Ищу фото…";
-      await autoPhoto(parsed);
+      if (!pending.userPhoto) {
+        pending.image = null;
+        pending.photoSource = "auto";
+        pending.photoNote = "ищу фото…";
+      }
+      showPreview();
       $("smart-status").textContent = "";
+      refreshPhotos();
     } catch (error) {
       $("smart-status").textContent = `${error.message}. Заполни вручную ниже.`;
     }
@@ -543,7 +705,14 @@
     ["m-review", "review"],
   ]) {
     $(id).addEventListener("input", (event) => {
-      if (pending.parsed) pending.parsed[field] = event.target.value;
+      if (pending.parsed) {
+        pending.parsed[field] = event.target.value;
+        $("parsed-title").textContent = `${pending.parsed.brand} — ${pending.parsed.name}`;
+        $("parsed-sub").textContent = [pending.parsed.flavor, pending.parsed.edition]
+          .filter(Boolean)
+          .join(" · ");
+      }
+      if (["brand", "name", "flavor"].includes(field)) schedulePhotos();
     });
   }
 
@@ -557,9 +726,12 @@
       const cut = cutWhiteBg(img);
       pending.image = cut || shrinkOnly(img);
       pending.userPhoto = true;
+      pending.photoSource = "user";
       pending.photoNote = cut ? "твоё фото · фон вырезан ✓" : "твоё фото ✓";
+      strip.selected = -1;
+      markSelected();
       $("smart-status").textContent = "Фото приложено ✓";
-      if (pending.parsed) showPreview();
+      updatePreviewImage();
     } catch {
       $("smart-status").textContent = "Не смог прочитать файл.";
     } finally {
@@ -568,78 +740,22 @@
     }
   });
 
-  const showManual = () => {
-    const list = pending.manualResults;
-    if (!list.length) return;
-    pending.manualIndex = (pending.manualIndex + list.length) % list.length;
-    $("m-img").src = list[pending.manualIndex];
-    $("m-count").textContent = `${pending.manualIndex + 1} / ${list.length}`;
-  };
-
-  $("btn-manual-search").onclick = async () => {
-    const query = $("m-image-search").value.trim();
-    if (!query) return;
-    $("m-count").textContent = "ищу…";
-    $("manual-results").hidden = false;
-    try {
-      const { images } = await api(
-        "GET",
-        `api/cabinet/ai/photo-search?q=${encodeURIComponent(query)}`,
-      );
-      pending.manualResults = images || [];
-      pending.manualIndex = 0;
-      if (!pending.manualResults.length) {
-        $("m-count").textContent = "ничего не нашлось";
-        $("m-img").removeAttribute("src");
-        return;
-      }
-      showManual();
-    } catch (error) {
-      $("m-count").textContent = error.message;
-    }
-  };
-
-  $("m-image-search").addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      $("btn-manual-search").click();
-    }
-  });
-  $("m-prev").onclick = () => {
-    pending.manualIndex--;
-    showManual();
-  };
-  $("m-next").onclick = () => {
-    pending.manualIndex++;
-    showManual();
-  };
-
-  $("btn-manual-pick").onclick = async () => {
-    const url = pending.manualResults[pending.manualIndex];
-    if (!url) return;
-    try {
-      pending.image = await processImageUrl(url);
-      pending.photoNote = "фото выбрано вручную ✓";
-    } catch {
-      pending.image = null;
-      pending.photoNote = "не удалось скачать фото из поиска";
-    }
-    if (pending.parsed) showPreview();
-    else $("smart-status").textContent = "Фото выбрано ✓";
-  };
-
   $("btn-manual-url").onclick = async () => {
     const url = $("m-image-url").value.trim();
     if (!url) return;
     try {
       pending.image = await processImageUrl(url);
+      pending.photoSource = "url";
       pending.photoNote = "фото по ссылке ✓";
+      strip.selected = -1;
+      markSelected();
     } catch {
-      pending.image = null;
-      pending.photoNote = "не удалось загрузить фото по ссылке";
+      pending.photoNote = "не удалось загрузить фото по ссылке (сайт не отдаёт картинку)";
     }
-    if (pending.parsed) showPreview();
-    else $("smart-status").textContent = pending.image ? "Фото взято ✓" : pending.photoNote;
+    updatePreviewImage();
+    if (!pending.parsed) {
+      $("smart-status").textContent = pending.photoSource === "url" ? "Фото взято ✓" : pending.photoNote;
+    }
   };
 
   /* ---------- voice ---------- */

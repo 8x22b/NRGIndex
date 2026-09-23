@@ -7,6 +7,8 @@ const {
   normalizeBaseUrl,
   audioFormat,
   decodeAudio,
+  searchCanImages,
+  photoTerms,
   SYSTEM_PROMPT,
 } = require("../server/lib/ai");
 
@@ -132,4 +134,60 @@ test("normalizeBaseUrl, audioFormat, decodeAudio валидируют ввод",
   assert.throws(() => audioFormat("text/plain"), /формат/);
   assert.throws(() => decodeAudio("aGk="), /короткая/);
   assert.equal(decodeAudio(Buffer.alloc(300).toString("base64")).length, 300);
+});
+
+test("photoTerms: слова без дублей и спецсимволов поиска", () => {
+  assert.equal(photoTerms("Burn", "Burn Juicy Energy", 'малина "личи":'), "Burn Juicy Energy малина личи");
+  assert.equal(photoTerms("", "  ", "x"), "");
+});
+
+test("searchCanImages ищет по бренду+названию+вкусу и сливает источники", async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    if (url.includes("openfoodfacts")) {
+      return {
+        ok: true,
+        json: async () => ({
+          hits: [
+            { brands: ["Volt"], product_name: "Volt Cola", image_front_url: "https://images.openfoodfacts.org/c.jpg" },
+            { brands: "Volt", product_name: "Малина-личи", image_front_url: "https://images.openfoodfacts.org/a.jpg" },
+            { brands: "Burn", product_name: "Малина", image_front_url: "https://images.openfoodfacts.org/b.jpg" },
+            { brands: "Volt", image_front_url: "https://evil.example/x.jpg" },
+          ],
+        }),
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        query: {
+          pages: {
+            1: { index: 2, title: "File:Doc.pdf", imageinfo: [{ mime: "application/pdf", url: "https://upload.wikimedia.org/d.pdf" }] },
+            2: { index: 1, title: "File:Volt can.jpg", imageinfo: [{ mime: "image/jpeg", thumburl: "https://upload.wikimedia.org/v.jpg" }] },
+          },
+        },
+      }),
+    };
+  };
+  const images = await searchCanImages({ brand: "Volt", name: "Volt", flavor: "малина личи" }, { fetchImpl });
+  assert.deepEqual(
+    images.map((item) => item.url),
+    ["https://images.openfoodfacts.org/a.jpg", "https://images.openfoodfacts.org/c.jpg", "https://upload.wikimedia.org/v.jpg"],
+  );
+  assert.equal(images[2].title, "Volt can");
+  const off = decodeURIComponent(urls.find((url) => url.includes("openfoodfacts")));
+  assert.match(off, /Volt малина личи/);
+  // вкус в Commons не шлём — там по нему почти ничего нет
+  assert.doesNotMatch(decodeURIComponent(urls.find((url) => url.includes("wikimedia"))), /малина/);
+});
+
+test("searchCanImages: один источник упал — отдаём второй, оба — 502", async () => {
+  const offOnly = async (url) =>
+    url.includes("wikimedia")
+      ? { ok: false, status: 503 }
+      : { ok: true, json: async () => ({ hits: [{ image_front_url: "https://images.openfoodfacts.org/b.jpg" }] }) };
+  assert.equal((await searchCanImages("burn", { fetchImpl: offOnly })).length, 1);
+  const down = async () => ({ ok: false, status: 503 });
+  await assert.rejects(() => searchCanImages("burn", { fetchImpl: down }), /недоступен/);
 });

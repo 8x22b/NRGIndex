@@ -100,8 +100,17 @@
           <div class="parsed-card__actions">
             <span class="parsed-tier" id="parsed-tier">A</span>
             <button class="btn" type="button" id="btn-confirm">В индекс ✓</button>
-            <button class="btn btn--ghost" type="button" id="btn-retry-photo">Сменить фото</button>
+            <button class="btn btn--ghost" type="button" id="btn-retry-photo">Следующее фото</button>
           </div>
+        </div>
+
+        <div class="photo-strip" id="photo-strip" hidden>
+          <div class="photo-strip__head">
+            <span>Фото из интернета</span>
+            <span class="photo-strip__status" id="photo-strip-status" aria-live="polite"></span>
+            <button class="btn btn--ghost" type="button" id="btn-photo-refresh" title="Искать заново">↻</button>
+          </div>
+          <div class="photo-strip__track" id="photo-track" role="listbox" aria-label="Найденные фото"></div>
         </div>
 
         <details class="cabinet-ai">
@@ -124,19 +133,7 @@
             <input id="m-image-url" type="url" placeholder="ссылка на фото">
             <button class="btn btn--ghost" type="button" id="btn-manual-url">Взять</button>
           </div>
-          <div class="form-row">
-            <input id="m-image-search" type="text" placeholder="поиск фото: «burn tropical»">
-            <button class="btn btn--ghost" type="button" id="btn-manual-search">Найти</button>
-          </div>
-          <div class="image-results" id="manual-results" hidden>
-            <button class="btn btn--ghost" type="button" id="m-prev">←</button>
-            <img id="m-img" alt="Найденное изображение">
-            <button class="btn btn--ghost" type="button" id="m-next">→</button>
-            <div class="image-results__bar">
-              <span id="m-count">0 / 0</span>
-              <button class="btn" type="button" id="btn-manual-pick">Выбрать это</button>
-            </div>
-          </div>
+          <p class="hint">Фото ищутся сами по бренду, названию и вкусу — лента выше обновится, как поправишь поля.</p>
           <button class="btn btn--big" type="button" id="btn-manual-save">Добавить вручную из этих полей</button>
         </details>
       </form>
