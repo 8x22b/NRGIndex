@@ -52,10 +52,11 @@ const SETTING_LABELS = {
   parse_base_url: "Base URL разбора",
   openrouter_key: "API-ключ",
   parse_api_key: "API-ключ разбора",
+  google_cse_key: "Ключ Google CSE",
+  google_cse_cx: "ID поисковика Google (CX)",
   ai_proxy_url: "Прокси для ИИ",
 };
-// в прокси может быть логин:пароль — в журнал не пишем, откатить нельзя
-const SECRET_SETTINGS = new Set(["openrouter_key", "parse_api_key", "ai_proxy_url"]);
+const SECRET_SETTINGS = new Set(["openrouter_key", "parse_api_key", "google_cse_key", "ai_proxy_url"]);
 const ROLE_NAMES = { admin: "админ", editor: "редактор", user: "юзер" };
 
 const quote = (value) => {

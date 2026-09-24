@@ -65,6 +65,8 @@ function aiSettings(db) {
   const sttKey = getSetting(db, "openrouter_key", "") || process.env.OPENROUTER_KEY || "";
   const parseKey = getSetting(db, "parse_api_key", "") || getSetting(db, "text_api_key", "") || process.env.PARSE_API_KEY || sttKey;
   const parseBaseUrl = getSetting(db, "parse_base_url", "") || getSetting(db, "text_base_url", "") || process.env.PARSE_BASE_URL || getSetting(db, "ai_base_url", "") || process.env.AI_BASE_URL || DEFAULT_BASE_URL;
+  const googleCseKey = getSetting(db, "google_cse_key", "") || process.env.GOOGLE_CSE_KEY || "";
+  const googleCseCx = getSetting(db, "google_cse_cx", "") || process.env.GOOGLE_CSE_CX || "";
   return {
     key: sttKey,
     sttKey,
@@ -77,6 +79,9 @@ function aiSettings(db) {
     textBaseUrl: parseBaseUrl,
     sttBaseUrl: DEFAULT_BASE_URL,
     proxyUrl,
+    googleCseKey,
+    googleCseCx,
+    googleCseFromEnv: !getSetting(db, "google_cse_key", "") && Boolean(process.env.GOOGLE_CSE_KEY),
     // все запросы к ИИ-провайдеру идут через этот fetch: прозрачно, с прокси или без
     fetchImpl: proxiedFetch(proxyUrl),
   };
@@ -396,21 +401,70 @@ async function searchWikimedia(terms, fetchImpl) {
 
 
 
+// Google Programmable Search (Custom Search JSON API): searchType=image.
+// Бесплатно 100 запросов/день — при ~10/день хватает. Без ключа не работает:
+// обычный поиск без ключа это скрапинг tbm=isch (429, капча, бан IP), в прод нельзя.
+async function searchGoogleCse(terms, { key, cx, fetchImpl = fetch } = {}) {
+  if (!key || !cx) throw new Error("Google CSE не настроен");
+  const url =
+    "https://www.googleapis.com/customsearch/v1" +
+    `?q=${encodeURIComponent(`${terms} energy drink can`)}` +
+    `&cx=${encodeURIComponent(cx)}&key=${encodeURIComponent(key)}` +
+    "&searchType=image&num=10&safe=active";
+  const res = await fetchImpl(url, {
+    headers: { "user-agent": PHOTO_UA, accept: "application/json" },
+    signal: AbortSignal.timeout(PHOTO_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    // У Google внятные коды: 400 — плохой запрос/CX, 403 — ключ/лимит, 429 — квота.
+    const detail = await providerFailureDetail(res);
+    const error = new Error(`Google CSE: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`);
+    error.status = res.status;
+    error.details = error.message;
+    throw error;
+  }
+  const data = await res.json();
+  const wanted = new Set(lowerWords(terms));
+  return (data?.items || [])
+    .filter((item) => /^https?:\/\//.test(item?.link || ""))
+    .map((item, order) => {
+      const title = String(item.title || item.displayLink || "").slice(0, 120);
+      const relevance = lowerWords(`${item.title || ""} ${item.snippet || ""}`).filter((word) =>
+        wanted.has(word),
+      ).length;
+      return {
+        url: item.link,
+        title,
+        source: "google",
+        stockHint: STOCK_HINT.test(`${item.title || ""} ${item.snippet || ""}`),
+        relevance,
+        order,
+      };
+    });
+}
+
 /**
  * Ищет фото банки по бренду, названию и вкусу.
  * Принимает строку (старый формат) или { brand, name, flavor }.
  * Источники опрашиваются параллельно; упавший источник не валит весь поиск.
+ * Google CSE — первым источником, если заданы key+cx; без них — только OFF+Wiki.
  */
-async function searchCanImages(query, { fetchImpl = fetch } = {}) {
+async function searchCanImages(query, { fetchImpl = fetch, googleFetchImpl, googleKey = "", googleCx = "" } = {}) {
   const fields = typeof query === "string" ? { name: query } : query || {};
   const product = photoTerms(fields.brand || "", fields.name || "");
   const full = photoTerms(fields.brand || "", fields.name || "", fields.flavor || "");
   if (!full) return [];
 
-  const settled = await Promise.allSettled([
+  const tasks = [
     searchOpenFoodFacts(full, fields.brand || "", fetchImpl),
     searchWikimedia(product || full, fetchImpl),
-  ]);
+  ];
+  if (googleKey && googleCx) {
+    // Гугл — через прокси как ИИ (часто без него из ДЦ не отвечает),
+    // OFF+Wiki ходят напрямую как раньше.
+    tasks.unshift(searchGoogleCse(full, { key: googleKey, cx: googleCx, fetchImpl: googleFetchImpl || fetchImpl }));
+  }
+  const settled = await Promise.allSettled(tasks);
   if (settled.every((item) => item.status === "rejected")) {
     throw new ApiError(502, "Поиск фото недоступен", "photo_search_failed");
   }
@@ -431,11 +485,13 @@ async function searchCanImages(query, { fetchImpl = fetch } = {}) {
       results.push(clean);
     }
   }
-  // Кандидаты в сток — вперёд. Окончательно фон проверяет браузер по пикселям рамки,
+  // Google — вперёд (лучшее качество), затем кандидаты в сток.
+  // Окончательно фон проверяет браузер по пикселям рамки,
   // а stockHint лишь поднимает вероятные варианты, чтобы они влезли в лимит.
+  const weight = (hit) => (hit.source === "google" ? 2 : 0) + (hit.stockHint ? 1 : 0);
   return results
     .map((hit, order) => ({ hit, order }))
-    .sort((a, b) => Number(b.hit.stockHint) - Number(a.hit.stockHint) || a.order - b.order)
+    .sort((a, b) => weight(b.hit) - weight(a.hit) || a.order - b.order)
     .map(({ hit }) => hit)
     .slice(0, PHOTO_LIMIT);
 }
@@ -451,6 +507,7 @@ module.exports = {
   audioFormat,
   aiSettings,
   searchCanImages,
+  searchGoogleCse,
   photoTerms,
   TIERS,
   SYSTEM_PROMPT,

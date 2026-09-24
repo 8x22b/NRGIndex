@@ -585,6 +585,14 @@
     // прокси из env в поле не подставляем, иначе при сохранении он «переедет» в БД
     $("s-proxy").value = settings.aiProxyFromEnv ? "" : settings.aiProxyUrl || "";
     if (settings.aiProxyFromEnv) $("s-proxy").placeholder = `из AI_PROXY_URL: ${settings.aiProxyUrl}`;
+    $("s-google-key").value = "";
+    $("s-google-key").placeholder = settings.googleCseFromEnv
+      ? "задан через GOOGLE_CSE_KEY — ввод заменит на значение из БД"
+      : settings.googleCseKeySet
+        ? "задан — оставьте пустым, чтобы не менять"
+        : "не задан";
+    // CX не секрет — показываем сохранённый, из env не подставляем
+    $("s-google-cx").value = settings.googleCseCx || "";
   };
 
   $("btn-ai-check").onclick = async () => {
@@ -610,9 +618,11 @@
       sttModel: $("s-stt-model").value.trim(),
       textBaseUrl: $("s-base-url").value.trim(),
       aiProxyUrl: $("s-proxy").value.trim(),
+      googleCseCx: $("s-google-cx").value.trim(),
     };
     if ($("s-key").value) payload.textApiKey = $("s-key").value;
     if ($("s-openrouter-key").value) payload.openrouterKey = $("s-openrouter-key").value;
+    if ($("s-google-key").value) payload.googleCseKey = $("s-google-key").value;
     try {
       await api("PUT", "api/admin/settings", payload);
       await refresh();
@@ -650,6 +660,37 @@
       await api("PUT", "api/admin/settings", { textApiKey: "" });
       await refresh();
       status("settings-status", "Ключ разбора убран");
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
+  };
+
+  $("btn-photo-check").onclick = async () => {
+    status("settings-status", "Проверяю Google CSE… (1 запрос из квоты)");
+    try {
+      const result = await api("POST", "api/admin/settings/photo-check", {
+        googleCseKey: $("s-google-key").value,
+        googleCseCx: $("s-google-cx").value.trim(),
+      });
+      if (result.ok) status("settings-status", `Google CSE отвечает ✓ (${result.ms} мс, фото: ${result.count})`);
+      else status("settings-status", `Google CSE не отвечает: ${result.error}`, true);
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
+  };
+
+  $("btn-google-key-clear").onclick = async () => {
+    const ok = await window.nrgConfirm({
+      title: "Убрать ключ Google?",
+      message: "Поиск фото продолжит работать через Open Food Facts + Wikimedia, но без Google.",
+      details: ["Ключ не сохраняется в журнале — откатить не получится"],
+      confirmText: "Убрать ключ",
+    });
+    if (!ok) return;
+    try {
+      await api("PUT", "api/admin/settings", { googleCseKey: "" });
+      await refresh();
+      status("settings-status", "Ключ Google убран");
     } catch (error) {
       status("settings-status", error.message, true);
     }

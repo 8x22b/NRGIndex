@@ -207,14 +207,21 @@
           </label>
           <label>Модель распознавания речи (STT)<input id="s-stt-model" type="text" placeholder="openai/whisper-large-v3-turbo"></label>
           <label>Прокси для запросов к ИИ<input id="s-proxy" type="text" spellcheck="false" autocapitalize="none" placeholder="пусто — напрямую; http://user:pass@host:3128 или socks5://host:1080"></label>
+          <label>Google CSE API-ключ (поиск фото)
+            <input id="s-google-key" type="password" placeholder="оставьте пустым — не менять">
+          </label>
+          <label>ID поисковика Google (CX)<input id="s-google-cx" type="text" spellcheck="false" autocapitalize="none" placeholder="например 0123456789abcdefg"></label>
         </div>
         <p class="admin-hint">Base URL — корень API без <code>/chat/completions</code>. Запросы идут на <code>{base}/chat/completions</code> и <code>{base}/audio/transcriptions</code>. Для OpenRouter аудио отправляется JSON-ом, для остальных — multipart, как в OpenAI API. Пустое поле — значение по умолчанию.</p>
         <p class="admin-hint">Прокси прозрачный: разбор текста и распознавание голоса идут через него целиком (HTTPS туннелируется через CONNECT, ключ и данные прокси не видит). Поддерживаются <code>http://</code>, <code>https://</code> и <code>socks5://</code>, логин и пароль — прямо в адресе. Поиск фото ходит напрямую. Пароль в поле показан как <code>***</code> — не трогай его, и он сохранится. Можно задать и через <code>AI_PROXY_URL</code> в env.</p>
+        <p class="admin-hint">Google CSE — первый источник фото (бесплатно 100 запросов/день). Без ключа работают Open Food Facts + Wikimedia. Ключ: <code>console.cloud.google.com → Custom Search API → API key</code>; CX: <code>programmablesearchengine.google.com → Search entire web + Image search</code>. Можно задать и через <code>GOOGLE_CSE_KEY</code> / <code>GOOGLE_CSE_CX</code> в env.</p>
         <div class="admin-actions">
           <button class="btn" type="submit">Сохранить</button>
           <button class="btn btn--ghost" type="button" id="btn-ai-check">Проверить связь с ИИ</button>
+          <button class="btn btn--ghost" type="button" id="btn-photo-check">Проверить Google CSE</button>
           <button class="btn btn--ghost" type="button" id="btn-key-clear">Убрать ключ STT</button>
           <button class="btn btn--ghost" type="button" id="btn-text-key-clear">Убрать ключ разбора</button>
+          <button class="btn btn--ghost" type="button" id="btn-google-key-clear">Убрать ключ Google</button>
         </div>
         <p class="form-status" id="settings-status" aria-live="polite"></p>
       </form>

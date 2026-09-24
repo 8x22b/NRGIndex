@@ -7,7 +7,7 @@ const { writeAudit, getSetting, setSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
 const { userToApi, drinkToAdmin } = require("../lib/serialize");
-const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl, providerFailureDetail } = require("../lib/ai");
+const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl, providerFailureDetail, searchGoogleCse } = require("../lib/ai");
 const history = require("../lib/history");
 const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../lib/proxy");
 
@@ -102,6 +102,9 @@ module.exports = (db, auth, config) => {
       openrouterKeySet: Boolean(ai.key),
       parseApiKeySet: Boolean(ai.parseKey),
       textApiKeySet: Boolean(ai.parseKey),
+      googleCseKeySet: Boolean(ai.googleCseKey),
+      googleCseCx: ai.googleCseCx,
+      googleCseFromEnv: ai.googleCseFromEnv,
       defaults: { aiBaseUrl: DEFAULT_BASE_URL, parseBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
     };
     const audit = isAdmin(req) ? history.listAudit(db) : [];
@@ -469,6 +472,12 @@ module.exports = (db, auth, config) => {
     if ("textApiKey" in body) {
       next.parse_api_key = str(body.textApiKey ?? "", "Ключ разбора", { required: false, max: 300 });
     }
+    if ("googleCseKey" in body) {
+      next.google_cse_key = str(body.googleCseKey ?? "", "Ключ Google CSE", { required: false, max: 200 });
+    }
+    if ("googleCseCx" in body) {
+      next.google_cse_cx = str(body.googleCseCx ?? "", "ID поисковика Google", { required: false, max: 100 });
+    }
     if ("aiProxyUrl" in body) {
       const raw = str(body.aiProxyUrl ?? "", "Прокси", { required: false, max: 500 });
       const stored = getSetting(db, "ai_proxy_url", "");
@@ -483,6 +492,8 @@ module.exports = (db, auth, config) => {
       parse_base_url: ai.parseBaseUrl,
       openrouter_key: getSetting(db, "openrouter_key", ""),
       parse_api_key: getSetting(db, "parse_api_key", "") || process.env.PARSE_API_KEY || "",
+      google_cse_key: getSetting(db, "google_cse_key", ""),
+      google_cse_cx: getSetting(db, "google_cse_cx", ""),
       ai_proxy_url: getSetting(db, "ai_proxy_url", ""),
     };
     const before = Object.fromEntries(
@@ -531,6 +542,50 @@ module.exports = (db, auth, config) => {
       ms: Date.now() - started,
       error: response.ok ? "" : [`HTTP ${response.status}`, detail].filter(Boolean).join(" — "),
     });
+  });
+
+  // Проверка ключа Google CSE: тестовый запрос searchType=image на 1 результат.
+  // Можно передать несохранённые ключ/CX из формы — проверим их, ничего не сохраняя.
+  // Квота: проверка = 1 запрос из бесплатных 100/день.
+  router.post("/settings/photo-check", requireAdmin, async (req, res) => {
+    const ai = aiSettings(db);
+    let key = ai.googleCseKey;
+    let cx = ai.googleCseCx;
+    if (req.body && "googleCseKey" in req.body) {
+      const raw = str(req.body.googleCseKey ?? "", "Ключ Google CSE", { required: false, max: 200 });
+      if (raw) key = raw;
+    }
+    if (req.body && "googleCseCx" in req.body) {
+      const raw = str(req.body.googleCseCx ?? "", "ID поисковика Google", { required: false, max: 100 });
+      if (raw) cx = raw;
+    }
+    if (!key || !cx) {
+      return res.json({ ok: false, error: "задайте ключ Google CSE и ID поисковика (CX)" });
+    }
+    const started = Date.now();
+    try {
+      const items = await searchGoogleCse("Burn energy drink", {
+        key,
+        cx,
+        fetchImpl: proxiedFetch(ai.proxyUrl),
+      });
+      res.json({
+        ok: true,
+        ms: Date.now() - started,
+        count: items.length,
+        sample: items[0]?.url || "",
+        error: "",
+      });
+    } catch (error) {
+      const status = Number(error?.status);
+      const detail = error?.details || String(error?.message || "ошибка сети").slice(0, 200);
+      res.json({
+        ok: false,
+        ms: Date.now() - started,
+        ...(Number.isFinite(status) ? { status } : {}),
+        error: detail,
+      });
+    }
   });
 
   return router;

@@ -261,7 +261,12 @@ module.exports = (db, auth, config) => {
     if (cached && cached.expiresAt > Date.now()) return res.json({ images: cached.images });
 
     checkPhotoLimit(req.user.id);
-    const images = await searchCanImages(fields);
+    const ai = aiSettings(db);
+    const images = await searchCanImages(fields, {
+      googleKey: ai.googleCseKey,
+      googleCx: ai.googleCseCx,
+      googleFetchImpl: ai.fetchImpl,
+    });
     if (photoCache.size >= PHOTO_CACHE_MAX) photoCache.delete(photoCache.keys().next().value);
     photoCache.set(key, { images, expiresAt: Date.now() + PHOTO_CACHE_MS });
     res.json({ images });

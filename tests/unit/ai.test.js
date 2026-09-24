@@ -9,6 +9,7 @@ const {
   audioFormat,
   decodeAudio,
   searchCanImages,
+  searchGoogleCse,
   photoTerms,
   SYSTEM_PROMPT,
 } = require("../../server/lib/ai");
@@ -237,4 +238,98 @@ test("providerFailureDetail чистит HTML и режет длину", async (
 
 test("providerFailureDetail: пустое тело — пустая строка", async () => {
   assert.equal(await providerFailureDetail(new Response("", { status: 500 })), "");
+});
+
+test("searchGoogleCse: маппит items, режет мусор и ставит stockHint", async () => {
+  let seenUrl = "";
+  const fetchImpl = async (url) => {
+    seenUrl = url;
+    return {
+      ok: true,
+      json: async () => ({
+        items: [
+          { link: "https://example.com/burn.jpg", title: "Burn can on white background", snippet: "product shot" },
+          { link: "ftp://example.com/x.jpg", title: "мусор" },
+          { link: "https://example.com/other.png", title: "Burn fan photo" },
+        ],
+      }),
+    };
+  };
+  const items = await searchGoogleCse("Burn", { key: "k", cx: "cx", fetchImpl });
+  assert.match(decodeURIComponent(seenUrl), /Burn energy drink can/);
+  assert.match(seenUrl, /searchType=image/);
+  assert.deepEqual(
+    items.map((item) => [item.url.split("/").pop(), item.source, item.stockHint]),
+    [["burn.jpg", "google", true], ["other.png", "google", false]],
+  );
+});
+
+test("searchGoogleCse: без ключа не дёргает сеть, ошибка HTTP несёт статус", async () => {
+  let called = false;
+  await assert.rejects(
+    searchGoogleCse("Burn", { key: "", cx: "cx", fetchImpl: async () => ((called = true), {}) }),
+    /не настроен/,
+  );
+  assert.equal(called, false);
+  const bad = async () => ({
+    ok: false,
+    status: 403,
+    text: async () => JSON.stringify({ error: { message: "API key not valid." } }),
+  });
+  const error = await searchGoogleCse("Burn", { key: "bad", cx: "cx", fetchImpl: bad }).catch((e) => e);
+  assert.equal(error.status, 403);
+  assert.match(error.message, /API key not valid/);
+});
+
+test("searchCanImages: с ключами Google идёт первым, без ключей Google не трогаем", async () => {
+  const urls = [];
+  const fetchImpl = async (url) => {
+    urls.push(url);
+    if (url.includes("customsearch")) {
+      return {
+        ok: true,
+        json: async () => ({ items: [{ link: "https://example.com/g.jpg", title: "Burn can" }] }),
+      };
+    }
+    if (url.includes("openfoodfacts")) {
+      return {
+        ok: true,
+        json: async () => ({ hits: [{ brands: "Burn", image_front_url: "https://images.openfoodfacts.org/o.jpg" }] }),
+      };
+    }
+    return { ok: true, json: async () => ({ query: { pages: {} } }) };
+  };
+  const withGoogle = await searchCanImages({ brand: "Burn", name: "Burn" }, { fetchImpl, googleKey: "k", googleCx: "cx" });
+  assert.equal(withGoogle[0].source, "google");
+  assert.ok(urls.some((url) => url.includes("customsearch")));
+
+  urls.length = 0;
+  await searchCanImages({ brand: "Burn", name: "Burn" }, { fetchImpl });
+  assert.ok(!urls.some((url) => url.includes("customsearch")));
+});
+
+test("searchCanImages: гугл идёт через googleFetchImpl, остальные — через fetchImpl", async () => {
+  const direct = [];
+  const viaProxy = [];
+  const fetchImpl = async (url) => {
+    direct.push(url);
+    if (url.includes("openfoodfacts")) {
+      return {
+        ok: true,
+        json: async () => ({ hits: [{ brands: "Burn", image_front_url: "https://images.openfoodfacts.org/o.jpg" }] }),
+      };
+    }
+    return { ok: true, json: async () => ({ query: { pages: {} } }) };
+  };
+  const googleFetchImpl = async (url) => {
+    viaProxy.push(url);
+    return { ok: true, json: async () => ({ items: [{ link: "https://example.com/g.jpg", title: "Burn can" }] }) };
+  };
+  const images = await searchCanImages(
+    { brand: "Burn", name: "Burn" },
+    { fetchImpl, googleFetchImpl, googleKey: "k", googleCx: "cx" },
+  );
+  assert.equal(images[0].source, "google");
+  assert.ok(viaProxy.some((url) => url.includes("customsearch")));
+  assert.ok(!direct.some((url) => url.includes("customsearch")));
 });
