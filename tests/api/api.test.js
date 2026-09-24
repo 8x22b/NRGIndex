@@ -587,14 +587,54 @@ test("несуществующий файл в /uploads отдаёт 404", async
   assert.equal(res.status, 404);
 });
 
-test("после повторного входа старая сессия перестаёт работать", async () => {
+test("вход со второго устройства не выкидывает из первого", async () => {
   const first = await login(ctx.base, "editor", "editor-pass-123");
   const second = await login(ctx.base, "editor", "editor-pass-123");
   const oldMe = await request(ctx.base, "GET", "/api/auth/me", { cookie: first.cookie });
-  assert.equal(oldMe.json.user, null);
+  assert.equal(oldMe.json.user.username, "editor");
   const newMe = await request(ctx.base, "GET", "/api/auth/me", { cookie: second.cookie });
   assert.equal(newMe.json.user.username, "editor");
   editorCookie = second.cookie;
+});
+
+test("сессия продлевается активностью, кука переставляется надолго", async () => {
+  await createUser(ctx.db, { username: "slide-user", password: "slide-pass-123" });
+  const { cookie } = await login(ctx.base, "slide-user", "slide-pass-123");
+  ctx.db
+    .prepare(
+      "UPDATE sessions SET expires_at = datetime('now', '+2 hours') WHERE user_id = (SELECT id FROM users WHERE username = 'slide-user')",
+    )
+    .run();
+
+  const me = await request(ctx.base, "GET", "/api/auth/me", { cookie });
+  assert.equal(me.json.user.username, "slide-user");
+
+  const row = ctx.db
+    .prepare("SELECT expires_at FROM sessions WHERE user_id = (SELECT id FROM users WHERE username = 'slide-user')")
+    .get();
+  const leftDays = (Date.parse(row.expires_at.replace(" ", "T") + "Z") - Date.now()) / 86400000;
+  assert.ok(leftDays > 0.9, `срок должен продлиться почти до TTL, осталось ${leftDays}`);
+
+  const cookies = (me.setCookie || []).join("; ");
+  assert.match(cookies, /nrg_session=/);
+  assert.match(cookies, /Max-Age=\d+/i);
+});
+
+test("смена пароля сбрасывает сессии со всех устройств", async () => {
+  await createUser(ctx.db, { username: "pass-user", password: "pass-user-123" });
+  const first = await login(ctx.base, "pass-user", "pass-user-123");
+  const second = await login(ctx.base, "pass-user", "pass-user-123");
+
+  const change = await request(ctx.base, "POST", "/api/auth/password", {
+    cookie: first.cookie,
+    body: { currentPassword: "pass-user-123", newPassword: "pass-user-456" },
+  });
+  assert.equal(change.status, 200);
+
+  for (const cookie of [first.cookie, second.cookie]) {
+    const me = await request(ctx.base, "GET", "/api/auth/me", { cookie });
+    assert.equal(me.json.user, null);
+  }
 });
 
 test("API-ответы помечены no-store, страницы — нет", async () => {
