@@ -70,7 +70,7 @@ function createApp({ db, config }) {
   app.use(cookieParser());
   app.use((req, res, next) => {
     if (req.path.startsWith("/api")) res.setHeader("Cache-Control", "no-store");
-    req.user = auth.userFromRequest(req);
+    req.user = auth.userFromRequest(req, res);
     next();
   });
   app.use("/api", csrfGuard);

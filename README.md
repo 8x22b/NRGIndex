@@ -73,8 +73,8 @@ DB_PATH=/var/lib/nrgindex/nrgindex.db
 UPLOADS_DIR=/var/lib/nrgindex/uploads
 TRUST_PROXY=10.10.20.25    # IP обратного прокси; X-Forwarded-* принимаются только от него
 COOKIE_SECURE=auto
-SESSION_TTL_DAYS=30
-SESSION_IDLE_DAYS=14
+SESSION_TTL_DAYS=90
+SESSION_IDLE_DAYS=30
 OPENROUTER_KEY=            # можно задать в админке (Настройки)
 AI_BASE_URL=               # необязательно; в админке приоритетнее
 ```

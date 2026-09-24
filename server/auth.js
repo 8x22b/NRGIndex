@@ -43,7 +43,10 @@ const hashToken = (token) => crypto.createHash("sha256").update(token).digest("h
 
 function createAuth(db, config) {
   const ttlMs = config.sessionTtlDays * 24 * 60 * 60 * 1000;
-  const idleDays = Number(config.sessionIdleDays) || 14;
+  const idleDays = Number(config.sessionIdleDays) || 30;
+
+  // 'YYYY-MM-DD HH:MM:SS' из SQLite (UTC) → timestamp
+  const parseDbDate = (value) => Date.parse(String(value || "").replace(" ", "T") + "Z") || 0;
 
   const stmt = {
     insertSession: db.prepare(
@@ -53,13 +56,15 @@ function createAuth(db, config) {
     deleteUserSessions: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
     findSession: db.prepare(`
       SELECT u.id, u.username, u.display_name, u.role, u.title, u.is_active,
-             u.must_change_password, u.initials, u.color, u.is_public
+             u.must_change_password, u.initials, u.color, u.is_public, s.expires_at
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > datetime('now')
         AND s.last_seen_at > datetime('now', ?)
     `),
-    touchSession: db.prepare("UPDATE sessions SET last_seen_at = datetime('now') WHERE token_hash = ?"),
+    touchSession: db.prepare(
+      "UPDATE sessions SET last_seen_at = datetime('now'), expires_at = datetime('now', ?) WHERE token_hash = ?",
+    ),
     cleanup: db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')"),
     recordAttempt: db.prepare(
       "INSERT INTO login_attempts (username, ip, success) VALUES (?, ?, ?)",
@@ -94,13 +99,18 @@ function createAuth(db, config) {
     stmt.deleteUserSessions.run(userId);
   }
 
-  function userFromRequest(req) {
+  function userFromRequest(req, res) {
     const token = req.cookies?.[SESSION_COOKIE];
     if (!token) return null;
     const tokenHash = hashToken(token);
     const row = stmt.findSession.get(tokenHash, `-${idleDays} days`);
     if (!row || !row.is_active) return null;
-    stmt.touchSession.run(tokenHash);
+    // Скользящая сессия: активность продлевает запись в базе, а кука
+    // переставляется, когда от срока остаётся меньше половины.
+    stmt.touchSession.run(`+${config.sessionTtlDays} days`, tokenHash);
+    if (res && parseDbDate(row.expires_at) - Date.now() < ttlMs / 2) {
+      setSessionCookie(res, req, token);
+    }
     return {
       id: row.id,
       username: row.username,

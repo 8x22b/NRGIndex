@@ -24,7 +24,8 @@ module.exports = (db, auth) => {
     auth.recordLogin(username, ip, ok);
     if (!ok) throw unauthorized("Неверный логин или пароль");
 
-    auth.destroyUserSessions(row.id);
+    // Не трогаем сессии других устройств: вход на телефоне не выкидывает с ноутбука.
+    // Все сессии по-прежнему сбрасываются при смене пароля.
     const token = auth.createSession(row.id, req);
     auth.setSessionCookie(res, req, token);
     res.json({ user: userToApi(row) });
