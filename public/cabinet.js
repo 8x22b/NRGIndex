@@ -606,7 +606,7 @@
     const median = (arr) => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)];
     const bg = [median(channels[0]), median(channels[1]), median(channels[2])];
 
-    const TOL = 52;
+    const TOL = 44;
     const BRIGHT_MIN = 120;
     const NEUTRAL_MAX = 34;
     const isBgish = (offset) => {
@@ -620,11 +620,27 @@
       );
     };
 
+    // Контур банки — стена для заливки: перепад яркости останавливает рез,
+    // даже если цвет похож на фон. Работает на фоне любого цвета.
+    const EDGE_T = 48;
+    const lum = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const o = i * 4;
+      lum[i] = (px[o] * 299 + px[o + 1] * 587 + px[o + 2] * 114) / 1000;
+    }
+    const isEdge = (x, y) => {
+      if (x <= 0 || x >= w - 1 || y <= 0 || y >= h - 1) return false;
+      const gx = Math.abs(lum[y * w + x + 1] - lum[y * w + x - 1]);
+      const gy = Math.abs(lum[(y + 1) * w + x] - lum[(y - 1) * w + x]);
+      return gx + gy > EDGE_T;
+    };
+    const canFill = (x, y) => !isEdge(x, y) && isBgish((y * w + x) * 4);
+
     const mask = new Uint8Array(w * h);
     const stack = [];
     const seed = (x, y) => {
       const i = y * w + x;
-      if (!mask[i] && isBgish(i * 4)) {
+      if (!mask[i] && canFill(x, y)) {
         mask[i] = 1;
         stack.push(i);
       }
@@ -641,19 +657,19 @@
       const i = stack.pop();
       const x = i % w;
       const y = (i / w) | 0;
-      if (x > 0 && !mask[i - 1] && isBgish((i - 1) * 4)) {
+      if (x > 0 && !mask[i - 1] && canFill(x - 1, y)) {
         mask[i - 1] = 1;
         stack.push(i - 1);
       }
-      if (x < w - 1 && !mask[i + 1] && isBgish((i + 1) * 4)) {
+      if (x < w - 1 && !mask[i + 1] && canFill(x + 1, y)) {
         mask[i + 1] = 1;
         stack.push(i + 1);
       }
-      if (y > 0 && !mask[i - w] && isBgish((i - w) * 4)) {
+      if (y > 0 && !mask[i - w] && canFill(x, y - 1)) {
         mask[i - w] = 1;
         stack.push(i - w);
       }
-      if (y < h - 1 && !mask[i + w] && isBgish((i + w) * 4)) {
+      if (y < h - 1 && !mask[i + w] && canFill(x, y + 1)) {
         mask[i + w] = 1;
         stack.push(i + w);
       }
@@ -719,11 +735,26 @@
       return isGreen(r, g, b) && Math.hypot(r - bg[0], g - bg[1], b - bg[2]) < TOL;
     };
 
+    // Контур банки — стена для заливки, как в cutWhiteBg: графика этикетки не страдает.
+    const EDGE_T = 48;
+    const lum = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      const o = i * 4;
+      lum[i] = (px[o] * 299 + px[o + 1] * 587 + px[o + 2] * 114) / 1000;
+    }
+    const isEdge = (x, y) => {
+      if (x <= 0 || x >= w - 1 || y <= 0 || y >= h - 1) return false;
+      const gx = Math.abs(lum[y * w + x + 1] - lum[y * w + x - 1]);
+      const gy = Math.abs(lum[(y + 1) * w + x] - lum[(y - 1) * w + x]);
+      return gx + gy > EDGE_T;
+    };
+    const canFill = (x, y) => !isEdge(x, y) && isBgish((y * w + x) * 4);
+
     const mask = new Uint8Array(w * h);
     const stack = [];
     const seed = (x, y) => {
       const i = y * w + x;
-      if (!mask[i] && isBgish(i * 4)) {
+      if (!mask[i] && canFill(x, y)) {
         mask[i] = 1;
         stack.push(i);
       }
@@ -740,19 +771,19 @@
       const i = stack.pop();
       const x = i % w;
       const y = (i / w) | 0;
-      if (x > 0 && !mask[i - 1] && isBgish((i - 1) * 4)) {
+      if (x > 0 && !mask[i - 1] && canFill(x - 1, y)) {
         mask[i - 1] = 1;
         stack.push(i - 1);
       }
-      if (x < w - 1 && !mask[i + 1] && isBgish((i + 1) * 4)) {
+      if (x < w - 1 && !mask[i + 1] && canFill(x + 1, y)) {
         mask[i + 1] = 1;
         stack.push(i + 1);
       }
-      if (y > 0 && !mask[i - w] && isBgish((i - w) * 4)) {
+      if (y > 0 && !mask[i - w] && canFill(x, y - 1)) {
         mask[i - w] = 1;
         stack.push(i - w);
       }
-      if (y < h - 1 && !mask[i + w] && isBgish((i + w) * 4)) {
+      if (y < h - 1 && !mask[i + w] && canFill(x, y + 1)) {
         mask[i + w] = 1;
         stack.push(i + w);
       }

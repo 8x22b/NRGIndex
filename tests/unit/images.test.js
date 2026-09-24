@@ -79,6 +79,44 @@ test("картинка автоматически кадрируется и по
   }
 });
 
+test("светлая банка с серой кромкой: заливка встаёт на контуре, нутро цело", async () => {
+  const width = 120;
+  const height = 120;
+  const raw = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      raw[offset] = 255;
+      raw[offset + 1] = 255;
+      raw[offset + 2] = 255;
+      raw[offset + 3] = 255;
+    }
+  }
+  // «Банка»: светло-серое нутро (в допуске TOL от белого — старый код его съедал),
+  // вокруг — серая кромка 2px (проходит по neutral-ветке, но перепад яркости ~105 — контур).
+  for (let y = 20; y < 100; y++) {
+    for (let x = 30; x < 90; x++) {
+      const offset = (y * width + x) * 4;
+      const edge = y < 22 || y > 97 || x < 32 || x > 87;
+      const v = edge ? 150 : 235;
+      raw[offset] = v;
+      raw[offset + 1] = v;
+      raw[offset + 2] = v;
+    }
+  }
+  const jpeg = await sharp(raw, { raw: { width, height, channels: 4 } }).jpeg({ quality: 75 }).toBuffer();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrg-img-"));
+  try {
+    const result = await saveProcessedImage(dir, `data:image/jpeg;base64,${jpeg.toString("base64")}`, 2 * 1024 * 1024);
+    const file = path.join(dir, path.basename(result.path));
+    const { data, info } = await sharp(fs.readFileSync(file)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (x, y) => data[(y * info.width + x) * 4 + 3];
+    assert.equal(alphaAt(0, 0), 0, "угол фона должен стать прозрачным");
+    assert.equal(alphaAt(Math.floor(info.width / 2), Math.floor(info.height / 2)), 255, "светлое нутро банки за контуром должно уцелеть");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 test("хромакей с градиентом и JPEG-шумом вырезается по доминированию зелёного", async () => {
   const width = 120;
   const height = 120;

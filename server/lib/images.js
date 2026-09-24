@@ -9,7 +9,11 @@ const PAD = 12;
 const WEBP_QUALITY = 82;
 // Даунскейлы для srcset: карточка ~240px, диалог ~350px — с запасом под retina.
 const RESPONSIVE_WIDTHS = [320, 640];
-const BG = { TOL: 54, BRIGHT_MIN: 118, NEUTRAL_MAX: 36, MIN_SHARE: 0.01 };
+const BG = { TOL: 44, BRIGHT_MIN: 118, NEUTRAL_MAX: 36, MIN_SHARE: 0.01 };
+// Перепад яркости, за которым заливка не идёт: контур банки (тёмная кромка, текст,
+// графика) останавливает рез даже если цвет похож на фон. Работает на фоне любого
+// цвета. Ниже — JPEG-шум и мягкие градиенты, выше — настоящий контур.
+const EDGE_T = 48;
 const FALLBACK_ACCENT = ["#ff4f79", "#ff7448"];
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
@@ -50,11 +54,24 @@ function removeBorderBackground(px, width, height) {
   };
 
   const size = width * height;
+  const lum = new Float32Array(size);
+  for (let index = 0; index < size; index++) {
+    const offset = index * 4;
+    lum[index] = (px[offset] * 299 + px[offset + 1] * 587 + px[offset + 2] * 114) / 1000;
+  }
+  const isEdge = (x, y) => {
+    if (x <= 0 || x >= width - 1 || y <= 0 || y >= height - 1) return false;
+    const gx = Math.abs(lum[y * width + x + 1] - lum[y * width + x - 1]);
+    const gy = Math.abs(lum[(y + 1) * width + x] - lum[(y - 1) * width + x]);
+    return gx + gy > EDGE_T;
+  };
+  // Заливка идёт только через не-контур: цвет фона + отсутствие резкого перепада.
+  const canFill = (x, y) => !isEdge(x, y) && isBgish((y * width + x) * 4);
   const mask = new Uint8Array(size);
   const stack = [];
   const seed = (x, y) => {
     const index = y * width + x;
-    if (!mask[index] && isBgish(index * 4)) {
+    if (!mask[index] && canFill(x, y)) {
       mask[index] = 1;
       stack.push(index);
     }
@@ -71,19 +88,19 @@ function removeBorderBackground(px, width, height) {
     const index = stack.pop();
     const x = index % width;
     const y = (index / width) | 0;
-    if (x > 0 && !mask[index - 1] && isBgish((index - 1) * 4)) {
+    if (x > 0 && !mask[index - 1] && canFill(x - 1, y)) {
       mask[index - 1] = 1;
       stack.push(index - 1);
     }
-    if (x < width - 1 && !mask[index + 1] && isBgish((index + 1) * 4)) {
+    if (x < width - 1 && !mask[index + 1] && canFill(x + 1, y)) {
       mask[index + 1] = 1;
       stack.push(index + 1);
     }
-    if (y > 0 && !mask[index - width] && isBgish((index - width) * 4)) {
+    if (y > 0 && !mask[index - width] && canFill(x, y - 1)) {
       mask[index - width] = 1;
       stack.push(index - width);
     }
-    if (y < height - 1 && !mask[index + width] && isBgish((index + width) * 4)) {
+    if (y < height - 1 && !mask[index + width] && canFill(x, y + 1)) {
       mask[index + width] = 1;
       stack.push(index + width);
     }

@@ -29,6 +29,8 @@ test("ленты фото дожимают через прокси при хот
 test("кнопки перерисовки на белом фоне есть в смарт-форме и редакторе мнения", () => {
   assert.match(cabinetHtml, /id="btn-redraw"/);
   assert.match(cabinetHtml, /id="op-photo-redraw"/);
+  assert.match(cabinetHtml, /🍌 Перерисовать/);
+  assert.match(cabinetHtml, /если ракурс плохой или фон удалился криво/);
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/photo-redraw"/);
   assert.match(cabinetRoutes, /router\.post\("\/ai\/photo-redraw"/);
 });
@@ -39,6 +41,7 @@ test("перерисовка шлёт необработанный оригин�
   assert.match(cabinetSource, /finishRedrawn/);
   assert.match(cabinetSource, /НЕОБРАБОТАННЫЙ оригинал/);
   assert.match(cabinetSource, /g - Math\.max\(r, b\)/, "градиент хромакея режется по доминированию зелёного");
+  assert.match(cabinetSource, /canFill/, "заливка идёт только через не-контур — и в белом, и в зелёном резце");
 });
 
 test("промпт просит прямой ракурс и зелёный фон", () => {

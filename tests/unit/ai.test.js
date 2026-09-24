@@ -61,6 +61,7 @@ test("промпт делит марку и линейку: Lit/Adrenaline Rush"
   assert.match(SYSTEM_PROMPT, /Adrenaline Rush/);
   assert.match(SYSTEM_PROMPT, /brand «Lit», name «Lit Energy»/);
   assert.match(SYSTEM_PROMPT, /через запятую/);
+  assert.match(SYSTEM_PROMPT, /клубника · каламанси/);
 });
 
 test("parseDrinkText делает один запрос на base URL и оставляет пустыми неизвестные поля", async () => {
