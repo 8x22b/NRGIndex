@@ -401,6 +401,49 @@ async function searchWikimedia(terms, fetchImpl) {
 
 
 
+// DuckDuckGo без ключа: сначала страница забирает токен vqd, потом i.js отдаёт JSON.
+// Best-effort фолбэк: с серверных сетей Дак часто отвечает бот-стеной —
+// тогда allSettled роняет источник молча, остальные отдают своё.
+// Отдельный браузерный UA: дефолтный NRGIndex/2.0 Дак режет чаще.
+const DDG_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+async function searchDuckDuckGo(terms, fetchImpl = fetch) {
+  const query = `${terms} energy drink can`;
+  const pageRes = await fetchImpl(`https://duckduckgo.com/?q=${encodeURIComponent(query)}&iar=images&iax=images&ia=images`, {
+    headers: { "user-agent": DDG_UA, accept: "text/html" },
+    signal: AbortSignal.timeout(PHOTO_TIMEOUT_MS),
+  });
+  if (!pageRes.ok) throw new Error(`DuckDuckGo: HTTP ${pageRes.status}`);
+  const page = await pageRes.text();
+  const vqd = page.match(/vqd=["']([^"']+)["']/)?.[1];
+  if (!vqd) throw new Error("DuckDuckGo: нет vqd-токена");
+  const jsRes = await fetchImpl(
+    `https://i.duckduckgo.com/i.js?l=us-en&o=json&q=${encodeURIComponent(query)}` +
+      `&vqd=${encodeURIComponent(vqd)}&f=,,,&p=1`,
+    {
+      headers: { "user-agent": DDG_UA, accept: "application/json" },
+      signal: AbortSignal.timeout(PHOTO_TIMEOUT_MS),
+    },
+  );
+  if (!jsRes.ok) throw new Error(`DuckDuckGo: HTTP ${jsRes.status}`);
+  const data = await jsRes.json();
+  const wanted = new Set(lowerWords(terms));
+  return (Array.isArray(data) ? data : data?.results || [])
+    .filter((item) => /^https?:\/\//.test(item?.image || ""))
+    .map((item, order) => {
+      const title = String(item.title || item.source || "").slice(0, 120);
+      const relevance = lowerWords(title).filter((word) => wanted.has(word)).length;
+      return {
+        url: item.image,
+        title,
+        source: "duckduckgo",
+        stockHint: STOCK_HINT.test(title),
+        relevance,
+        order,
+      };
+    });
+}
+
 // Google Programmable Search (Custom Search JSON API): searchType=image.
 // Бесплатно 100 запросов/день — при ~10/день хватает. Без ключа не работает:
 // обычный поиск без ключа это скрапинг tbm=isch (429, капча, бан IP), в прод нельзя.
@@ -447,22 +490,25 @@ async function searchGoogleCse(terms, { key, cx, fetchImpl = fetch } = {}) {
  * Ищет фото банки по бренду, названию и вкусу.
  * Принимает строку (старый формат) или { brand, name, flavor }.
  * Источники опрашиваются параллельно; упавший источник не валит весь поиск.
- * Google CSE — первым источником, если заданы key+cx; без них — только OFF+Wiki.
+ * Google CSE — первым источником, если заданы key+cx; DuckDuckGo без ключа —
+ * всегда вторым (best-effort: Дак с серваков часто режут, тогда молча OFF+Wiki).
  */
-async function searchCanImages(query, { fetchImpl = fetch, googleFetchImpl, googleKey = "", googleCx = "" } = {}) {
+async function searchCanImages(query, { fetchImpl = fetch, proxyFetchImpl, googleKey = "", googleCx = "" } = {}) {
   const fields = typeof query === "string" ? { name: query } : query || {};
   const product = photoTerms(fields.brand || "", fields.name || "");
   const full = photoTerms(fields.brand || "", fields.name || "", fields.flavor || "");
   if (!full) return [];
 
+  // Гугл и Дак — через прокси как ИИ (напрямую из ДЦ их часто режут),
+  // OFF+Wiki ходят напрямую как раньше.
+  const webFetch = proxyFetchImpl || fetchImpl;
   const tasks = [
+    searchDuckDuckGo(full, webFetch),
     searchOpenFoodFacts(full, fields.brand || "", fetchImpl),
     searchWikimedia(product || full, fetchImpl),
   ];
   if (googleKey && googleCx) {
-    // Гугл — через прокси как ИИ (часто без него из ДЦ не отвечает),
-    // OFF+Wiki ходят напрямую как раньше.
-    tasks.unshift(searchGoogleCse(full, { key: googleKey, cx: googleCx, fetchImpl: googleFetchImpl || fetchImpl }));
+    tasks.unshift(searchGoogleCse(full, { key: googleKey, cx: googleCx, fetchImpl: webFetch }));
   }
   const settled = await Promise.allSettled(tasks);
   if (settled.every((item) => item.status === "rejected")) {
@@ -485,10 +531,10 @@ async function searchCanImages(query, { fetchImpl = fetch, googleFetchImpl, goog
       results.push(clean);
     }
   }
-  // Google — вперёд (лучшее качество), затем кандидаты в сток.
+  // Google — вперёд (лучшее качество), Дак вторым, затем кандидаты в сток.
   // Окончательно фон проверяет браузер по пикселям рамки,
   // а stockHint лишь поднимает вероятные варианты, чтобы они влезли в лимит.
-  const weight = (hit) => (hit.source === "google" ? 2 : 0) + (hit.stockHint ? 1 : 0);
+  const weight = (hit) => (hit.source === "google" ? 2 : hit.source === "duckduckgo" ? 1 : 0) + (hit.stockHint ? 1 : 0);
   return results
     .map((hit, order) => ({ hit, order }))
     .sort((a, b) => weight(b.hit) - weight(a.hit) || a.order - b.order)
@@ -508,6 +554,7 @@ module.exports = {
   aiSettings,
   searchCanImages,
   searchGoogleCse,
+  searchDuckDuckGo,
   photoTerms,
   TIERS,
   SYSTEM_PROMPT,

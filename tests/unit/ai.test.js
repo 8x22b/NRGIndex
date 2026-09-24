@@ -10,6 +10,7 @@ const {
   decodeAudio,
   searchCanImages,
   searchGoogleCse,
+  searchDuckDuckGo,
   photoTerms,
   SYSTEM_PROMPT,
 } = require("../../server/lib/ai");
@@ -308,7 +309,7 @@ test("searchCanImages: с ключами Google идёт первым, без к
   assert.ok(!urls.some((url) => url.includes("customsearch")));
 });
 
-test("searchCanImages: гугл идёт через googleFetchImpl, остальные — через fetchImpl", async () => {
+test("searchCanImages: гугл и дак идут через proxyFetchImpl, остальные — через fetchImpl", async () => {
   const direct = [];
   const viaProxy = [];
   const fetchImpl = async (url) => {
@@ -321,15 +322,65 @@ test("searchCanImages: гугл идёт через googleFetchImpl, остал�
     }
     return { ok: true, json: async () => ({ query: { pages: {} } }) };
   };
-  const googleFetchImpl = async (url) => {
+  const proxyFetchImpl = async (url) => {
     viaProxy.push(url);
+    if (url.includes("duckduckgo.com/?")) {
+      return { ok: true, text: async () => '<html><body vqd="7-123abc"></body></html>' };
+    }
+    if (url.includes("i.duckduckgo.com")) {
+      return { ok: true, json: async () => ([{ image: "https://example.com/d.jpg", title: "Burn can" }]) };
+    }
     return { ok: true, json: async () => ({ items: [{ link: "https://example.com/g.jpg", title: "Burn can" }] }) };
   };
   const images = await searchCanImages(
     { brand: "Burn", name: "Burn" },
-    { fetchImpl, googleFetchImpl, googleKey: "k", googleCx: "cx" },
+    { fetchImpl, proxyFetchImpl, googleKey: "k", googleCx: "cx" },
   );
-  assert.equal(images[0].source, "google");
+  assert.deepEqual(images.map((item) => item.source), ["google", "duckduckgo", "openfoodfacts"]);
   assert.ok(viaProxy.some((url) => url.includes("customsearch")));
+  assert.ok(viaProxy.some((url) => url.includes("duckduckgo")));
   assert.ok(!direct.some((url) => url.includes("customsearch")));
+  assert.ok(!direct.some((url) => url.includes("duckduckgo")));
+});
+
+test("searchDuckDuckGo: токен со страницы, маппинг i.js, мусор режется", async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    if (url.includes("i.duckduckgo.com")) {
+      return {
+        ok: true,
+        json: async () => ([
+          { image: "https://example.com/can.jpg", title: "Burn can isolated on white background", source: "shop" },
+          { image: "data:image/gif;base64,x", title: "мусор" },
+          { image: "https://example.com/fan.png", title: "Burn fan photo" },
+        ]),
+      };
+    }
+    return { ok: true, text: async () => "vqd='4-abc123'" };
+  };
+  const items = await searchDuckDuckGo("Burn", fetchImpl);
+  assert.match(decodeURIComponent(seen[1]), /vqd=4-abc123/);
+  assert.deepEqual(
+    items.map((item) => [item.url.split("/").pop(), item.source, item.stockHint]),
+    [["can.jpg", "duckduckgo", true], ["fan.png", "duckduckgo", false]],
+  );
+});
+
+test("searchCanImages: дак упал (бот-стена/нет токена) — отдаём остальных, не 502", async () => {
+  const fetchImpl = async (url) => {
+    if (url.includes("duckduckgo")) {
+      return { ok: false, status: 202, text: async () => "" };
+    }
+    if (url.includes("openfoodfacts")) {
+      return {
+        ok: true,
+        json: async () => ({ hits: [{ brands: "Burn", image_front_url: "https://images.openfoodfacts.org/o.jpg" }] }),
+      };
+    }
+    return { ok: true, json: async () => ({ query: { pages: {} } }) };
+  };
+  const images = await searchCanImages({ brand: "Burn", name: "Burn" }, { fetchImpl });
+  assert.ok(images.length > 0);
+  assert.ok(images.every((item) => item.source !== "duckduckgo"));
 });

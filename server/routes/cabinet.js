@@ -297,7 +297,7 @@ module.exports = (db, auth, config) => {
     const images = await searchCanImages(fields, {
       googleKey: ai.googleCseKey,
       googleCx: ai.googleCseCx,
-      googleFetchImpl: ai.fetchImpl,
+      proxyFetchImpl: ai.fetchImpl,
     });
     if (photoCache.size >= PHOTO_CACHE_MAX) photoCache.delete(photoCache.keys().next().value);
     photoCache.set(key, { images, expiresAt: Date.now() + PHOTO_CACHE_MS });
