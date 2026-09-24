@@ -261,6 +261,10 @@ img { display: block; max-width: 100%; }
 .reviews__head h4 { margin: 0; font: 500 2.2rem var(--serif); }
 .reviews__head span { color: var(--muted); font-size: .52rem; letter-spacing: .14em; text-transform: uppercase; }
 .review-row { display: grid; grid-template-columns: 12rem 4rem minmax(0,1fr) auto; align-items: center; gap: 1.2rem; min-height: 6.5rem; border-top: 1px solid var(--line); }
+.reviews__subhead { display: flex; align-items: center; gap: 1rem; margin: 0; padding: 1.8rem 0 .2rem; color: var(--muted); font-size: .52rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+.reviews__subhead::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.review-row.is-untried { opacity: .62; }
+.review-row.is-untried:hover { opacity: 1; }
 .reviewer { display: flex; align-items: center; gap: .75rem; }
 .reviewer__avatar { display: grid; place-items: center; width: 2.45rem; aspect-ratio: 1; border: 1px solid color-mix(in srgb, var(--person-color) 70%, white); border-radius: 50%; color: var(--person-color); font: 600 .68rem var(--sans); overflow: hidden; padding: 0 .1rem; text-transform: uppercase; }
 .reviewer b { display: block; font-size: .7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

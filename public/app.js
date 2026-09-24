@@ -242,12 +242,10 @@
     `
       : "";
 
-    const reviews = data.participants
-      .map((person) => {
-        const rating = drink.ratings?.[person.id];
-        const hasReview = Boolean(rating?.review?.trim());
-        return `
-        <article class="review-row">
+    const reviewRow = (person, rating) => {
+      const hasReview = Boolean(rating?.review?.trim());
+      return `
+        <article class="review-row${rating ? "" : " is-untried"}">
           <a class="reviewer" href="profile.html?u=${encodeURIComponent(person.id)}" style="--person-color:${safeColor(person.color, "#9fb7ff")}" aria-label="Открыть профиль ${esc(person.name)}">
             <span class="reviewer__avatar">${esc(person.initials)}</span>
             <span><b>${esc(person.name)}</b><small>${esc(person.role)}</small><i class="reviewer__hint">профиль →</i></span>
@@ -259,8 +257,21 @@
           </span>
         </article>
       `;
-      })
-      .join("");
+    };
+    // Оценившие — сверху, не пробовавшие — внизу под своим заголовком.
+    const rated = [];
+    const untried = [];
+    for (const person of data.participants) {
+      const rating = drink.ratings?.[person.id];
+      (rating ? rated : untried).push({ person, rating });
+    }
+    const reviews = [
+      ...rated.map(({ person, rating }) => reviewRow(person, rating)),
+      rated.length && untried.length
+        ? `<p class="reviews__subhead">Ещё не пробовали · ${untried.length}</p>`
+        : "",
+      ...untried.map(({ person, rating }) => reviewRow(person, rating)),
+    ].join("");
 
     dialogContent.innerHTML = `
       <section class="dialog-hero" style="--dialog-a:${safeColor(drink.accent?.[0], "#ff4f79")};--dialog-b:${safeColor(drink.accent?.[1], "#ff7448")}">

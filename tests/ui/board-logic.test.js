@@ -76,6 +76,7 @@ async function runApp({ summary, pathname = "/", search = "" }) {
   };
   const board = element();
   const dialog = element();
+  const dialogContent = element();
   let modalOpened = false;
   dialog.showModal = () => {
     modalOpened = true;
@@ -86,6 +87,7 @@ async function runApp({ summary, pathname = "/", search = "" }) {
       querySelector: (sel) => {
         if (sel === "#tier-board") return board;
         if (sel === "#drink-dialog") return dialog;
+        if (sel === "#dialog-content") return dialogContent;
         if (sel === ".cursor-aura") return null;
         if (sel === ".brand__name") return null;
         if (sel === ".marquee__track") return null;
@@ -122,7 +124,7 @@ async function runApp({ summary, pathname = "/", search = "" }) {
   vm.runInContext(APP, sandbox, { filename: "app.js" });
   // ждём fetch + debounce renderBoard (170мс)
   await new Promise((resolve) => setTimeout(resolve, 400));
-  return { board, handlers, urls, modalOpened, searchEl: byId["board-search"] };
+  return { board, handlers, urls, modalOpened, searchEl: byId["board-search"], dialogContent };
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -160,4 +162,32 @@ test("диплинк /d/:slug открывает диалог", async () => {
   const { modalOpened, urls } = await runApp({ summary: makeSummary(), pathname: "/d/volt-mango" });
   assert.equal(modalOpened, true);
   assert.ok(urls[urls.length - 1].endsWith("/d/volt-mango"));
+});
+
+test("карточка: не пробовавшие — внизу, под оценившими", async () => {
+  const summary = makeSummary();
+  summary.participants = [
+    { id: "kira", name: "Кира", initials: "КИ", role: "", color: "#00ff00" },
+    { id: "sanya", name: "Саня", initials: "СЯ", role: "", color: "#ff0000" },
+  ];
+  const { dialogContent } = await runApp({ summary, pathname: "/d/burn-original" });
+  const html = dialogContent.innerHTML;
+  const rated = html.indexOf("Саня");
+  const subhead = html.indexOf("Ещё не пробовали · 1");
+  const untried = html.indexOf("Кира");
+  assert.ok(rated !== -1 && subhead !== -1 && untried !== -1, "все части должны быть в карточке");
+  assert.ok(rated < subhead, "оценивший идёт до заголовка группы");
+  assert.ok(subhead < untried, "не пробовавшая идёт после заголовка");
+  assert.match(html, /review-row is-untried/);
+});
+
+test("карточка: если оценили все, заголовка «ещё не пробовали» нет", async () => {
+  const summary = makeSummary();
+  summary.drinks[0].ratings.kira = { tier: "B", review: "норм" };
+  summary.participants = [
+    { id: "kira", name: "Кира", initials: "КИ", role: "", color: "#00ff00" },
+    { id: "sanya", name: "Саня", initials: "СЯ", role: "", color: "#ff0000" },
+  ];
+  const { dialogContent } = await runApp({ summary, pathname: "/d/burn-original" });
+  assert.doesNotMatch(dialogContent.innerHTML, /Ещё не пробовали/);
 });
