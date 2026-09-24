@@ -98,6 +98,8 @@ function createApp({ db, config }) {
     res.sendFile(path.join(config.root, "admin", "admin.js"));
   });
 
+  require("./routes/seo")(app, db, config);
+
   app.use(
     express.static(config.publicDir, {
       extensions: ["html"],

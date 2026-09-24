@@ -17,6 +17,12 @@
 
   const tierColors = { S: "#ff5f5a", A: "#f1a653", B: "#e7d471", C: "#8ebd93", D: "#8093b7" };
   const tierColor = (id) => tierColors[id] || "#ff4f79";
+  // Адаптивные картинки: srcset/sizes + width/height против сдвигов (CLS).
+  const drinkImg = (drink, sizes, eager) => {
+    const srcset = drink.imageSrcSet ? ` srcset="${esc(drink.imageSrcSet)}" sizes="${sizes}"` : "";
+    const dims = drink.imageWidth ? ` width="${drink.imageWidth}" height="${drink.imageHeight}"` : "";
+    return `<img src="${esc(drink.image)}"${srcset}${dims} alt="Банка ${esc(drink.name)}, ${esc(drink.flavor)}" loading="${eager ? "eager" : "lazy"}" decoding="async">`;
+  };
   const participantWord = (n) => wordForm(n, ["участник", "участника", "участников"]);
 
   const board = document.querySelector("#tier-board");
@@ -87,7 +93,7 @@
         <span class="drink-card__visual">
           <span class="drink-card__votes">${esc(voteText)}</span>
           <span class="drink-card__rank">${esc(activeView === "average" ? value : rating.tier)}</span>
-          <img src="${esc(drink.image)}" alt="Банка ${esc(drink.name)}, ${esc(drink.flavor)}" loading="lazy" decoding="async">
+          ${drinkImg(drink, "(max-width: 720px) 45vw, 240px")}
         </span>
         <span class="drink-card__copy">
           <b>${esc(drink.name)}</b>
@@ -98,6 +104,18 @@
   };
 
   let renderTimer = null;
+  let searchQuery = "";
+  let tierFilter = "all";
+  const matchesSearch = (drink) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return [drink.brand, drink.name, drink.flavor, drink.edition]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(query);
+  };
+  const isFiltering = () => searchQuery.trim() !== "" || tierFilter !== "all";
   const renderBoard = () => {
     if (!data) return;
     window.clearTimeout(renderTimer);
@@ -109,6 +127,7 @@
           const drinks = data.drinks
             .map((drink) => ({ drink, rating: ratingForView(drink, activeView) }))
             .filter((entry) => entry.rating?.tier === tier.id)
+            .filter((entry) => (tierFilter === "all" || entry.rating.tier === tierFilter) && matchesSearch(entry.drink))
             .sort((a, b) => {
               const scoreDifference = (b.rating.value || 0) - (a.rating.value || 0);
               if (scoreDifference) return scoreDifference;
@@ -125,7 +144,7 @@
               <span class="tier-label__copy"><b>${esc(tier.title)}</b><span>${esc(tier.note)}</span></span>
             </div>
             <div class="tier-items">
-              ${drinks.length ? drinks.map(({ drink, rating }) => cardTemplate(drink, rating)).join("") : `<div class="empty-tier">пока пусто</div>`}
+              ${drinks.length ? drinks.map(({ drink, rating }) => cardTemplate(drink, rating)).join("") : `<div class="empty-tier">${isFiltering() ? "ничего не найдено — ослабьте фильтры" : "пока пусто"}</div>`}
             </div>
           </div>
         `;
@@ -161,6 +180,13 @@
         "beforeend",
         ` <a class="header-cab" href="profile.html?u=${encodeURIComponent(activeView)}">Профиль и отзывы →</a>`,
       );
+    }
+    if (isFiltering()) {
+      const shown = data.drinks.filter((drink) => {
+        const rating = ratingForView(drink, activeView);
+        return rating && (tierFilter === "all" || rating.tier === tierFilter) && matchesSearch(drink);
+      }).length;
+      boardMeta.textContent = `найдено: ${shown} ${wordForm(shown, ["банка", "банки", "банок"])}`;
     }
   };
 
@@ -202,7 +228,7 @@
             .map(
               (related) => `
             <button class="related-card" type="button" data-related-drink="${esc(related.id)}" style="--related-a:${safeColor(related.accent?.[0], "#ff4f79")};--related-b:${safeColor(related.accent?.[1], "#ff7448")}">
-              <span class="related-card__visual"><img src="${esc(related.image)}" alt="Банка ${esc(related.name)}, ${esc(related.flavor)}" loading="lazy" decoding="async"></span>
+              <span class="related-card__visual">${drinkImg(related, "200px")}</span>
               <span class="related-card__copy"><b>${esc(related.name)}</b><small>${esc(related.flavor)}</small><i>открыть карточку →</i></span>
             </button>
           `,
@@ -236,7 +262,7 @@
 
     dialogContent.innerHTML = `
       <section class="dialog-hero" style="--dialog-a:${safeColor(drink.accent?.[0], "#ff4f79")};--dialog-b:${safeColor(drink.accent?.[1], "#ff7448")}">
-        <div class="dialog-product"><img src="${esc(drink.image)}" alt="Банка ${esc(drink.name)}, ${esc(drink.flavor)}"></div>
+        <div class="dialog-product">${drinkImg(drink, "(max-width: 720px) 80vw, 352px", true)}</div>
         <div class="dialog-intro">
           <p class="dialog-kicker">Specimen ${specimenNumber(drink)} · ${esc(drink.edition || drink.brand)}</p>
           <h3 id="dialog-title">${esc(drink.name)}</h3>
@@ -245,6 +271,7 @@
             <b>${esc(average?.tier || "—")}</b>
             <span>${scoreCopy}</span>
           </div>
+          <button class="dialog-share" type="button" data-share-drink="${esc(drink.id)}">скопировать ссылку на банку</button>
         </div>
       </section>
       <section class="reviews">
@@ -267,8 +294,25 @@
       });
     });
 
+    dialogContent.querySelector("[data-share-drink]")?.addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const url = `${location.origin}/d/${encodeURIComponent(button.dataset.shareDrink)}`;
+      try {
+        await navigator.clipboard.writeText(url);
+        const original = button.textContent;
+        button.textContent = "ссылка готова ✓";
+        window.setTimeout(() => {
+          button.textContent = original;
+        }, 1500);
+      } catch {
+        button.textContent = "не вышло — ссылка в адресной строке";
+      }
+    });
+
     dialog.showModal();
     document.body.classList.add("is-dialog-open");
+    // диплинк: открытая карточка живёт на /d/<slug> — можно кидать в чат
+    history.replaceState(null, "", `/d/${encodeURIComponent(drink.id)}`);
   };
 
   const closeDialog = () => {
@@ -298,6 +342,20 @@
   });
 
   closeButton.addEventListener("click", closeDialog);
+  const searchInput = document.getElementById("board-search");
+  searchInput?.addEventListener("input", () => {
+    searchQuery = searchInput.value;
+    renderBoard();
+  });
+  document.getElementById("board-filters")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-tier-filter]");
+    if (!button) return;
+    tierFilter = button.dataset.tierFilter;
+    document
+      .querySelectorAll("[data-tier-filter]")
+      .forEach((chip) => chip.classList.toggle("is-active", chip === button));
+    renderBoard();
+  });
   dialog.addEventListener("click", (event) => {
     const rect = dialog.getBoundingClientRect();
     const outside =
@@ -307,7 +365,10 @@
       event.clientY > rect.bottom;
     if (outside) closeDialog();
   });
-  dialog.addEventListener("close", () => document.body.classList.remove("is-dialog-open"));
+  dialog.addEventListener("close", () => {
+    document.body.classList.remove("is-dialog-open");
+    if (location.pathname.startsWith("/d/")) history.replaceState(null, "", "/");
+  });
 
   const observer = new IntersectionObserver(
     (entries) => {
@@ -370,12 +431,13 @@
     const meta = document.querySelector('meta[name="description"]');
     if (meta && data.site?.description) meta.setAttribute("content", data.site.description);
     refreshChrome();
-    // диплинки: ?view=<username> — чей тирлист, ?drink=<slug> — сразу открыть карточку
+    // диплинки: ?view=<username> — чей тирлист, /d/<slug> или ?drink=<slug> — сразу открыть карточку
     const params = new URLSearchParams(location.search);
     const view = params.get("view");
     if (view && getParticipant(view)) activeView = view;
     renderBoard();
-    const drinkParam = params.get("drink");
+    const pathDrink = location.pathname.match(/^\/d\/([^/]+?)\/?$/)?.[1];
+    const drinkParam = (pathDrink ? decodeURIComponent(pathDrink) : params.get("drink")) || "";
     if (drinkParam && getDrink(drinkParam)) {
       history.replaceState(null, "", location.pathname + location.hash);
       openDrink(drinkParam);

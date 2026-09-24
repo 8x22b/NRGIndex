@@ -180,6 +180,17 @@ img { display: block; max-width: 100%; }
 
 .board-wrap { overflow: hidden; border: 1px solid var(--line); border-radius: 1.1rem; background: #151311; box-shadow: 0 3rem 8rem rgba(0,0,0,.32); }
 .board-topline { display: flex; justify-content: space-between; padding: .8rem 1rem; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .53rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+.board-tools { display: flex; gap: .8rem; align-items: center; margin-bottom: 1.15rem; }
+.board-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: .6rem; padding: .65rem .9rem; border: 1px solid var(--line); border-radius: .9rem; background: rgba(22,19,17,.8); color: var(--muted); }
+.board-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--paper); font: 500 .8rem var(--sans); }
+.board-search input::placeholder { color: var(--muted); }
+.board-search input::-webkit-search-cancel-button { cursor: pointer; }
+.board-filters { display: flex; gap: .35rem; }
+.board-filters button { min-width: 2.4rem; padding: .65rem .5rem; border: 1px solid var(--line); border-radius: .9rem; background: transparent; color: var(--muted); font: 700 .72rem var(--sans); cursor: pointer; transition: color .3s, background .3s; }
+.board-filters button:hover { color: var(--paper); }
+.board-filters button.is-active { color: var(--ink); background: var(--paper); border-color: var(--paper); }
+.dialog-share { margin-top: 1rem; padding: .55rem 1rem; border: 1px dashed var(--line); border-radius: .7rem; background: transparent; color: var(--muted); font: 600 .62rem var(--sans); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; transition: color .3s, border-color .3s; }
+.dialog-share:hover { color: var(--paper); border-color: var(--paper); }
 .tier-board { transition: opacity .2s, transform .35s var(--ease); }
 .tier-board.is-changing { opacity: 0; transform: translateY(.8rem); }
 .tier-row { position: relative; min-height: 12.5rem; display: grid; grid-template-columns: 8.3rem minmax(0, 1fr); border-bottom: 1px solid var(--line); overflow: hidden; }
@@ -638,6 +649,9 @@ a.drink-card { text-decoration: none; }
   .specimen-card img { max-height: 76%; }
 
   .board-topline { flex-wrap: wrap; gap: .3rem 1rem; }
+  .board-tools { flex-wrap: wrap; }
+  .board-search { flex: 1 1 100%; }
+  .board-filters { flex-wrap: wrap; }
   .drink-card { width: min(11.5rem, 62vw); }
   .tier-label { padding: .7rem .5rem; }
 

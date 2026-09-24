@@ -6,6 +6,9 @@ const { imageFromDataUrl } = require("./validate");
 
 const MAX_SIDE = 1000;
 const PAD = 12;
+const WEBP_QUALITY = 82;
+// Даунскейлы для srcset: карточка ~240px, диалог ~350px — с запасом под retina.
+const RESPONSIVE_WIDTHS = [320, 640];
 const BG = { TOL: 54, BRIGHT_MIN: 118, NEUTRAL_MAX: 36, MIN_SHARE: 0.01 };
 const FALLBACK_ACCENT = ["#ff4f79", "#ff7448"];
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -250,13 +253,40 @@ async function processImageBuffer(buffer) {
   return { buffer: png, accent };
 }
 
+// WebP + даунскейлы для srcset. Возвращает путь, размеры и готовую строку srcset.
+async function writeResponsive(uploadsDir, pngBuffer) {
+  const meta = await sharp(pngBuffer).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  const name = `${Date.now().toString(36)}-${crypto.randomBytes(8).toString("hex")}`;
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  await sharp(pngBuffer).webp({ quality: WEBP_QUALITY, effort: 6 }).toFile(path.join(uploadsDir, `${name}.webp`));
+  const parts = [];
+  for (const vw of RESPONSIVE_WIDTHS) {
+    if (width <= vw) continue;
+    await sharp(pngBuffer)
+      .resize({ width: vw, withoutEnlargement: true })
+      .webp({ quality: WEBP_QUALITY, effort: 6 })
+      .toFile(path.join(uploadsDir, `${name}-${vw}.webp`));
+    parts.push(`/uploads/${name}-${vw}.webp ${vw}w`);
+  }
+  parts.push(`/uploads/${name}.webp ${width}w`);
+  return { path: `/uploads/${name}.webp`, width, height, srcset: parts.join(", ") };
+}
+
+function unlinkQuiet(file) {
+  try {
+    fs.unlinkSync(file);
+  } catch {
+    // уже нет — не страшно
+  }
+}
+
 async function saveProcessedImage(uploadsDir, dataUrl, maxBytes) {
   const { buffer } = imageFromDataUrl(dataUrl, { maxBytes });
   const processed = await processImageBuffer(buffer);
-  fs.mkdirSync(uploadsDir, { recursive: true });
-  const name = `${Date.now().toString(36)}-${crypto.randomBytes(8).toString("hex")}.png`;
-  fs.writeFileSync(path.join(uploadsDir, name), processed.buffer, { mode: 0o644 });
-  return { path: `/uploads/${name}`, accent: processed.accent };
+  const responsive = await writeResponsive(uploadsDir, processed.buffer);
+  return { path: responsive.path, accent: processed.accent, width: responsive.width, height: responsive.height, srcset: responsive.srcset };
 }
 
 async function reprocessStoredImage(uploadsDir, imagePath) {
@@ -265,9 +295,13 @@ async function reprocessStoredImage(uploadsDir, imagePath) {
   const source = path.join(uploadsDir, name);
   if (!fs.existsSync(source)) return null;
   const processed = await processImageBuffer(fs.readFileSync(source));
-  const newName = `${Date.now().toString(36)}-${crypto.randomBytes(8).toString("hex")}.png`;
-  fs.writeFileSync(path.join(uploadsDir, newName), processed.buffer, { mode: 0o644 });
-  return { path: `/uploads/${newName}`, accent: processed.accent };
+  const responsive = await writeResponsive(uploadsDir, processed.buffer);
+  if (`/uploads/${name}` !== responsive.path) {
+    unlinkQuiet(source);
+    // старые даунскейлы от прошлого репроцесса
+    for (const vw of RESPONSIVE_WIDTHS) unlinkQuiet(path.join(uploadsDir, name.replace(/\.[^.]+$/, `-${vw}.webp`)));
+  }
+  return { path: responsive.path, accent: processed.accent, width: responsive.width, height: responsive.height, srcset: responsive.srcset };
 }
 
 module.exports = {

@@ -17,6 +17,11 @@
   };
   const tierColors = { S: "#ff5f5a", A: "#f1a653", B: "#e7d471", C: "#8ebd93", D: "#8093b7" };
   const tierColor = (id) => tierColors[id] || "#ff4f79";
+  const ratingImg = (rating) => {
+    const srcset = rating.imageSrcSet ? ` srcset="${esc(rating.imageSrcSet)}" sizes="(max-width: 720px) 45vw, 240px"` : "";
+    const dims = rating.imageWidth ? ` width="${rating.imageWidth}" height="${rating.imageHeight}"` : "";
+    return `<img src="${esc(imgSrc(rating.image))}"${srcset}${dims} alt="Банка ${esc(rating.name)}" loading="lazy" decoding="async">`;
+  };
   // картинки из БД бывают относительными (assets/...) — страница может жить не в корне
   const imgSrc = (src) => (/^(\/|https?:|data:)/.test(src || "") ? src : `/${src || "assets/favicon.svg"}`);
 
@@ -95,11 +100,11 @@
   };
 
   const cardTemplate = (rating) => `
-    <a class="drink-card" href="/?drink=${encodeURIComponent(rating.drink)}" style="--card-accent:${safeColor(rating.accent?.[0], tierColor(rating.tier))}">
+    <a class="drink-card" href="/d/${encodeURIComponent(rating.drink)}" style="--card-accent:${safeColor(rating.accent?.[0], tierColor(rating.tier))}">
       <span class="drink-card__visual">
         ${rating.othersAvg !== null ? `<span class="drink-card__votes">стол: ${String(rating.othersAvg).replace(".", ",")}</span>` : ""}
         <span class="drink-card__rank">${esc(rating.tier)}</span>
-        <img src="${esc(imgSrc(rating.image))}" alt="Банка ${esc(rating.name)}" loading="lazy" decoding="async">
+        ${ratingImg(rating)}
       </span>
       <span class="drink-card__copy">
         <b>${esc(rating.name)}</b>

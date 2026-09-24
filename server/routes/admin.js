@@ -134,8 +134,8 @@ module.exports = (db, auth, config) => {
     const create = db.transaction(() => {
       const info = db
         .prepare(
-          `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by, image_width, image_height, image_srcset)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           slug,
@@ -149,6 +149,9 @@ module.exports = (db, auth, config) => {
           fields.accentB || accent[1],
           fields.published ? 1 : 0,
           req.user.id,
+          image?.width || 0,
+          image?.height || 0,
+          image?.srcset || "",
         );
       setRelations(info.lastInsertRowid, relatedIds);
       return info.lastInsertRowid;
@@ -178,9 +181,14 @@ module.exports = (db, auth, config) => {
     const externalImage = req.body?.imageDataUrl ? imagePath : imageReference(req.body?.image ?? imagePath);
     const accentA = fields.accentA || image?.accent?.[0] || drink.accent_a;
     const accentB = fields.accentB || image?.accent?.[1] || drink.accent_b;
+    // размеры: новый аплоуд — из него; смена картинки на ассет — сброс (размеры возьмутся из манифеста); иначе оставить
+    const imageChanged = externalImage !== drink.image_path;
+    const imageWidth = image ? image.width : imageChanged ? 0 : drink.image_width || 0;
+    const imageHeight = image ? image.height : imageChanged ? 0 : drink.image_height || 0;
+    const imageSrcset = image ? image.srcset : imageChanged ? "" : drink.image_srcset || "";
     db.prepare(
       `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
-         source_label = ?, accent_a = ?, accent_b = ?, is_published = ?, updated_at = datetime('now')
+         source_label = ?, accent_a = ?, accent_b = ?, is_published = ?, image_width = ?, image_height = ?, image_srcset = ?, updated_at = datetime('now')
        WHERE id = ?`,
     ).run(
       fields.brand,
@@ -192,6 +200,9 @@ module.exports = (db, auth, config) => {
       accentA,
       accentB,
       fields.published ? 1 : 0,
+      imageWidth,
+      imageHeight,
+      imageSrcset,
       id,
     );
     if (req.body?.relatedIds !== undefined) {
@@ -211,8 +222,8 @@ module.exports = (db, auth, config) => {
     if (!result) throw badRequest("Переобработать можно только картинки из /uploads");
     const before = history.snapDrink(db, id);
     db.prepare(
-      "UPDATE drinks SET image_path = ?, accent_a = ?, accent_b = ?, updated_at = datetime('now') WHERE id = ?",
-    ).run(result.path, result.accent[0], result.accent[1], id);
+      "UPDATE drinks SET image_path = ?, accent_a = ?, accent_b = ?, image_width = ?, image_height = ?, image_srcset = ?, updated_at = datetime('now') WHERE id = ?",
+    ).run(result.path, result.accent[0], result.accent[1], result.width, result.height, result.srcset, id);
     history.recordDrink(db, req.user, "admin.drink.reprocess", before, history.snapDrink(db, id));
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);

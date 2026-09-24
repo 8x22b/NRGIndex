@@ -142,7 +142,7 @@ test("смена пароля: старый перестаёт работать"
   assert.equal(newLogin.res.status, 200);
 });
 
-test("загрузки: аноним 401, валидный PNG 201 c авто-цветом, мусор 400", async () => {
+test("загрузки: аноним 401, валидный PNG 201 c авто-цветом в webp, мусор 400", async () => {
   const anon = await request(ctx.base, "POST", "/api/uploads", { body: { dataUrl: testImageDataUrl } });
   assert.equal(anon.status, 401);
 
@@ -151,14 +151,14 @@ test("загрузки: аноним 401, валидный PNG 201 c авто-ц
     body: { dataUrl: testImageDataUrl },
   });
   assert.equal(ok.status, 201);
-  assert.match(ok.json.path, /^\/uploads\/[a-z0-9-]+\.png$/);
+  assert.match(ok.json.path, /^\/uploads\/[a-z0-9-]+\.webp$/);
   assert.equal(ok.json.accent.length, 2);
   const [r, g, b] = hexToRgb(ok.json.accent[0]);
   assert.ok(b > r + 40 && b > g, `акцент должен быть синеватым: ${ok.json.accent[0]}`);
 
   const served = await fetch(ctx.base + ok.json.path);
   assert.equal(served.status, 200);
-  assert.equal(served.headers.get("content-type"), "image/png");
+  assert.equal(served.headers.get("content-type"), "image/webp");
   assert.equal(served.headers.get("x-content-type-options"), "nosniff");
 
   const bad = await request(ctx.base, "POST", "/api/uploads", {

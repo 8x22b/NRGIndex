@@ -115,8 +115,8 @@ module.exports = (db, auth, config) => {
     const create = db.transaction(() => {
       const info = db
         .prepare(
-          `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+          `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by, image_width, image_height, image_srcset)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
         )
         .run(
           slug,
@@ -129,6 +129,9 @@ module.exports = (db, auth, config) => {
           accent[0],
           accent[1],
           req.user.id,
+          image?.width || 0,
+          image?.height || 0,
+          image?.srcset || "",
         );
       db.prepare("INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)").run(
         info.lastInsertRowid,
@@ -159,12 +162,15 @@ module.exports = (db, auth, config) => {
     const imagePath = image ? image.path : drink.image_path;
     const accentA = image ? image.accent[0] : drink.accent_a;
     const accentB = image ? image.accent[1] : drink.accent_b;
+    const imageWidth = image ? image.width : drink.image_width || 0;
+    const imageHeight = image ? image.height : drink.image_height || 0;
+    const imageSrcset = image ? image.srcset : drink.image_srcset || "";
     const before = history.snapDrink(db, drink.id);
     const ratingBefore = history.snapRating(db, drink.id, req.user.id);
     db.prepare(
       `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
-         accent_a = ?, accent_b = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, drink.id);
+         accent_a = ?, accent_b = ?, image_width = ?, image_height = ?, image_srcset = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, imageWidth, imageHeight, imageSrcset, drink.id);
     if (req.body?.tier !== undefined || req.body?.review !== undefined) {
       db.prepare(
         `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)

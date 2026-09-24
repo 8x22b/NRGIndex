@@ -37,6 +37,7 @@ jobs:
     name: Deploy site
     needs: test
     runs-on: [self-hosted, nrgindex]
+    environment: production
     steps:
       - uses: actions/checkout@v7
         with:

@@ -1,3 +1,5 @@
+const { drinkImage } = require("./assets");
+
 function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
@@ -61,6 +63,7 @@ function drinkToPublic(row, ratings, relatedSlugs) {
     flavor: row.flavor,
     edition: row.edition,
     image: row.image_path || "assets/favicon.svg",
+    ...drinkImage(row),
     sourceLabel: row.source_label,
     accent: [row.accent_a, row.accent_b],
     related: relatedSlugs,
@@ -77,6 +80,7 @@ function drinkToAdmin(row, ratings, relatedIds) {
     flavor: row.flavor,
     edition: row.edition,
     image: row.image_path,
+    ...drinkImage(row),
     sourceLabel: row.source_label,
     accent: [row.accent_a, row.accent_b],
     published: Boolean(row.is_published),

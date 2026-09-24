@@ -5,6 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#100e0d">
   <meta name="description" content="Коллективный тирлист энергетиков: сводный рейтинг, личные подборки и честные мнения.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="NRG / INDEX">
+  <meta property="og:title" content="NRG / INDEX — тирлист энергетиков">
+  <meta property="og:description" content="Коллективный тирлист энергетиков: сводный рейтинг, личные подборки и честные мнения.">
+  <meta property="og:url" content="/">
+  <meta property="og:image" content="/og/site.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:type" content="image/png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="NRG / INDEX — тирлист энергетиков">
+  <meta name="twitter:description" content="Коллективный тирлист энергетиков: сводный рейтинг, личные подборки и честные мнения.">
+  <meta name="twitter:image" content="/og/site.png">
   <title>NRG / INDEX — тирлист энергетиков</title>
   <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
@@ -62,7 +75,7 @@
         <div class="specimen-card">
           <span class="specimen-card__index">№ 001</span>
           <div class="specimen-card__halo"></div>
-          <img src="assets/adrenaline-yuzu-strawberry-calamansi.png" alt="">
+          <img src="assets/adrenaline-yuzu-strawberry-calamansi.webp" width="195" height="500" alt="" fetchpriority="high" decoding="async">
           <div class="specimen-card__stamp">S</div>
           <p>ADRENALINE RUSH<br><span>YUZU · STRAWBERRY · CALAMANSI</span></p>
         </div>
@@ -92,6 +105,21 @@
         </button>
         <div class="view-switcher__people" id="participant-tabs"></div>
       </nav>
+
+      <div class="board-tools reveal">
+        <label class="board-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="board-search" type="search" placeholder="Найти банку, бренд, вкус…" autocomplete="off" aria-label="Поиск по доске">
+        </label>
+        <div class="board-filters" id="board-filters" role="group" aria-label="Фильтр по тиру">
+          <button type="button" data-tier-filter="all" class="is-active">Все</button>
+          <button type="button" data-tier-filter="S">S</button>
+          <button type="button" data-tier-filter="A">A</button>
+          <button type="button" data-tier-filter="B">B</button>
+          <button type="button" data-tier-filter="C">C</button>
+          <button type="button" data-tier-filter="D">D</button>
+        </div>
+      </div>
 
       <div class="board-wrap reveal">
         <div class="board-topline">

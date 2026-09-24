@@ -1,5 +1,6 @@
 const express = require("express");
 const { formatDate, userToParticipant, drinkToPublic } = require("../lib/serialize");
+const { drinkImage } = require("../lib/assets");
 const { notFound } = require("../lib/errors");
 
 function ratingsMap(db) {
@@ -98,6 +99,7 @@ module.exports = (db) => {
     const rows = db
       .prepare(
         `SELECT d.id, d.slug, d.brand, d.name, d.flavor, d.edition, d.image_path, d.accent_a, d.accent_b,
+                d.image_width, d.image_height, d.image_srcset,
                 d.created_by, r.tier_id AS tier, r.review, r.updated_at
          FROM ratings r JOIN drinks d ON d.id = r.drink_id
          WHERE r.user_id = ? AND d.is_published = 1
@@ -140,6 +142,7 @@ module.exports = (db) => {
         flavor: row.flavor,
         edition: row.edition,
         image: row.image_path || "assets/favicon.svg",
+        ...drinkImage(row),
         accent: [row.accent_a, row.accent_b],
         tier: row.tier,
         review: row.review,

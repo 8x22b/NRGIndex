@@ -15,6 +15,7 @@ const config = {
   sessionIdleDays: Number(process.env.SESSION_IDLE_DAYS || 14),
   maxUploadBytes: Number(process.env.MAX_UPLOAD_BYTES || 4 * 1024 * 1024),
   jsonLimit: process.env.JSON_LIMIT || "8mb",
+  siteUrl: process.env.SITE_URL || "",
 };
 
 module.exports = config;

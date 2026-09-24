@@ -118,9 +118,11 @@ test("картинка автоматически кадрируется и по
       `data:image/png;base64,${png.toString("base64")}`,
       2 * 1024 * 1024,
     );
-    assert.match(result.path, /^\/uploads\/[a-z0-9-]+\.png$/);
+    assert.match(result.path, /^\/uploads\/[a-z0-9-]+\.webp$/);
     assert.equal(result.accent.length, 2);
     assert.match(result.accent[0], /^#[0-9a-f]{6}$/);
+    assert.ok(result.width > 0 && result.height > 0);
+    assert.match(result.srcset, /\/uploads\/[a-z0-9-]+\.webp \d+w/);
 
     const file = path.join(dir, path.basename(result.path));
     const meta = await sharp(fs.readFileSync(file)).metadata();

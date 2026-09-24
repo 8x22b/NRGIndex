@@ -126,6 +126,11 @@ const MIGRATIONS = [
   ALTER TABLE audit_log ADD COLUMN target_key TEXT NOT NULL DEFAULT '';
   CREATE INDEX idx_audit_target ON audit_log(target_key, id);
   `,
+  `
+  ALTER TABLE drinks ADD COLUMN image_width INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE drinks ADD COLUMN image_height INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE drinks ADD COLUMN image_srcset TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 function migrate(db) {

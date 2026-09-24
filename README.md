@@ -17,7 +17,7 @@
 server/          Express-приложение: app.js, db.js, auth.js, routes/, lib/
 public/          Публичный сайт и кабинет (статика)
 admin/           Админ-панель (отдаётся только ролям editor/admin)
-scripts/         create-admin.js
+scripts/         create-admin.js, optimize-assets.js (WebP + srcset для public/assets)
 tests/           node:test — unit и интеграционные API-тесты
 deploy/          systemd-юнит для сервера
 ```
@@ -61,7 +61,9 @@ npm run create-admin -- --username admin --name "Ваше имя"
 Ветка `production` — точка деплоя. На push GitHub Actions запускает:
 
 1. `Pre-deploy tests` — `npm ci` + `npm test` на self-hosted runner
-2. `Deploy site` — `npm ci --omit=dev`, dry-run миграций на временной БД, rsync в `/opt/nrgindex`, обновление systemd-юнита, рестарт, health-check `/api/health` и автоматический откат при провале
+2. `Deploy site` — `environment: production`, ждёт ручного апрува; дальше `npm ci --omit=dev`, dry-run миграций на временной БД, rsync в `/opt/nrgindex`, обновление systemd-юнита, рестарт, health-check `/api/health` и автоматический откат при провале
+
+Одноразовая настройка в GitHub (Settings → Environments → New environment `production`): добавить себя в Required reviewers — тогда каждый деплой будет ждать ручного подтверждения.
 
 Конфиг сервиса — `/etc/nrgindex.env`:
 
