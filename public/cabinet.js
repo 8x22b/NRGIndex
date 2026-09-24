@@ -67,6 +67,8 @@
     $("me-avatar").style.setProperty("--person-color", safeColor(state.me.color, "#fff"));
     $("me-name").textContent = state.me.displayName;
     $("me-role").textContent = state.me.title || state.me.role;
+    $("profile-button").href = `/profile.html?u=${encodeURIComponent(state.me.username)}`;
+    $("profile-button").hidden = false;
     if (state.me.role === "admin") $("admin-button").hidden = false;
     if (state.me.role === "admin" || state.me.role === "editor") $("admin-link").hidden = false;
     $("profile-link").href = `profile.html?u=${encodeURIComponent(state.me.username)}`;

@@ -71,10 +71,13 @@
     tabs.innerHTML = data.participants
       .map(
         (person, index) => `
-      <button class="view-chip" type="button" data-view="${esc(person.id)}">
-        <span class="view-chip__number" style="--person-color:${safeColor(person.color, "#9fb7ff")}">${esc(person.initials || String(index + 1).padStart(2, "0"))}</span>
-        <span><b>${esc(person.name)}</b><small>${esc(person.role || `участник ${String(index + 1).padStart(2, "0")}`)}</small></span>
-      </button>
+      <div class="view-chip-wrap">
+        <button class="view-chip" type="button" data-view="${esc(person.id)}">
+          <span class="view-chip__number" style="--person-color:${safeColor(person.color, "#9fb7ff")}">${esc(person.initials || String(index + 1).padStart(2, "0"))}</span>
+          <span><b>${esc(person.name)}</b><small>${esc(person.role || `участник ${String(index + 1).padStart(2, "0")}`)}</small></span>
+        </button>
+        <a class="view-chip__profile" href="profile.html?u=${encodeURIComponent(person.id)}" aria-label="Открыть профиль ${esc(person.name)}">профиль →</a>
+      </div>
     `,
       )
       .join("");
@@ -245,15 +248,14 @@
         const hasReview = Boolean(rating?.review?.trim());
         return `
         <article class="review-row">
-          <div class="reviewer" style="--person-color:${safeColor(person.color, "#9fb7ff")}">
+          <a class="reviewer" href="profile.html?u=${encodeURIComponent(person.id)}" style="--person-color:${safeColor(person.color, "#9fb7ff")}" aria-label="Открыть профиль ${esc(person.name)}">
             <span class="reviewer__avatar">${esc(person.initials)}</span>
-            <span><b>${esc(person.name)}</b><small>${esc(person.role)}</small></span>
-          </div>
+            <span><b>${esc(person.name)}</b><small>${esc(person.role)}</small><i class="reviewer__hint">профиль →</i></span>
+          </a>
           <div class="review-tier ${rating ? "" : "is-empty"}">${esc(rating?.tier || "—")}</div>
           <p class="review-text">${hasReview ? `«${esc(rating.review)}»` : rating ? "Подробное мнение пока не записано." : "Ещё не пробовал или не выставил оценку."}</p>
           <span class="review-links">
             <button class="review-link" type="button" data-person-view="${esc(person.id)}">тирлист →</button>
-            <a class="review-link" href="profile.html?u=${encodeURIComponent(person.id)}">профиль →</a>
           </span>
         </article>
       `;

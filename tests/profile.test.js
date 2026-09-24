@@ -1,6 +1,11 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const { startServer, createUser, request, login } = require("./helpers");
+
+const ROOT = path.resolve(__dirname, "..");
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 const { findSimilarDrinks } = require("../server/lib/content");
 
 let ctx;
@@ -99,4 +104,97 @@ test("findSimilarDrinks не путает разные вкусы и чужие 
 test("findSimilarDrinks: только бренд совпадает с «голой» банкой бренда", () => {
   const hits = findSimilarDrinks(ctx.db, { brand: "Volt", name: "Volt", flavor: "" });
   assert.equal(hits[0]?.slug, "volt-original");
+});
+
+test("профиль: история изменений из действий, свежие сверху", async () => {
+  const rated = await request(ctx.base, "PUT", "/api/cabinet/ratings/volt-original", {
+    cookie: sanyaCookie,
+    body: { tier: "A", review: "Нормально" },
+  });
+  assert.equal(rated.status, 200);
+  const created = await request(ctx.base, "POST", "/api/cabinet/drinks", {
+    cookie: sanyaCookie,
+    body: { brand: "Adrenaline", name: "Adrenaline Test", flavor: "Тест", tier: "B" },
+  });
+  assert.equal(created.status, 201);
+
+  const res = await request(ctx.base, "GET", "/api/public/profile/sanya");
+  assert.equal(res.status, 200);
+  const history = res.json.history;
+  assert.ok(Array.isArray(history) && history.length >= 2);
+  assert.equal(history[0].action, "drink.create");
+  assert.equal(history[0].slug, created.json.drink.slug);
+  assert.match(history[0].at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  assert.ok(history.some((item) => item.action === "rating.set" && item.slug === "volt-original"));
+  for (const item of history) {
+    assert.ok(!item.action.includes("settings"), item.action);
+    assert.ok(!item.action.includes("user"), item.action);
+  }
+});
+
+test("профиль: история не смешивается между участниками", async () => {
+  await createUser(ctx.db, { username: "histempty", password: "histempty-123", displayName: "Пустой" });
+  const kira = await request(ctx.base, "GET", "/api/public/profile/kira");
+  assert.deepEqual(kira.json.history, []);
+  const empty = await request(ctx.base, "GET", "/api/public/profile/histempty");
+  assert.deepEqual(empty.json.history, []);
+});
+
+test("профиль: модерация и настройки в публичную историю не попадают", async () => {
+  await createUser(ctx.db, {
+    username: "auditor",
+    password: "auditor-pass-123",
+    role: "admin",
+    displayName: "Аудитор",
+  });
+  const { cookie } = await login(ctx.base, "auditor", "auditor-pass-123");
+  const settings = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie,
+    body: { siteTitle: "NRG / INDEX" },
+  });
+  assert.equal(settings.status, 200);
+  const kira = ctx.db.prepare("SELECT id FROM users WHERE username = 'kira'").get();
+  const patched = await request(ctx.base, "PATCH", `/api/admin/users/${kira.id}`, {
+    cookie,
+    body: { title: "тест" },
+  });
+  assert.equal(patched.status, 200);
+  const res = await request(ctx.base, "GET", "/api/public/profile/auditor");
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.json.history, []);
+});
+
+test("профиль: история ограничена 30 записями", async () => {
+  const user = ctx.db.prepare("SELECT id FROM users WHERE username = 'histempty'").get();
+  const insert = ctx.db.prepare(
+    `INSERT INTO audit_log (user_id, action, entity, entity_id, details, summary)
+     VALUES (?, 'rating.set', 'rating', 'burn-apple-kiwi', '', 'Поставил свою оценку B')`,
+  );
+  for (let i = 0; i < 35; i++) insert.run(user.id);
+  const res = await request(ctx.base, "GET", "/api/public/profile/histempty");
+  assert.equal(res.json.history.length, 30);
+});
+
+test("страница профиля: локальные шрифты без Google", async () => {
+  const res = await request(ctx.base, "GET", "/profile.html");
+  assert.equal(res.status, 200);
+  assert.ok(res.text.includes("/fonts/fonts.css"), "должен подключаться локальный fonts.css");
+  assert.ok(!res.text.includes("fonts.googleapis.com"), "Google Fonts больше не нужны");
+});
+
+test("на участника можно нажать: ссылки на профиль со всех страниц", () => {
+  const app = read("public/app.js");
+  assert.match(app, /class="view-chip__profile" href="profile\.html\?u=/);
+  assert.match(app, /<a class="reviewer" href="profile\.html\?u=/);
+  assert.match(read("public/cabinet.html"), /id="profile-button"/);
+  assert.match(
+    read("public/cabinet.js"),
+    /profile\.html\?u=\$\{encodeURIComponent\(state\.me\.username\)\}/,
+  );
+  assert.match(
+    read("admin/admin.js"),
+    /profile\.html\?u=\$\{encodeURIComponent\(user\.username\)\}/,
+  );
+  assert.match(read("public/profile.html"), /id="profile-history-block"/);
+  assert.match(read("public/profile.js"), /renderHistory/);
 });

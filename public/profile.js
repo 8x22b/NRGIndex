@@ -159,6 +159,42 @@
       : `<p class="hint">Словами пока ничего не сказал — только тиры.</p>`;
   };
 
+  const renderHistory = ({ history }) => {
+    const block = $("profile-history-block");
+    if (!block) return;
+    if (!history?.length) {
+      block.hidden = true;
+      return;
+    }
+    block.hidden = false;
+    $("profile-history-meta").textContent = `${history.length} ${wordForm(history.length, ["событие", "события", "событий"])}`;
+    $("profile-history").innerHTML = history
+      .map((item) => {
+        const link = item.slug
+          ? `<a href="/d/${encodeURIComponent(item.slug)}">карточка →</a>`
+          : "";
+        return `
+        <div class="history-row">
+          <time datetime="${esc(String(item.at || "").replace(" ", "T"))}Z">${esc(formatWhen(item.at))}</time>
+          <p>${esc(item.summary || "изменение")}</p>
+          ${link}
+        </div>`;
+      })
+      .join("");
+  };
+
+  const formatWhen = (value) => {
+    const date = new Date(String(value || "").replace(" ", "T") + "Z");
+    if (Number.isNaN(date.getTime())) return String(value || "");
+    return date.toLocaleString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   (async () => {
     let summary = null;
     try {
@@ -180,6 +216,7 @@
       renderHero(data);
       renderBoard(data);
       renderReviews(data);
+      renderHistory(data);
     } catch (error) {
       $("profile-hero").innerHTML = `
         <p class="eyebrow">404</p>

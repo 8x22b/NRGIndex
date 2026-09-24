@@ -1,5 +1,20 @@
 const express = require("express");
 const { formatDate, userToParticipant, drinkToPublic } = require("../lib/serialize");
+
+// Что из журнала можно показывать в публичном профиле: только собственные
+// содержательные действия участника. Модерация (admin.rating.*, откаты) — нет.
+const PROFILE_HISTORY_ACTIONS = [
+  "rating.set",
+  "rating.delete",
+  "drink.create",
+  "drink.update",
+  "drink.delete",
+  "admin.drink.create",
+  "admin.drink.update",
+  "admin.drink.delete",
+  "admin.drink.reprocess",
+];
+const PROFILE_HISTORY_LIMIT = 30;
 const { drinkImage } = require("../lib/assets");
 const { notFound } = require("../lib/errors");
 
@@ -159,6 +174,23 @@ module.exports = (db) => {
     // 100% — ставит ровно как все; каждый тир расхождения в среднем = минус 25%
     const agreement = compared ? Math.max(0, Math.round(100 - (diffSum / compared) * 25)) : null;
 
+    const placeholders = PROFILE_HISTORY_ACTIONS.map(() => "?").join(", ");
+    const history = db
+      .prepare(
+        `SELECT action, entity, entity_id AS slug, summary, details, created_at
+         FROM audit_log
+         WHERE user_id = ? AND action IN (${placeholders})
+         ORDER BY id DESC LIMIT ?`,
+      )
+      .all(user.id, ...PROFILE_HISTORY_ACTIONS, PROFILE_HISTORY_LIMIT)
+      .map((row) => ({
+        action: row.action,
+        entity: row.entity,
+        slug: row.entity === "drink" || row.entity === "rating" ? row.slug : "",
+        summary: String(row.summary || row.details || "").slice(0, 300),
+        at: row.created_at,
+      }));
+
     res.json({
       profile: {
         ...userToParticipant(user),
@@ -174,6 +206,7 @@ module.exports = (db) => {
         distribution,
       },
       ratings,
+      history,
     });
   });
 
