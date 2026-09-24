@@ -1,8 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("node:http");
-const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../server/lib/proxy");
-const { transcribeAudio } = require("../server/lib/ai");
+const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../../server/lib/proxy");
+const { transcribeAudio } = require("../../server/lib/ai");
 
 const listen = (server) =>
   new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));

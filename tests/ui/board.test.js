@@ -3,9 +3,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const appSource = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
-const indexHtml = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf8");
-const profileSource = fs.readFileSync(path.join(__dirname, "..", "public", "profile.js"), "utf8");
+const appSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "app.js"), "utf8");
+const indexHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "index.html"), "utf8");
+const profileSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "profile.js"), "utf8");
 
 test("доска: строка поиска и фильтры тиров в разметке", () => {
   assert.match(indexHtml, /id="board-search"/);

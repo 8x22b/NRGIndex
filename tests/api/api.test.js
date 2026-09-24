@@ -1,7 +1,7 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const sharp = require("sharp");
-const { startServer, createUser, request, login } = require("./helpers");
+const { startServer, createUser, request, login } = require("../helpers");
 
 let testImageDataUrl;
 const hexToRgb = (hex) => [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16));

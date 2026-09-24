@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const root = path.join(__dirname, "..");
+const root = path.join(__dirname, "..", "..");
 const adminHtml = fs.readFileSync(path.join(root, "admin", "index.html"), "utf8");
 const adminRoutes = fs.readFileSync(path.join(root, "server", "routes", "admin.js"), "utf8");
 const adminJs = fs.readFileSync(path.join(root, "admin", "admin.js"), "utf8");

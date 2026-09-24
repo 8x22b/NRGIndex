@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const styles = fs.readFileSync(path.join(__dirname, "..", "public", "styles.css"), "utf8");
+const styles = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 const noiseBlock = styles.match(/\.page-noise\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
 
 test("шум покрывает viewport повторяющейся текстурой без растягивания зерна", () => {

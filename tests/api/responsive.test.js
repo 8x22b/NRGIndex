@@ -2,8 +2,8 @@ const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { startServer, createUser } = require("./helpers");
-const { drinkImage } = require("../server/lib/assets");
+const { startServer, createUser } = require("../helpers");
+const { drinkImage } = require("../../server/lib/assets");
 
 let ctx;
 
@@ -23,7 +23,7 @@ after(async () => {
 
 test("манифест ассетов: все записи с размерами и webp-srcset", () => {
   const manifest = JSON.parse(
-    fs.readFileSync(path.join(__dirname, "..", "public", "assets", "manifest.json"), "utf8"),
+    fs.readFileSync(path.join(__dirname, "..", "..", "public", "assets", "manifest.json"), "utf8"),
   );
   assert.ok(Object.keys(manifest).length >= 10);
   for (const [key, entry] of Object.entries(manifest)) {

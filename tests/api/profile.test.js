@@ -2,11 +2,11 @@ const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { startServer, createUser, request, login } = require("./helpers");
+const { startServer, createUser, request, login } = require("../helpers");
 
-const ROOT = path.resolve(__dirname, "..");
+const ROOT = path.resolve(__dirname, "..", "..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
-const { findSimilarDrinks } = require("../server/lib/content");
+const { findSimilarDrinks } = require("../../server/lib/content");
 
 let ctx;
 let sanyaCookie;

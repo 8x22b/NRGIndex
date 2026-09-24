@@ -1,9 +1,9 @@
-﻿const test = require("node:test");
+const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const cabinetSource = fs.readFileSync(path.join(__dirname, "..", "public", "cabinet.js"), "utf8");
+const cabinetSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "cabinet.js"), "utf8");
 
 test("кабинет показывает красную кнопку удаления оценки", () => {
   assert.match(cabinetSource, /<button class=\"btn btn--danger\" type=\"button\" data-m-del-rating>удалить<\/button>/);

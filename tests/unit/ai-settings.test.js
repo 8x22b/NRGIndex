@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { aiSettings, parseDrinkText, transcribeAudio } = require("../server/lib/ai");
+const { aiSettings, parseDrinkText, transcribeAudio } = require("../../server/lib/ai");
 
 function dbWith(values) {
   return { prepare: (sql) => ({ get: (key) => ({ value: values[key] }) }) };

@@ -1,9 +1,9 @@
-﻿const test = require("node:test");
+const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const source = fs.readFileSync(path.join(__dirname, "..", "public", "cabinet.js"), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "..", "..", "public", "cabinet.js"), "utf8");
 
 test("лента изображений создаёт плитку при готовности результата", () => {
   assert.match(source, /if \(!tile && item\.state === "ready"\)/);
