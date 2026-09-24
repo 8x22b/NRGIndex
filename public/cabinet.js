@@ -714,7 +714,8 @@
       const g = px[offset + 1];
       const b = px[offset + 2];
       // Градиент с JPEG-шумом уходит от медианы дальше TOL — режем по доминированию зелёного.
-      if (g > 60 && g - Math.max(r, b) > 35) return true;
+      // Пороги низкие: модель затемняет хромакей к краям кадра (виньетка сверху/снизу).
+      if (g > 45 && g - Math.max(r, b) > 25) return true;
       return isGreen(r, g, b) && Math.hypot(r - bg[0], g - bg[1], b - bg[2]) < TOL;
     };
 

@@ -103,6 +103,23 @@ test("хромакей с градиентом и JPEG-шумом вырезае
       raw[offset + 2] = 60;
     }
   }
+  // Тёмная виньетка сверху/снизу — модель затемняет хромакей к краям кадра.
+  for (let y = 0; y < 15; y++) {
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      raw[offset] = 15;
+      raw[offset + 1] = 55;
+      raw[offset + 2] = 18;
+    }
+  }
+  for (let y = 105; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const offset = (y * width + x) * 4;
+      raw[offset] = 15;
+      raw[offset + 1] = 55;
+      raw[offset + 2] = 18;
+    }
+  }
   const jpeg = await sharp(raw, { raw: { width, height, channels: 4 } }).jpeg({ quality: 70 }).toBuffer();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrg-img-"));
   try {

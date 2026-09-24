@@ -42,7 +42,7 @@ function removeBorderBackground(px, width, height) {
     const r = px[offset];
     const g = px[offset + 1];
     const b = px[offset + 2];
-    if (chroma && g > 60 && g - Math.max(r, b) > 35) return true;
+    if (chroma && g > 45 && g - Math.max(r, b) > 25) return true;
     if (Math.hypot(r - bg[0], g - bg[1], b - bg[2]) < BG.TOL) return true;
     return (
       Math.min(r, g, b) > BG.BRIGHT_MIN && Math.max(r, g, b) - Math.min(r, g, b) < BG.NEUTRAL_MAX
