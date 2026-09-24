@@ -27,6 +27,10 @@
   };
 
   const state = { me: null, data: null, tab: "drinks", removeImage: false };
+  // Исходник фото ДО вырезания фона (строго JPEG) — для отправки в Nano Banana.
+  // Заполняется при выборе файла/ссылки/ленты; для уже сохранённого фото оригинала
+  // нет — тогда шлём текущее с пометкой.
+  let adminOriginal = null;
   const remoteImageToDataUrl = async (value) => {
     let url;
     try {
@@ -205,6 +209,7 @@
       ? [drink.brand, drink.name, drink.flavor].filter(Boolean).join(" ")
       : "";
     state.removeImage = false;
+    adminOriginal = null;
     $("d-related").innerHTML = state.data.drinks
       .filter((item) => item.id !== (drink?.id || -1))
       .map(
@@ -229,6 +234,7 @@
     try {
       status("drink-status", "Обрабатываю картинку…");
       const dataUrl = await fileToDataUrl(file, 1200);
+      adminOriginal = await toJpegDataUrl(dataUrl);
       const { path, accent } = await api("POST", "api/uploads", { dataUrl });
       state.removeImage = false;
       $("d-image-path").value = path;
@@ -251,6 +257,7 @@
     try {
       status("drink-status", "Загружаю картинку по ссылке…");
       const dataUrl = await remoteImageToDataUrl(value);
+      adminOriginal = await toJpegDataUrl(dataUrl);
       const { path, accent } = await api("POST", "api/uploads", { dataUrl });
       state.removeImage = false;
       $("d-image-path").value = path;
@@ -276,6 +283,7 @@
       status("drink-status", "Загружаю выбранное фото…");
       tile?.classList.add("is-loading");
       const dataUrl = await remoteImageToDataUrl(item.url);
+      adminOriginal = await toJpegDataUrl(dataUrl);
       const { path, accent } = await api("POST", "api/uploads", { dataUrl });
       state.removeImage = false;
       $("d-image-path").value = path;
@@ -371,10 +379,48 @@
 
   $("btn-drink-image-clear").onclick = () => {
     state.removeImage = true;
+    adminOriginal = null;
     $("d-image-path").value = "";
     $("d-image-preview").hidden = true;
     $("d-image-preview").removeAttribute("src");
     status("drink-status", "Картинка будет убрана при сохранении");
+  };
+
+  // 🍌 Перерисовка через Nano Banana. В модель идёт исходник ДО вырезания фона
+  // строго JPEG (свежий файл/ссылка/лента — сохранённый adminOriginal,
+  // иначе текущее фото с пометкой). Зелёный хромакей результата вырезает сервер
+  // при заливке — removeBorderBackground режет по медиане рамки, не только белое.
+  $("btn-drink-redraw").onclick = async () => {
+    try {
+      let source = adminOriginal;
+      let note = "";
+      if (!source) {
+        const preview = $("d-image-preview");
+        const url = (!preview.hidden && preview.src) || $("d-image-path").value.trim();
+        if (!url) {
+          status("drink-status", "Нет фото для перерисовки — загрузи файл, ссылку или выбери из ленты", true);
+          return;
+        }
+        note = " (оригинал не сохранился — шлю текущее фото)";
+        status("drink-status", "Готовлю исходник…");
+        source = await toJpegDataUrl(await pathToDataUrl(url));
+      }
+      if (!source.startsWith("data:image/jpeg")) throw new Error("Исходник не JPEG — что-то пошло не так");
+      status("drink-status", "Nano Banana перерисовывает…");
+      const { imageDataUrl } = await api("POST", "api/cabinet/ai/photo-redraw", { imageDataUrl: source });
+      adminOriginal = await toJpegDataUrl(imageDataUrl);
+      status("drink-status", "Заливаю результат (фон вырежется сам)…");
+      const { path, accent } = await api("POST", "api/uploads", { dataUrl: imageDataUrl });
+      state.removeImage = false;
+      $("d-image-path").value = path;
+      $("d-accent-a").value = accent[0];
+      $("d-accent-b").value = accent[1];
+      $("d-image-preview").src = path;
+      $("d-image-preview").hidden = false;
+      status("drink-status", `Перерисовано 🍌${note} — фон вырезан, цвет ${accent[0]} / ${accent[1]}`);
+    } catch (error) {
+      status("drink-status", error.message || "Не удалось перерисовать", true);
+    }
   };
 
   $("drink-form").addEventListener("submit", async (event) => {
@@ -996,6 +1042,45 @@
   $("audit-filter").addEventListener("change", () => renderAudit());
 
   /* ---------- helpers ---------- */
+  // В Nano Banana шлём исходник ДО вырезания фона и строго JPEG:
+  // прозрачность кладём на белый, всё ужимаем до maxSide.
+  const toJpegDataUrl = (dataUrl, maxSide = 1200) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/jpeg", 0.92));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.onerror = () => reject(new Error("Не удалось прочитать картинку"));
+      img.src = dataUrl;
+    });
+
+  // Сохранённый путь (/uploads/…, /assets/…) или внешняя ссылка → dataURL.
+  // Внешние идут через remoteImageToDataUrl (прямо + прокси), свои — обычным fetch.
+  const pathToDataUrl = async (value) => {
+    if (/^https?:\/\//i.test(value)) return remoteImageToDataUrl(value);
+    const response = await fetch(value);
+    if (!response.ok) throw new Error(`Не удалось загрузить картинку (HTTP ${response.status})`);
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) throw new Error("Ссылка ведёт не на изображение");
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Не удалось прочитать картинку"));
+      reader.readAsDataURL(blob);
+    });
+  };
   const fileToDataUrl = (file, maxSide) =>
     new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);

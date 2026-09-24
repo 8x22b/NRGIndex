@@ -54,3 +54,14 @@ test("лента фото в админке дожимает через прок
   assert.match(adminJs, /dataset\.proxied/);
   assert.match(adminJs, /api\/cabinet\/ai\/photo-proxy\?url=/);
 });
+
+test("кнопка 🍌 в форме напитка шлёт исходник до резки строго JPEG", () => {
+  assert.match(adminHtml, /id="btn-drink-redraw"/);
+  assert.match(adminJs, /\$\("btn-drink-redraw"\)\.onclick/);
+  assert.match(adminJs, /adminOriginal/);
+  assert.match(adminJs, /toJpegDataUrl/);
+  assert.match(adminJs, /toDataURL\("image\/jpeg"/);
+  assert.match(adminJs, /startsWith\("data:image\/jpeg"\)/);
+  assert.match(adminJs, /api\("POST", "api\/cabinet\/ai\/photo-redraw", \{ imageDataUrl: source \}\)/);
+  assert.match(adminJs, /оригинал не сохранился/);
+});

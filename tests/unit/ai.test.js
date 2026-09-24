@@ -56,6 +56,13 @@ test("промпт запрещает выдумывать мнение", () => 
   assert.match(SYSTEM_PROMPT, /tier = null/);
 });
 
+test("промпт делит марку и линейку: Lit/Adrenaline Rush", () => {
+  assert.match(SYSTEM_PROMPT, /торговая марка целиком/);
+  assert.match(SYSTEM_PROMPT, /Adrenaline Rush/);
+  assert.match(SYSTEM_PROMPT, /brand «Lit», name «Lit Energy»/);
+  assert.match(SYSTEM_PROMPT, /через запятую/);
+});
+
 test("parseDrinkText делает один запрос на base URL и оставляет пустыми неизвестные поля", async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
