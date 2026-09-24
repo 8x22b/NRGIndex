@@ -57,7 +57,8 @@ test("редактор мнения: ИИ-разбор текста и голо�
   assert.match(cabinetHtml, /id="op-voice-player"/);
   assert.match(cabinetHtml, /id="op-voice-audio"/);
   assert.match(cabinetSource, /op-ai-parse"\)\.onclick = parseOpinionText/);
-  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/parse", \{ text \}\)/);
+  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/parse", \{ text, drink: opinion\.drink \}\)/);
+  assert.match(cabinetSource, /opinion\.drink = \{ brand: drink\.brand \|\| ""/);
   assert.match(cabinetSource, /const VOICE_UI/);
   assert.match(cabinetSource, /input: "op-ai-text"/);
 });

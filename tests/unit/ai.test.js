@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const {
   normalizeParsed,
   parseDrinkText,
+  parseRatingText,
   transcribeAudio,
   normalizeBaseUrl,
   providerFailureDetail,
@@ -95,6 +96,39 @@ test("parseDrinkText достаёт JSON даже с мусором вокруг
 
 test("parseDrinkText без ключа сообщает об ошибке", async () => {
   await assert.rejects(() => parseDrinkText("тест", { key: "" }), /ключ/i);
+});
+
+test("parseRatingText: название банки уходит в контекст, «нет бренда» больше не стреляет", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return chatReply({ tier: null, review: "троечка, приторно, но бодрит" });
+  };
+  const result = await parseRatingText(
+    "троечка, приторно, но бодрит",
+    { brand: "Burn", name: "Tropic Blast", flavor: "манго" },
+    { key: "test-key", baseUrl: "https://llm.example/v1", fetchImpl },
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://llm.example/v1/chat/completions");
+  const userMessage = calls[0].body.messages[1].content;
+  assert.match(userMessage, /Burn Tropic Blast/);
+  assert.match(userMessage, /вкус: манго/);
+  assert.match(userMessage, /троечка, приторно/);
+  assert.match(calls[0].body.messages[0].content, /tier/);
+  assert.equal(result.review, "троечка, приторно, но бодрит");
+  assert.equal(result.tier, "B");
+  assert.equal(result.tierGuessed, true);
+});
+
+test("parseRatingText распознаёт явный тир из ответа модели", async () => {
+  const fetchImpl = async () => chatReply({ tier: "A", review: "Бодрит, беру ещё" });
+  const result = await parseRatingText("на четвёрочку, бодрит, беру ещё", { name: "Volt" }, { key: "k", fetchImpl });
+  assert.deepEqual(result, { tier: "A", tierGuessed: false, review: "Бодрит, беру ещё" });
+});
+
+test("parseRatingText без названия банки — понятная ошибка", async () => {
+  await assert.rejects(() => parseRatingText("норм", {}, { key: "k" }), /название банки/i);
 });
 
 test("transcribeAudio: OpenRouter получает JSON с input_audio", async () => {
