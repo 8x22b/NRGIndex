@@ -35,6 +35,21 @@ const SYSTEM_PROMPT = [
   "7. Пустая строка лучше выдуманного значения.",
 ].join("\n");
 
+// Разбор отметки для банки, которая уже есть в индексе: название известно заранее,
+// поэтому у модели просим только тир и отзыв — и не ругаемся, что нет бренда.
+const RATING_PROMPT = [
+  "Ты — парсер оценки энергетика. Тебе дают название банки и свободный текст пользователя.",
+  'Верни СТРОГО JSON без пояснений и markdown: {"tier":"S|A|B|C|D|null","review":""}',
+  "",
+  "Правила:",
+  "1. review — только мнение самого автора из его текста: коротко (1–3 предложения, по-русски, от первого лица),",
+  "   сохраняя его слова и смысл. Ничего не выдумывай. Если мнения нет — review = \"\".",
+  "2. tier — только если автор явно оценил: прямо назвал тир (S/A/B/C/D) или однозначно выразил отношение",
+  "   (восторг, «лучший» = S; хвалит, «возьму ещё» = A; «норм», «пойдёт» = B; «так себе», «на любителя» = C; ругает, «не бери» = D).",
+  "   Если оценки нет — tier = null. Не выводи тир из репутации бренда.",
+  "3. Название банки уже известно — не переспрашивай его и не дублируй в отзыве.",
+].join("\n");
+
 function normalizeParsed(raw) {
   const parsed = raw && typeof raw === "object" ? raw : {};
   const tierRaw = String(parsed.tier ?? "").trim().toUpperCase();
@@ -208,6 +223,29 @@ async function parseDrinkText(text, { key, parseKey, model, baseUrl, parseBaseUr
     throw new ApiError(502, "Не понял, что за напиток — назови хотя бы бренд", "ai_bad_response");
   }
   return clean;
+}
+
+// Отметка существующей банки: контекст (бренд/название/вкус) добавляем сами,
+// поэтому банка заведомо «известна» и 502 «назови хотя бы бренд» тут не случится.
+async function parseRatingText(text, drink = {}, { key, parseKey, model, baseUrl, parseBaseUrl, fetchImpl = fetch } = {}) {
+  const requestKey = parseKey || key;
+  const requestBaseUrl = parseBaseUrl || baseUrl || DEFAULT_BASE_URL;
+  requireKey(requestKey);
+  const userText = String(text || "").slice(0, 2000);
+  const label = [drink.brand, drink.name].filter(Boolean).join(" ").trim() || String(drink.name || "").trim();
+  if (!label) throw badRequest("Нужно название банки для разбора отметки");
+  const parsed = await requestParsedJson(
+    [
+      { role: "system", content: RATING_PROMPT },
+      {
+        role: "user",
+        content: `Банка: ${label}${drink.flavor ? ` (вкус: ${drink.flavor})` : ""}\nТекст: ${userText}`,
+      },
+    ],
+    { key: requestKey, model, baseUrl: requestBaseUrl, fetchImpl },
+  );
+  const clean = normalizeParsed(parsed);
+  return { tier: clean.tier, tierGuessed: clean.tierGuessed, review: clean.review };
 }
 
 const AUDIO_FORMATS = {
@@ -556,6 +594,7 @@ async function searchCanImages(query, { fetchImpl = fetch, proxyFetchImpl, googl
 
 module.exports = {
   parseDrinkText,
+  parseRatingText,
   normalizeParsed,
   normalizeBaseUrl,
   providerFailureDetail,

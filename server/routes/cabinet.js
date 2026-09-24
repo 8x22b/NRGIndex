@@ -3,6 +3,7 @@ const { notFound, tooMany, badRequest } = require("../lib/errors");
 const { str, oneOf } = require("../lib/validate");
 const {
   parseDrinkText,
+  parseRatingText,
   transcribeAudio,
   decodeAudio,
   aiSettings,
@@ -241,6 +242,20 @@ module.exports = (db, auth, config) => {
   router.post("/ai/parse", async (req, res) => {
     checkAiLimit(req.user.id);
     const text = str(req.body?.text, "Текст", { min: 2, max: 2000 });
+    // Отметка существующей банки: название приходит с клиента, у модели просим
+    // только тир и отзыв. Без этого разбор падал 502 «назови хотя бы бренд».
+    if (req.body?.drink) {
+      const parsed = await parseRatingText(
+        text,
+        {
+          brand: str(req.body.drink.brand ?? "", "Бренд", { required: false, max: 80 }),
+          name: str(req.body.drink.name ?? "", "Название", { max: 120 }),
+          flavor: str(req.body.drink.flavor ?? "", "Вкус", { required: false, max: 160 }),
+        },
+        aiSettings(db),
+      );
+      return res.json({ parsed, similar: [] });
+    }
     const parsed = await parseDrinkText(text, aiSettings(db));
     const similar = findSimilarDrinks(db, parsed).map((drink) => ({
       ...drink,

@@ -577,6 +577,52 @@ test("транскрибация: валидация входа", async () => {
   assert.equal(badType.status, 400);
 });
 
+test("разбор отметки существующей банки: имя обязательно и тир с отзывом приходят от ИИ", async () => {
+  const noName = await request(ctx.base, "POST", "/api/cabinet/ai/parse", {
+    cookie: userCookie,
+    body: { text: "норм", drink: { name: "" } },
+  });
+  assert.equal(noName.status, 400);
+
+  // Локальный мок ИИ-провайдера: тест не ходит в сеть и видит, что именно уходит модели.
+  const http = require("node:http");
+  let providerBody = "";
+  const provider = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      providerBody = body;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ tier: "C", review: "Приторно, но пить можно" }) } }] }),
+      );
+    });
+  });
+  await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve));
+  const providerPort = provider.address().port;
+  const putSetting = (key, value) =>
+    ctx.db
+      .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(key, value);
+  putSetting("parse_api_key", "test-key");
+  putSetting("parse_base_url", `http://127.0.0.1:${providerPort}/v1`);
+  putSetting("ai_proxy_url", "");
+
+  try {
+    const res = await request(ctx.base, "POST", "/api/cabinet/ai/parse", {
+      cookie: userCookie,
+      body: { text: "приторно, но пить можно", drink: { brand: "Burn", name: "Tropic", flavor: "манго" } },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.json.parsed, { tier: "C", tierGuessed: false, review: "Приторно, но пить можно" });
+    assert.deepEqual(res.json.similar, []);
+    assert.match(providerBody, /Burn Tropic/);
+    assert.match(providerBody, /приторно, но пить можно/);
+  } finally {
+    await new Promise((resolve) => provider.close(resolve));
+  }
+});
+
 test("CSP разрешает blob: для аудио", async () => {
   const res = await fetch(`${ctx.base}/cabinet.html`);
   assert.match(res.headers.get("content-security-policy"), /media-src 'self' blob:/);

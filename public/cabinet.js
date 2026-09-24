@@ -263,7 +263,7 @@
   /* ---------- редактор своего мнения ---------- */
   // Своё мнение целиком: тир и отзыв плюс полное управление фото банки
   // (заменить своим файлом, найти в интернете, убрать). Всё с историей правок.
-  const opinion = { slug: "", image: null, remove: false, original: null, originalUrl: null };
+  const opinion = { slug: "", image: null, remove: false, original: null, originalUrl: null, drink: null, fromSmart: false };
 
   const setOpStatus = (text, isError = false) => {
     $("op-status").textContent = text;
@@ -307,6 +307,8 @@
     opinion.original = null;
     opinion.originalUrl = null;
     opinion.fromSmart = Boolean(options.fromSmart);
+    // Контекст банки для ИИ: без названия разбор отметки не знает, о чём речь.
+    opinion.drink = { brand: drink.brand || "", name: drink.name || "", flavor: drink.flavor || "" };
     $("op-title").textContent = drink.name;
     $("op-sub").textContent = drink.flavor || "без вкуса";
     $("op-image").src = mine?.image || drink.image || "assets/favicon.svg";
@@ -351,7 +353,7 @@
     $("op-ai-parse").disabled = true;
     setOpStatus("нейросеть разбирает…");
     try {
-      const { parsed } = await api("POST", "api/cabinet/ai/parse", { text });
+      const { parsed } = await api("POST", "api/cabinet/ai/parse", { text, drink: opinion.drink });
       if (TIERS.includes(parsed.tier)) $("op-tier").value = parsed.tier;
       if (parsed.review) $("op-review").value = parsed.review;
       setOpStatus(
