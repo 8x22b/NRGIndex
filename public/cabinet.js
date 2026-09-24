@@ -41,6 +41,7 @@
   const pending = {
     parsed: null,
     image: null,
+    original: null, // необработанный оригинал для 🍌 (резаный с кривым фоном модель тупит)
     photoNote: "",
     photoSource: "auto",
     userPhoto: false,
@@ -262,7 +263,7 @@
   /* ---------- редактор своего мнения ---------- */
   // Своё мнение целиком: тир и отзыв плюс полное управление фото банки
   // (заменить своим файлом, найти в интернете, убрать). Всё с историей правок.
-  const opinion = { slug: "", image: null, remove: false };
+  const opinion = { slug: "", image: null, remove: false, original: null, originalUrl: null };
 
   const setOpStatus = (text, isError = false) => {
     $("op-status").textContent = text;
@@ -300,6 +301,8 @@
     opinion.slug = slug;
     opinion.image = null;
     opinion.remove = false;
+    opinion.original = null;
+    opinion.originalUrl = null;
     $("op-title").textContent = item.name;
     $("op-sub").textContent = item.flavor || "без вкуса";
     $("op-image").src = item.image || "assets/favicon.svg";
@@ -326,7 +329,10 @@
     const objectUrl = URL.createObjectURL(file);
     try {
       setOpPhotoStatus("режу фон…");
-      const { dataUrl, cut } = prepareImage(await loadImage(objectUrl));
+      const img = await loadImage(objectUrl);
+      opinion.original = shrinkOnly(img);
+      opinion.originalUrl = null;
+      const { dataUrl, cut } = prepareImage(img);
       pickOpinionImage(dataUrl, cut ? "твоё фото · фон вырезан ✓" : "твоё фото · фон не вырезан");
     } catch {
       setOpPhotoStatus("не удалось прочитать файл", true);
@@ -373,6 +379,8 @@
               .forEach((node) => node.classList.remove("is-selected"));
             tile.classList.remove("is-loading");
             tile.classList.add("is-selected");
+            opinion.original = null;
+            opinion.originalUrl = item.url;
             pickOpinionImage(dataUrl, "фото из ленты ✓");
           } catch {
             tile.classList.remove("is-loading");
@@ -400,14 +408,20 @@
   $("op-photo-remove").onclick = () => {
     opinion.image = null;
     opinion.remove = true;
+    opinion.original = null;
+    opinion.originalUrl = null;
     $("op-image").src = "assets/favicon.svg";
     setOpPhotoStatus("фото будет убрано при сохранении");
   };
 
   $("op-photo-redraw").onclick = () =>
     redrawCurrentPhoto({
-      get: () => opinion.image,
-      set: (dataUrl) => pickOpinionImage(dataUrl, "перерисовано на белом фоне 🍌"),
+      get: async () => {
+        if (opinion.originalUrl) return originalDataUrl(opinion.originalUrl);
+        return opinion.original;
+      },
+      set: ({ dataUrl, cut }) =>
+        pickOpinionImage(dataUrl, cut ? "перерисовано 🍌 · фон снят ✓" : "перерисовано 🍌 · фон снять не вышло"),
       button: $("op-photo-redraw"),
       say: setOpPhotoStatus,
     });
@@ -669,6 +683,102 @@
     return canvas.toDataURL("image/png");
   };
 
+  /**
+   * Снимает зелёный хромакей (фон от Nano Banana) заливкой от краёв — как cutWhiteBg,
+   * только предикат «зелёности». Заливка от краёв обязательна: зелёные элементы
+   * этикетки внутри банки трогать нельзя. null — рамка не зелёная, не хромакей.
+   */
+  const cutGreenBg = (img, maxSide = 640) => {
+    const { canvas, ctx, w, h } = drawScaled(img, maxSide);
+    const imageData = ctx.getImageData(0, 0, w, h);
+    const px = imageData.data;
+
+    const isGreen = (r, g, b) => g > 100 && g - r > 50 && g - b > 50;
+    const { border } = borderStats(px, w, h);
+    const greens = [];
+    for (const offset of border) {
+      if (px[offset + 3] < 16) continue;
+      const r = px[offset];
+      const g = px[offset + 1];
+      const b = px[offset + 2];
+      if (isGreen(r, g, b)) greens.push([r, g, b]);
+    }
+    if (greens.length < border.length * 0.5) return null;
+    const median = (arr) => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)];
+    const bg = [0, 1, 2].map((channel) => median(greens.map((pixel) => pixel[channel])));
+
+    const TOL = 60;
+    const isBgish = (offset) => {
+      if (px[offset + 3] < 16) return true;
+      const r = px[offset];
+      const g = px[offset + 1];
+      const b = px[offset + 2];
+      return isGreen(r, g, b) && Math.hypot(r - bg[0], g - bg[1], b - bg[2]) < TOL;
+    };
+
+    const mask = new Uint8Array(w * h);
+    const stack = [];
+    const seed = (x, y) => {
+      const i = y * w + x;
+      if (!mask[i] && isBgish(i * 4)) {
+        mask[i] = 1;
+        stack.push(i);
+      }
+    };
+    for (let x = 0; x < w; x++) {
+      seed(x, 0);
+      seed(x, h - 1);
+    }
+    for (let y = 0; y < h; y++) {
+      seed(0, y);
+      seed(w - 1, y);
+    }
+    while (stack.length) {
+      const i = stack.pop();
+      const x = i % w;
+      const y = (i / w) | 0;
+      if (x > 0 && !mask[i - 1] && isBgish((i - 1) * 4)) {
+        mask[i - 1] = 1;
+        stack.push(i - 1);
+      }
+      if (x < w - 1 && !mask[i + 1] && isBgish((i + 1) * 4)) {
+        mask[i + 1] = 1;
+        stack.push(i + 1);
+      }
+      if (y > 0 && !mask[i - w] && isBgish((i - w) * 4)) {
+        mask[i - w] = 1;
+        stack.push(i - w);
+      }
+      if (y < h - 1 && !mask[i + w] && isBgish((i + w) * 4)) {
+        mask[i + w] = 1;
+        stack.push(i + w);
+      }
+    }
+
+    let bgShare = 0;
+    for (let i = 0; i < mask.length; i++) bgShare += mask[i];
+    bgShare /= mask.length;
+    if (bgShare < 0.005) return null;
+
+    const grown = Uint8Array.from(mask);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (mask[y * w + x]) continue;
+        if (
+          (x > 0 && mask[y * w + x - 1]) ||
+          (x < w - 1 && mask[y * w + x + 1]) ||
+          (y > 0 && mask[(y - 1) * w + x]) ||
+          (y < h - 1 && mask[(y + 1) * w + x])
+        ) {
+          grown[y * w + x] = 1;
+        }
+      }
+    }
+    for (let i = 0; i < grown.length; i++) if (grown[i]) px[i * 4 + 3] = 0;
+    ctx.putImageData(imageData, 0, 0);
+    return canvas.toDataURL("image/png");
+  };
+
   const shrinkOnly = (img, maxSide = 640) => {
     const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
     const canvas = document.createElement("canvas");
@@ -680,19 +790,36 @@
 
   const processImageUrl = async (url) => prepareImage(await loadImageWithFallback(url)).dataUrl;
 
-  // Перерисовка через Nano Banana: текущий dataURL → белый фон, прямой ракурс.
+  // Необработанный оригинал по ссылке: только ужатие, без резки фона.
+  // Нужен перерисовке — резаная картинка с кривым фоном путает модель.
+  const originalDataUrl = async (url) => shrinkOnly(await loadImageWithFallback(url));
+
+  // Финиш перерисовки: снимаем зелёный хромакей от Nano Banana (заливкой от краёв,
+  // зелень этикетки не трогаем). Нет зелени — пробуем белый фон, иначе как есть.
+  const finishRedrawn = async (dataUrl) => {
+    const img = await loadImage(dataUrl);
+    const green = cutGreenBg(img);
+    if (green) return { dataUrl: green, cut: true };
+    const white = cutWhiteBg(img);
+    return { dataUrl: white || shrinkOnly(img), cut: Boolean(white) };
+  };
+
+  // Перерисовка через Nano Banana: НЕОБРАБОТАННЫЙ оригинал → прямой ракурс,
+  // зелёный хромакей → снимаем его тем же заливным алгоритмом, что режет фон.
   // get/set/статус инжектятся, потому что превьюшек две: смарт-форма и редактор мнения.
   const redrawCurrentPhoto = async ({ get, set, button, say }) => {
-    const current = get();
-    if (!current || !current.startsWith("data:")) {
-      say("сначала выбери или приложи фото", true);
-      return;
-    }
     button.disabled = true;
     try {
+      say("🍌 беру оригинал…");
+      const current = await get();
+      if (!current || !current.startsWith("data:")) {
+        say("сначала выбери или приложи фото", true);
+        return;
+      }
       say("🍌 перерисовываю банку…");
       const { imageDataUrl } = await api("POST", "api/cabinet/ai/photo-redraw", { imageDataUrl: current });
-      set(imageDataUrl);
+      say("🍌 снимаю зелёный фон…");
+      set(await finishRedrawn(imageDataUrl));
     } catch (error) {
       say(error.message, true);
     } finally {
@@ -849,6 +976,7 @@
       setStripStatus("ничего подходящего — приложи своё фото или ссылку");
       if (pending.photoSource === "auto") {
         pending.image = null;
+        pending.original = null;
         pending.photoNote = "фото не нашлось — приложи своё или выбери ссылкой";
         updatePreviewImage();
       }
@@ -1011,6 +1139,7 @@
   const resetSmart = () => {
     pending.parsed = null;
     pending.image = null;
+    pending.original = null;
     pending.userPhoto = false;
     pending.photoSource = "auto";
     pending.photoNote = "";
@@ -1083,6 +1212,7 @@
       renderSimilar(similar || []);
       if (!pending.userPhoto) {
         pending.image = null;
+        pending.original = null;
         pending.photoSource = "auto";
         pending.photoNote = "ищу фото…";
       }
@@ -1176,7 +1306,9 @@
     $("smart-status").textContent = "Режу фон…";
     const objectUrl = URL.createObjectURL(file);
     try {
-      const { dataUrl, cut } = prepareImage(await loadImage(objectUrl));
+      const img = await loadImage(objectUrl);
+      pending.original = shrinkOnly(img);
+      const { dataUrl, cut } = prepareImage(img);
       pending.image = dataUrl;
       pending.userPhoto = true;
       pending.photoSource = "user";
@@ -1213,11 +1345,21 @@
 
   $("btn-redraw").onclick = () =>
     redrawCurrentPhoto({
-      get: () => pending.image,
-      set: (dataUrl) => {
+      // Шлём НЕОБРАБОТАННЫЙ оригинал: лента — ужатый исходник по ссылке,
+      // своё/по ссылке/повтор — сохранённый оригинал, а не резаный.
+      get: async () => {
+        if (strip.selected >= 0 && strip.items[strip.selected]?.url) {
+          return originalDataUrl(strip.items[strip.selected].url);
+        }
+        if (pending.original) return pending.original;
+        const url = $("m-image-url").value.trim();
+        if (pending.photoSource === "url" && url) return originalDataUrl(url);
+        return null;
+      },
+      set: ({ dataUrl, cut }) => {
         pending.image = dataUrl;
         pending.photoSource = "redraw";
-        pending.photoNote = "перерисовано на белом фоне 🍌";
+        pending.photoNote = cut ? "перерисовано 🍌 · фон снят ✓" : "перерисовано 🍌 · фон снять не вышло";
         strip.selected = -1;
         markSelected();
         updatePreviewImage();

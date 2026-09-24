@@ -32,3 +32,16 @@ test("кнопки перерисовки на белом фоне есть в �
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/photo-redraw"/);
   assert.match(cabinetRoutes, /router\.post\("\/ai\/photo-redraw"/);
 });
+
+test("перерисовка шлёт необработанный оригинал, а зелёный хромакей снимает заливкой", () => {
+  assert.match(cabinetSource, /originalDataUrl/);
+  assert.match(cabinetSource, /cutGreenBg/);
+  assert.match(cabinetSource, /finishRedrawn/);
+  assert.match(cabinetSource, /НЕОБРАБОТАННЫЙ оригинал/);
+});
+
+test("промпт просит прямой ракурс и зелёный фон", () => {
+  const geminiSource = fs.readFileSync(path.join(__dirname, "..", "..", "server", "lib", "gemini.js"), "utf8");
+  assert.match(geminiSource, /straight-on front view/);
+  assert.match(geminiSource, /#00FF00/);
+});

@@ -20,7 +20,8 @@ test("redrawCanOnWhite: шлёт картинку + промпт, возвращ
   assert.equal(seen[0].init.headers["x-goog-api-key"], "k");
   const body = JSON.parse(seen[0].init.body);
   assert.equal(body.model, DEFAULT_IMAGE_MODEL);
-  assert.ok(body.input.some((part) => part.type === "text" && /white/i.test(part.text)));
+  assert.ok(body.input.some((part) => part.type === "text" && /chroma-key/i.test(part.text)));
+  assert.ok(body.input.some((part) => part.type === "text" && /straight-on front view/i.test(part.text)));
   const imagePart = body.input.find((part) => part.type === "image");
   assert.equal(imagePart.mime_type, "image/png");
   assert.ok(imagePart.data.length > 10);
@@ -52,6 +53,24 @@ test("redrawCanOnWhite: HTTP-ошибка тащит статус и текст 
 test("redrawCanOnWhite: пустой ответ без картинки — ошибка", async () => {
   const fetchImpl = async () => ({ ok: true, json: async () => ({}) });
   await assert.rejects(() => redrawCanOnWhite(DATA_URL, { key: "k", fetchImpl }), /не вернул картинку/);
+});
+
+test("redrawCanOnWhite: текст отказа модели идёт в ошибку, а не заглушка", async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({ candidates: [{ content: { parts: [{ text: "I can't preserve the logo" }] }, finishReason: "STOP" }] }),
+  });
+  const error = await redrawCanOnWhite(DATA_URL, { key: "k", fetchImpl }).catch((err) => err);
+  assert.match(error.message, /I can't preserve the logo/);
+});
+
+test("redrawCanOnWhite: blockReason идёт в ошибку", async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({ promptFeedback: { blockReason: "SAFETY" } }),
+  });
+  const error = await redrawCanOnWhite(DATA_URL, { key: "k", fetchImpl }).catch((err) => err);
+  assert.match(error.message, /SAFETY/);
 });
 
 test("checkGeminiKey: models.get возвращает модель и ms", async () => {

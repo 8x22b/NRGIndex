@@ -9,14 +9,36 @@ const GEMINI_TIMEOUT_MS = 120000;
 const REDRAW_MAX_BYTES = 7 * 1024 * 1024;
 
 const REDRAW_PROMPT =
-  "Redraw this energy drink can as a clean studio product shot: " +
-  "the exact same can with the same design, logo and text kept readable, " +
-  "straight-on front view, vertically centered, pure white (#ffffff) background, " +
-  "soft realistic shadow under the can, photorealistic.";
+  "Redraw this energy drink can as a studio product photo: " +
+  "keep the exact same can design, logo, colors and all text readable; " +
+  "correct the viewing angle to a perfectly straight-on front view, " +
+  "can vertical and centered, filling most of the frame; " +
+  "solid pure green (#00FF00) chroma-key background, " +
+  "even lighting, no shadows on the background, photorealistic.";
 
 function geminiError(res, data) {
   const message = data?.error?.message || data?.error?.status || "";
   return new ApiError(res.status >= 500 ? 502 : res.status, `Gemini: HTTP ${res.status}${message ? ` — ${message}` : ""}`, "gemini_failed");
+}
+
+// HTTP 200, но картинки нет: тащим причину из ответа вместо глухой заглушки —
+// модель иногда возвращает текст отказа, blockReason или finishReason.
+function noImageError(data) {
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const text = parts
+    .map((part) => part?.text)
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .slice(0, 300);
+  if (text) return new ApiError(502, `Gemini не вернул картинку: ${text}`, "gemini_no_image");
+  const blocked = data?.promptFeedback?.blockReason;
+  if (blocked) return new ApiError(502, `Gemini отклонил запрос: ${blocked}`, "gemini_blocked");
+  const finish = data?.candidates?.[0]?.finishReason;
+  if (finish && finish !== "STOP") {
+    return new ApiError(502, `Gemini оборвал генерацию: ${finish}`, "gemini_no_image");
+  }
+  return new ApiError(502, "Gemini не вернул картинку", "gemini_no_image");
 }
 
 // Перерисовывает банку на белом фоне под прямым ракурсом.
@@ -52,7 +74,7 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
   }
   if (!res.ok) throw geminiError(res, data);
   const out = data?.output_image;
-  if (!out?.data) throw new ApiError(502, "Gemini не вернул картинку", "gemini_no_image");
+  if (!out?.data) throw noImageError(data);
   const outMime = /image\/(png|jpeg|webp)/.test(out.mime_type || "") ? out.mime_type : "image/png";
   return { imageDataUrl: `data:${outMime};base64,${out.data}` };
 }
