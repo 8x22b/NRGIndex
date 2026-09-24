@@ -28,10 +28,10 @@ test("доска: фильтр тиров переключает чипы", () =
   assert.match(appSource, /querySelectorAll\("\[data-tier-filter\]"\)/);
 });
 
-test("доска: наклон карточки не мерцает — rAF и без transition во время ведения", () => {
-  assert.match(appSource, /requestAnimationFrame/);
-  assert.match(appSource, /is-tilting/);
-  assert.match(appSource, /cancelAnimationFrame/);
+test("доска: карточка не крутится за курсором — бейджи тира/оценки не мерцают", () => {
+  assert.doesNotMatch(appSource, /setProperty\("--r[xy]"/);
+  assert.doesNotMatch(appSource, /is-tilting/);
+  assert.match(appSource, /attachCards/);
 });
 
 test("диплинк: /d/:slug открывает карточку, закрытие чистит URL", () => {
