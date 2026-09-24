@@ -192,6 +192,10 @@
       preview.hidden = true;
       preview.removeAttribute("src");
     }
+    resetPhotoStrip();
+    $("d-photo-query").value = drink
+      ? [drink.brand, drink.name, drink.flavor].filter(Boolean).join(" ")
+      : "";
     state.removeImage = false;
     $("d-related").innerHTML = state.data.drinks
       .filter((item) => item.id !== (drink?.id || -1))
@@ -208,6 +212,7 @@
   $("btn-drink-cancel").onclick = () => {
     $("drink-form").hidden = true;
     $("drink-form").reset();
+    resetPhotoStrip();
   };
 
   $("d-image-file").addEventListener("change", async (event) => {
@@ -250,6 +255,90 @@
       status("drink-status", error.message, true);
     }
   };
+
+  const resetPhotoStrip = () => {
+    $("d-photo-strip").hidden = true;
+    $("d-photo-track").innerHTML = "";
+    $("d-photo-status").textContent = "";
+  };
+
+  const pickDrinkPhoto = async (item, tile) => {
+    if (!item?.url) return;
+    try {
+      status("drink-status", "Загружаю выбранное фото…");
+      tile?.classList.add("is-loading");
+      const dataUrl = await remoteImageToDataUrl(item.url);
+      const { path, accent } = await api("POST", "api/uploads", { dataUrl });
+      state.removeImage = false;
+      $("d-image-path").value = path;
+      $("d-accent-a").value = accent[0];
+      $("d-accent-b").value = accent[1];
+      $("d-image-preview").src = path;
+      $("d-image-preview").hidden = false;
+      $("d-photo-track")
+        .querySelectorAll(".photo-tile")
+        .forEach((node) => node.classList.remove("is-selected", "is-loading"));
+      tile?.classList.add("is-selected");
+      status("drink-status", `Фото заменено: фон вырезан, цвет ${accent[0]} / ${accent[1]}`);
+    } catch (error) {
+      tile?.classList.remove("is-loading");
+      status("drink-status", error.message, true);
+    }
+  };
+
+  const searchDrinkPhotos = async () => {
+    const typed = $("d-photo-query").value.trim();
+    const query =
+      typed ||
+      [$("d-brand").value, $("d-name").value, $("d-flavor").value]
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .join(" ");
+    if (query.replace(/\s+/g, "").length < 2) {
+      status("drink-status", "Введи хотя бы 2 символа или заполни бренд и название", true);
+      return;
+    }
+    try {
+      status("drink-status", "Ищу фото…");
+      $("d-photo-strip").hidden = false;
+      $("d-photo-track").innerHTML = "";
+      $("d-photo-status").textContent = "ищу…";
+      const params = new URLSearchParams({ q: query });
+      const { images } = await api("GET", `api/cabinet/ai/photo-search?${params}`);
+      if (!images?.length) {
+        $("d-photo-status").textContent = "ничего не нашлось — уточни запрос";
+        return;
+      }
+      $("d-photo-status").textContent = `${images.length} шт · жми нужное`;
+      images.forEach((item) => {
+        const tile = document.createElement("button");
+        tile.type = "button";
+        tile.className = "photo-tile";
+        tile.title = [item.title, item.source].filter(Boolean).join(" · ");
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = "";
+        img.loading = "lazy";
+        img.referrerPolicy = "no-referrer";
+        img.onerror = () => tile.remove();
+        tile.appendChild(img);
+        tile.onclick = () => pickDrinkPhoto(item, tile);
+        $("d-photo-track").appendChild(tile);
+      });
+      status("drink-status", "Выбери фото из ленты — оно сразу загрузится и обработается");
+    } catch (error) {
+      $("d-photo-status").textContent = "";
+      status("drink-status", error.message, true);
+    }
+  };
+
+  $("btn-drink-photo-search").onclick = searchDrinkPhotos;
+  $("d-photo-query").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      searchDrinkPhotos();
+    }
+  });
 
   $("d-image-path").addEventListener("input", () => {
     const preview = $("d-image-preview");

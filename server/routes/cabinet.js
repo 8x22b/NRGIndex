@@ -205,6 +205,38 @@ module.exports = (db, auth, config) => {
     res.json({ ok: true });
   });
 
+  router.put("/drinks/:slug/photo", async (req, res) => {
+    const drink = findDrink(req.params.slug);
+    const remove = req.body?.removeImage === true;
+    const dataUrl = req.body?.imageDataUrl;
+    if (!remove && typeof dataUrl !== "string") {
+      throw badRequest("Нужна картинка (imageDataUrl) или removeImage: true");
+    }
+    const image = remove ? null : await saveProcessedImage(config.uploadsDir, dataUrl, config.maxUploadBytes);
+    const before = history.snapDrink(db, drink.id);
+    db.prepare(
+      `UPDATE drinks SET image_path = ?, accent_a = ?, accent_b = ?, image_width = ?, image_height = ?,
+         image_srcset = ?, updated_at = datetime('now') WHERE id = ?`,
+    ).run(
+      image ? image.path : "",
+      image ? image.accent[0] : drink.accent_a,
+      image ? image.accent[1] : drink.accent_b,
+      image ? image.width : 0,
+      image ? image.height : 0,
+      image ? image.srcset : "",
+      drink.id,
+    );
+    history.recordDrink(db, req.user, "drink.update", before, history.snapDrink(db, drink.id));
+    touchContent(db);
+    res.json({
+      ok: true,
+      image: image ? image.path : "",
+      accent: image ? image.accent : [drink.accent_a, drink.accent_b],
+      width: image ? image.width : 0,
+      height: image ? image.height : 0,
+    });
+  });
+
   router.post("/ai/parse", async (req, res) => {
     checkAiLimit(req.user.id);
     const text = str(req.body?.text, "Текст", { min: 2, max: 2000 });

@@ -123,6 +123,17 @@
           <input id="d-image-url" type="url" placeholder="Ссылка на картинку из интернета">
           <button class="btn btn--ghost" type="button" id="btn-drink-image-url">Загрузить по ссылке</button>
         </div>
+        <div class="form-row admin-image-url-row">
+          <input id="d-photo-query" type="search" placeholder="Найти фото: бренд, название, вкус" autocomplete="off">
+          <button class="btn btn--ghost" type="button" id="btn-drink-photo-search">Найти фото</button>
+        </div>
+        <div class="photo-strip" id="d-photo-strip" hidden>
+          <div class="photo-strip__head">
+            <span>Найденные фото</span>
+            <span class="photo-strip__status" id="d-photo-status" aria-live="polite"></span>
+          </div>
+          <div class="photo-strip__track" id="d-photo-track" role="listbox" aria-label="Найденные фото"></div>
+        </div>
         <img id="d-image-preview" alt="" style="max-width:120px;max-height:120px;object-fit:contain" hidden>
         <p class="admin-hint">При загрузке картинка автоматически кадрируется (однотонный фон вырезается), а акцентные цвета подбираются по самой банке — их можно поправить вручную ниже.</p>
         <label class="admin-hint"><input id="d-published" type="checkbox" checked> Опубликован</label>

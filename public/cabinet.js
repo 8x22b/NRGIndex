@@ -205,6 +205,7 @@
             <select data-m-tier>${state.summary.tiers
               .map((tier) => `<option ${tier.id === rating.tier ? "selected" : ""}>${esc(tier.id)}</option>`)
               .join("")}</select>
+            <button class="btn btn--ghost" type="button" data-m-edit>мнение</button>
             <button class="btn btn--danger" type="button" data-m-del-rating>удалить</button>
             ${own ? `<button class="btn btn--danger" type="button" data-m-del-drink>× банка</button>` : ""}
           </div>
@@ -218,6 +219,7 @@
       row.querySelector("[data-m-review]").onchange = (e) => saveRating(slug, null, e.target.value);
       const rating = state.mine.find((item) => item.drink === slug) || {};
       const drink = state.summary.drinks.find((item) => item.id === slug) || { name: rating.name };
+      row.querySelector("[data-m-edit]").onclick = () => openOpinion(slug);
       row.querySelector("[data-m-del-rating]").onclick = async () => {
         const ok = await window.nrgConfirm({
           title: "Удалить оценку?",
@@ -256,6 +258,175 @@
   };
 
   $("mine-filter").addEventListener("input", () => renderMine());
+
+  /* ---------- редактор своего мнения ---------- */
+  // Своё мнение целиком: тир и отзыв плюс полное управление фото банки
+  // (заменить своим файлом, найти в интернете, убрать). Всё с историей правок.
+  const opinion = { slug: "", image: null, remove: false };
+
+  const setOpStatus = (text, isError = false) => {
+    $("op-status").textContent = text;
+    $("op-status").style.color = isError ? "#ff8a8a" : "";
+  };
+
+  const setOpPhotoStatus = (text, isError = false) => {
+    $("op-photo-status").textContent = text;
+    $("op-photo-status").style.color = isError ? "#ff8a8a" : "";
+  };
+
+  const resetOpinionPhotos = () => {
+    $("op-photo-strip").hidden = true;
+    $("op-photo-track").innerHTML = "";
+    $("op-strip-status").textContent = "";
+    setOpPhotoStatus("");
+  };
+
+  const pickOpinionImage = (dataUrl, note) => {
+    opinion.image = dataUrl;
+    opinion.remove = false;
+    $("op-image").src = dataUrl;
+    $("op-image").hidden = false;
+    setOpPhotoStatus(note);
+  };
+
+  const closeOpinion = () => {
+    $("opinion-editor").close();
+    document.body.classList.remove("is-dialog-open");
+  };
+
+  const openOpinion = (slug) => {
+    const item = state.mine.find((row) => row.drink === slug);
+    if (!item) return;
+    opinion.slug = slug;
+    opinion.image = null;
+    opinion.remove = false;
+    $("op-title").textContent = item.name;
+    $("op-sub").textContent = item.flavor || "без вкуса";
+    $("op-image").src = item.image || "assets/favicon.svg";
+    $("op-image").hidden = false;
+    $("op-tier").innerHTML = state.summary.tiers
+      .map((tier) => `<option ${tier.id === item.tier ? "selected" : ""}>${esc(tier.id)}</option>`)
+      .join("");
+    $("op-review").value = item.review || "";
+    $("op-photo-file").value = "";
+    $("op-photo-query").value = [item.name, item.flavor].filter(Boolean).join(" ");
+    resetOpinionPhotos();
+    setOpStatus("");
+    $("opinion-editor").showModal();
+    document.body.classList.add("is-dialog-open");
+  };
+
+  $("op-close").onclick = closeOpinion;
+  $("op-cancel").onclick = closeOpinion;
+  $("opinion-editor").addEventListener("close", () => document.body.classList.remove("is-dialog-open"));
+
+  $("op-photo-file").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      setOpPhotoStatus("режу фон…");
+      const { dataUrl, cut } = prepareImage(await loadImage(objectUrl));
+      pickOpinionImage(dataUrl, cut ? "твоё фото · фон вырезан ✓" : "твоё фото · фон не вырезан");
+    } catch {
+      setOpPhotoStatus("не удалось прочитать файл", true);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+      event.target.value = "";
+    }
+  });
+
+  const searchOpinionPhotos = async () => {
+    const query = $("op-photo-query").value.trim();
+    if (query.replace(/\s+/g, "").length < 2) {
+      setOpPhotoStatus("введи хотя бы 2 символа", true);
+      return;
+    }
+    try {
+      setOpPhotoStatus("ищу фото…");
+      $("op-photo-strip").hidden = false;
+      $("op-photo-track").innerHTML = "";
+      const params = new URLSearchParams({ q: query });
+      const { images } = await api("GET", `api/cabinet/ai/photo-search?${params}`);
+      if (!images?.length) {
+        setOpPhotoStatus("ничего не нашлось — уточни запрос", true);
+        return;
+      }
+      setOpPhotoStatus(`${images.length} шт · жми нужное`);
+      images.forEach((item) => {
+        const tile = document.createElement("button");
+        tile.type = "button";
+        tile.className = "photo-tile";
+        tile.title = item.title || "";
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = "";
+        img.loading = "lazy";
+        img.referrerPolicy = "no-referrer";
+        img.onerror = () => tile.remove();
+        tile.appendChild(img);
+        tile.onclick = async () => {
+          try {
+            tile.classList.add("is-loading");
+            const dataUrl = await processImageUrl(item.url);
+            $("op-photo-track")
+              .querySelectorAll(".photo-tile")
+              .forEach((node) => node.classList.remove("is-selected"));
+            tile.classList.remove("is-loading");
+            tile.classList.add("is-selected");
+            pickOpinionImage(dataUrl, "фото из ленты ✓");
+          } catch {
+            tile.classList.remove("is-loading");
+            setOpPhotoStatus("не удалось взять это фото", true);
+          }
+        };
+        $("op-photo-track").appendChild(tile);
+      });
+    } catch (error) {
+      setOpPhotoStatus(error.message, true);
+    }
+  };
+
+  $("op-photo-find").onclick = () => {
+    $("op-photo-strip").hidden = false;
+    $("op-photo-query").focus();
+  };
+  $("op-photo-search").onclick = searchOpinionPhotos;
+  $("op-photo-query").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      searchOpinionPhotos();
+    }
+  });
+  $("op-photo-remove").onclick = () => {
+    opinion.image = null;
+    opinion.remove = true;
+    $("op-image").src = "assets/favicon.svg";
+    setOpPhotoStatus("фото будет убрано при сохранении");
+  };
+
+  $("op-save").onclick = async () => {
+    const slug = opinion.slug;
+    if (!slug) return;
+    try {
+      setOpStatus("сохраняю…");
+      await api("PUT", `api/cabinet/ratings/${encodeURIComponent(slug)}`, {
+        tier: $("op-tier").value,
+        review: $("op-review").value,
+      });
+      if (opinion.image) {
+        await api("PUT", `api/cabinet/drinks/${encodeURIComponent(slug)}/photo`, {
+          imageDataUrl: opinion.image,
+        });
+      } else if (opinion.remove) {
+        await api("PUT", `api/cabinet/drinks/${encodeURIComponent(slug)}/photo`, { removeImage: true });
+      }
+      closeOpinion();
+      await refreshAll();
+    } catch (error) {
+      setOpStatus(error.message, true);
+    }
+  };
 
   /* ---------- unrated ---------- */
   // Банки, которые завели другие, а я ещё не оценил. Тир — одним кликом.
