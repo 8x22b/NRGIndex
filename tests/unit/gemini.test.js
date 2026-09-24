@@ -25,6 +25,7 @@ test("redrawCanOnWhite: шлёт картинку + промпт, возвращ
   const imagePart = body.input.find((part) => part.type === "image");
   assert.equal(imagePart.mime_type, "image/png");
   assert.ok(imagePart.data.length > 10);
+  assert.equal(body.response_format?.mime_type, "image/jpeg");
 });
 
 test("redrawCanOnWhite: без ключа сеть не трогаем", async () => {

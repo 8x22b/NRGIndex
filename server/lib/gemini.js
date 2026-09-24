@@ -72,7 +72,7 @@ function noImageError(data) {
   return new ApiError(502, `Gemini не вернул картинку${keys ? ` (поля ответа: ${keys})` : ""}`, "gemini_no_image");
 }
 
-// Перерисовывает банку на белом фоне под прямым ракурсом.
+// Перерисовывает банку на зелёном хромакее под прямым ракурсом.
 // Принимает dataURL (своё фото, фото из ленты), возвращает dataURL результата.
 async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL, fetchImpl = fetch } = {}) {
   if (!key) {
@@ -90,7 +90,7 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
           { type: "text", text: REDRAW_PROMPT },
           { type: "image", mime_type: mime, data: buffer.toString("base64") },
         ],
-        response_format: { type: "image", mime_type: "image/png" },
+        response_format: { type: "image", mime_type: "image/jpeg" },
       }),
       signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
     });
