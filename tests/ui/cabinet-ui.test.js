@@ -49,3 +49,50 @@ test("промпт просит прямой ракурс и зелёный фо
   assert.match(geminiSource, /straight-on front view/);
   assert.match(geminiSource, /#00FF00/);
 });
+
+test("редактор мнения: ИИ-разбор текста и голос на месте", () => {
+  assert.match(cabinetHtml, /id="op-ai-text"/);
+  assert.match(cabinetHtml, /id="op-ai-parse"/);
+  assert.match(cabinetHtml, /id="op-record"/);
+  assert.match(cabinetHtml, /id="op-voice-player"/);
+  assert.match(cabinetHtml, /id="op-voice-audio"/);
+  assert.match(cabinetSource, /op-ai-parse"\)\.onclick = parseOpinionText/);
+  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/parse", \{ text \}\)/);
+  assert.match(cabinetSource, /const VOICE_UI/);
+  assert.match(cabinetSource, /input: "op-ai-text"/);
+});
+
+test("редактор мнения: действия с фото спрятаны за превью, в диалоге нет свалки кнопок", () => {
+  assert.match(cabinetHtml, /id="op-photo-open"/);
+  assert.match(cabinetHtml, /id="op-photo-panel"[^>]*hidden/);
+  assert.match(cabinetSource, /\$\("op-photo-open"\)\.onclick/);
+
+  const panelStart = cabinetHtml.indexOf('id="op-photo-panel"');
+  const panel = cabinetHtml.slice(panelStart, cabinetHtml.indexOf("</dialog>", panelStart));
+  for (const id of ["op-photo-file", "op-photo-find", "op-photo-redraw", "op-photo-remove", "op-photo-strip"]) {
+    assert.ok(panel.includes(`id="${id}"`), `${id} должен быть в панели фото`);
+  }
+  const actionsStart = cabinetHtml.indexOf('opinion-dialog__actions"');
+  const actions = cabinetHtml.slice(actionsStart, cabinetHtml.indexOf("</div>", actionsStart));
+  assert.match(actions, /id="op-save"/);
+  assert.doesNotMatch(actions, /op-photo-/, "в нижнем ряду не должно быть кнопок фото");
+});
+
+test("оценка существующей банки: тир открывает редактор, а не сохраняется молча", () => {
+  const handlerStart = cabinetSource.indexOf('$("unrated-list").addEventListener');
+  assert.notEqual(handlerStart, -1);
+  const handler = cabinetSource.slice(handlerStart, cabinetSource.indexOf('$("unrated-more")', handlerStart));
+  assert.match(handler, /openOpinion\(card\.dataset\.drink, \{ tier: button\.dataset\.tier \}\)/);
+  assert.doesNotMatch(handler, /api\("PUT"/, "тир не должен улетать в индекс без редакции");
+});
+
+test("похожая банка из ИИ-разбора: редактор открывается с готовым тиром и отзывом", () => {
+  const handlerStart = cabinetSource.indexOf('$("similar-list").addEventListener');
+  assert.notEqual(handlerStart, -1);
+  const handler = cabinetSource.slice(handlerStart, cabinetSource.indexOf("const submitSmart", handlerStart));
+  assert.match(handler, /openOpinion\(slug, \{/);
+  assert.match(handler, /tier: TIERS\.includes\(parsed\.tier\)/);
+  assert.match(handler, /aiText: \$\("smart-input"\)\.value\.trim\(\)/);
+  assert.match(handler, /fromSmart: true/);
+  assert.doesNotMatch(handler, /api\("PUT"/, "без редакции ничего не публикуем");
+});

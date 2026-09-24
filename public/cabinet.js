@@ -295,26 +295,34 @@
     document.body.classList.remove("is-dialog-open");
   };
 
-  const openOpinion = (slug) => {
-    const item = state.mine.find((row) => row.drink === slug);
-    if (!item) return;
+  // Открывается и из «Моих оценок», и из «Ещё не оценил», и из похожих в смарт-форме.
+  // options: { tier, review, aiText, fromSmart } — предзаполнение (например, разбором ИИ).
+  const openOpinion = (slug, options = {}) => {
+    const mine = state.mine.find((row) => row.drink === slug) || null;
+    const drink = state.summary.drinks.find((row) => row.id === slug) || mine;
+    if (!drink) return;
     opinion.slug = slug;
     opinion.image = null;
     opinion.remove = false;
     opinion.original = null;
     opinion.originalUrl = null;
-    $("op-title").textContent = item.name;
-    $("op-sub").textContent = item.flavor || "без вкуса";
-    $("op-image").src = item.image || "assets/favicon.svg";
+    opinion.fromSmart = Boolean(options.fromSmart);
+    $("op-title").textContent = drink.name;
+    $("op-sub").textContent = drink.flavor || "без вкуса";
+    $("op-image").src = mine?.image || drink.image || "assets/favicon.svg";
     $("op-image").hidden = false;
+    const currentTier = options.tier || mine?.tier || "B";
     $("op-tier").innerHTML = state.summary.tiers
-      .map((tier) => `<option ${tier.id === item.tier ? "selected" : ""}>${esc(tier.id)}</option>`)
+      .map((tier) => `<option ${tier.id === currentTier ? "selected" : ""}>${esc(tier.id)}</option>`)
       .join("");
-    $("op-review").value = item.review || "";
+    $("op-review").value = options.review !== undefined ? options.review : mine?.review || "";
+    $("op-ai-text").value = options.aiText || "";
     $("op-photo-file").value = "";
-    $("op-photo-query").value = [item.name, item.flavor].filter(Boolean).join(" ");
+    $("op-photo-query").value = [drink.name, drink.flavor].filter(Boolean).join(" ");
+    $("op-photo-panel").hidden = true;
     resetOpinionPhotos();
-    setOpStatus("");
+    setOpStatus(options.fromSmart ? "ИИ уже разобрал твоё сообщение — проверь и сохрани" : "");
+    clearVoice("opinion");
     $("opinion-editor").showModal();
     document.body.classList.add("is-dialog-open");
   };
@@ -322,6 +330,46 @@
   $("op-close").onclick = closeOpinion;
   $("op-cancel").onclick = closeOpinion;
   $("opinion-editor").addEventListener("close", () => document.body.classList.remove("is-dialog-open"));
+
+  // Все действия с фото спрятаны за кликом по самому фото — в диалоге нет
+  // свалки из кнопок, а варианты открываются, когда они реально нужны.
+  $("op-photo-open").onclick = () => {
+    const panel = $("op-photo-panel");
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden && !opinion.image && !opinion.remove) {
+      setOpPhotoStatus("выбери способ: свой файл, поиск в интернете или перерисовка 🍌");
+    }
+  };
+
+  // ИИ в редакторе отметки: свободный текст → тир и отзыв, всё остаётся правимым.
+  const parseOpinionText = async () => {
+    const text = $("op-ai-text").value.trim();
+    if (text.replace(/\s+/g, "").length < 2) {
+      setOpStatus("напиши хоть пару слов или надиктуй голосом", true);
+      return;
+    }
+    $("op-ai-parse").disabled = true;
+    setOpStatus("нейросеть разбирает…");
+    try {
+      const { parsed } = await api("POST", "api/cabinet/ai/parse", { text });
+      if (TIERS.includes(parsed.tier)) $("op-tier").value = parsed.tier;
+      if (parsed.review) $("op-review").value = parsed.review;
+      setOpStatus(
+        parsed.tierGuessed ? "разобрано ✓ тир не был назван — проверь и поправь" : "разобрано ✓ проверь и сохрани",
+      );
+    } catch (error) {
+      setOpStatus(error.message, true);
+    } finally {
+      $("op-ai-parse").disabled = false;
+    }
+  };
+  $("op-ai-parse").onclick = parseOpinionText;
+  $("op-ai-text").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      parseOpinionText();
+    }
+  });
 
   $("op-photo-file").addEventListener("change", async (event) => {
     const file = event.target.files[0];
@@ -443,6 +491,10 @@
         await api("PUT", `api/cabinet/drinks/${encodeURIComponent(slug)}/photo`, { removeImage: true });
       }
       closeOpinion();
+      if (opinion.fromSmart) {
+        resetSmart();
+        $("smart-status").textContent = "Оценка сохранена ✓";
+      }
       await refreshAll();
     } catch (error) {
       setOpStatus(error.message, true);
@@ -478,25 +530,13 @@
     $("unrated-more").hidden = list.length <= unratedShown;
   };
 
-  $("unrated-list").addEventListener("click", async (event) => {
+  // Тир не улетает в индекс сразу: открываем редактор с выбранным тиром,
+  // чтобы можно было дописать отзыв (или надиктовать ИИ) и проверить всё до публикации.
+  $("unrated-list").addEventListener("click", (event) => {
     const button = event.target.closest("[data-tier]");
     if (!button) return;
     const card = button.closest(".unrated-card");
-    card.querySelectorAll("button").forEach((b) => {
-      b.disabled = true;
-    });
-    try {
-      await api("PUT", `api/cabinet/ratings/${encodeURIComponent(card.dataset.drink)}`, {
-        tier: button.dataset.tier,
-        review: "",
-      });
-      await refreshAll();
-    } catch (error) {
-      card.querySelectorAll("button").forEach((b) => {
-        b.disabled = false;
-      });
-      alert(error.message);
-    }
+    openOpinion(card.dataset.drink, { tier: button.dataset.tier });
   });
   $("unrated-more").onclick = () => {
     unratedShown += UNRATED_PAGE;
@@ -1184,7 +1224,7 @@
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
     renderSimilar([]);
-    clearVoice();
+    clearVoice("smart");
   };
 
   // Если ИИ распознал банку, которая уже есть в индексе, — предлагаем оценить её,
@@ -1208,26 +1248,19 @@
       .join("");
   };
 
-  $("similar-list").addEventListener("click", async (event) => {
+  // Разбор ИИ не сохраняем молча: открываем редактор с готовым тиром и отзывом —
+  // можно поправить текст, приложить фото и только потом опубликовать.
+  $("similar-list").addEventListener("click", (event) => {
     const button = event.target.closest("[data-rate-existing]");
     if (!button || !pending.parsed) return;
     const slug = button.closest(".similar-row").dataset.drink;
     const parsed = pending.parsed;
-    button.disabled = true;
-    try {
-      await api("PUT", `api/cabinet/ratings/${encodeURIComponent(slug)}`, {
-        tier: TIERS.includes(parsed.tier) ? parsed.tier : "B",
-        review: parsed.review || "",
-      });
-      resetSmart();
-      $("smart-status").textContent = parsed.tierGuessed
-        ? "Оценка сохранена ✓ Тир не был назван — стоит B, поправь в «Моих оценках»."
-        : "Оценка сохранена ✓";
-      await refreshAll();
-    } catch (error) {
-      button.disabled = false;
-      $("smart-status").textContent = error.message;
-    }
+    openOpinion(slug, {
+      tier: TIERS.includes(parsed.tier) ? parsed.tier : "B",
+      review: parsed.review || "",
+      aiText: $("smart-input").value.trim(),
+      fromSmart: true,
+    });
   });
 
   const submitSmart = async (event) => {
@@ -1407,8 +1440,36 @@
 
   /* ---------- voice ---------- */
   // Запись через MediaRecorder, распознавание — на сервере (Whisper через OpenRouter).
+  // Один рекордер обслуживает два места: смарт-форму и редактор мнения.
   const MAX_RECORD_MS = 120_000;
-  const RECORD_LABEL = "● Войс вместо текста";
+  const VOICE_UI = {
+    smart: {
+      button: "btn-record",
+      status: "voice-status",
+      player: "voice-player",
+      audio: "voice-audio",
+      duration: "voice-duration",
+      retry: "btn-voice-retry",
+      clear: "btn-voice-clear",
+      input: "smart-input",
+      label: "● Войс вместо текста",
+      done: "Распознано ✓ Проверь текст и жми «Распознать и добавить».",
+    },
+    opinion: {
+      button: "op-record",
+      status: "op-voice-status",
+      player: "op-voice-player",
+      audio: "op-voice-audio",
+      duration: "op-voice-duration",
+      retry: "op-voice-retry",
+      clear: "op-voice-clear",
+      input: "op-ai-text",
+      label: "● Голос",
+      done: "Распознано ✓ Проверь текст и жми «Разобрать».",
+    },
+  };
+  let voiceTarget = "smart";
+  const voiceUi = (target = voiceTarget) => VOICE_UI[target];
   const voice = {
     recorder: null,
     stream: null,
@@ -1445,22 +1506,23 @@
     });
 
   const setRecordButton = (recording) => {
-    const button = $("btn-record");
+    const button = $(voiceUi().button);
     button.classList.toggle("btn--recording", recording);
-    button.textContent = recording ? "■ Стоп" : RECORD_LABEL;
+    button.textContent = recording ? "■ Стоп" : voiceUi().label;
   };
 
-  const clearVoice = () => {
+  const clearVoice = (target = voiceTarget) => {
+    const ui = voiceUi(target);
     if (voice.url) URL.revokeObjectURL(voice.url);
     voice.url = "";
     voice.blob = null;
     voice.durationMs = 0;
-    const audio = $("voice-audio");
+    const audio = $(ui.audio);
     audio.removeAttribute("src");
     audio.load();
-    $("voice-player").hidden = true;
-    $("btn-voice-retry").hidden = true;
-    $("voice-status").textContent = "";
+    $(ui.player).hidden = true;
+    $(ui.retry).hidden = true;
+    $(ui.status).textContent = "";
   };
 
   // У webm из MediaRecorder в заголовке нет длительности: браузер отдаёт Infinity и плеер пишет 0:00.
@@ -1481,20 +1543,22 @@
   };
 
   const showRecording = () => {
-    const audio = $("voice-audio");
+    const ui = voiceUi();
+    const audio = $(ui.audio);
     voice.url = URL.createObjectURL(voice.blob);
     audio.addEventListener("loadedmetadata", () => fixDuration(audio), { once: true });
     audio.src = voice.url;
-    $("voice-duration").textContent = fmtTime(voice.durationMs);
-    $("voice-player").hidden = false;
+    $(ui.duration).textContent = fmtTime(voice.durationMs);
+    $(ui.player).hidden = false;
   };
 
   const transcribe = async () => {
+    const ui = voiceUi();
     if (!voice.blob || voice.busy) return;
-    const status = $("voice-status");
+    const status = $(ui.status);
     voice.busy = true;
-    $("btn-record").disabled = true;
-    $("btn-voice-retry").hidden = true;
+    $(ui.button).disabled = true;
+    $(ui.retry).hidden = true;
     status.textContent = "Распознаю голос…";
     try {
       const audio = await blobToBase64(voice.blob);
@@ -1502,16 +1566,16 @@
         audio,
         mimeType: voice.blob.type || "audio/webm",
       });
-      const area = $("smart-input");
+      const area = $(ui.input);
       area.value = (area.value.trim() ? `${area.value.trim()} ` : "") + text;
-      status.textContent = "Распознано ✓ Проверь текст и жми «Распознать и добавить».";
+      status.textContent = ui.done;
       area.focus();
     } catch (error) {
       status.textContent = `${error.message}. Можно повторить или вписать текст руками.`;
-      $("btn-voice-retry").hidden = false;
+      $(ui.retry).hidden = false;
     } finally {
       voice.busy = false;
-      $("btn-record").disabled = false;
+      $(ui.button).disabled = false;
     }
   };
 
@@ -1525,7 +1589,7 @@
   };
 
   const startRecording = async () => {
-    const status = $("voice-status");
+    const status = $(voiceUi().status);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       status.textContent = "Браузер не умеет записывать звук — впиши текст руками.";
       return;
@@ -1569,18 +1633,31 @@
     }, 250);
   };
 
-  $("btn-record").onclick = () => (voice.recording ? stopRecording() : startRecording());
-  $("btn-voice-retry").onclick = transcribe;
-  $("btn-voice-clear").onclick = clearVoice;
-  $("voice-audio").addEventListener("timeupdate", (event) => {
-    const audio = event.target;
-    if (!voice.durationMs) return;
-    const total = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : voice.durationMs;
-    $("voice-duration").textContent =
-      audio.currentTime > 0 && !audio.paused
-        ? `${fmtTime(audio.currentTime * 1000)} / ${fmtTime(total)}`
-        : fmtTime(total);
-  });
+  for (const target of Object.keys(VOICE_UI)) {
+    const ui = VOICE_UI[target];
+    $(ui.button).onclick = () => {
+      voiceTarget = target;
+      if (voice.recording) stopRecording();
+      else startRecording();
+    };
+    $(ui.retry).onclick = () => {
+      voiceTarget = target;
+      transcribe();
+    };
+    $(ui.clear).onclick = () => {
+      voiceTarget = target;
+      clearVoice(target);
+    };
+    $(ui.audio).addEventListener("timeupdate", (event) => {
+      const audio = event.target;
+      if (!voice.durationMs) return;
+      const total = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration * 1000 : voice.durationMs;
+      $(ui.duration).textContent =
+        audio.currentTime > 0 && !audio.paused
+          ? `${fmtTime(audio.currentTime * 1000)} / ${fmtTime(total)}`
+          : fmtTime(total);
+    });
+  }
 
   /* ---------- init ---------- */
   (async () => {

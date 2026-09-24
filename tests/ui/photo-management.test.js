@@ -23,6 +23,8 @@ test("админка: поиск фото прямо в форме напитк�
 test("кабинет: редактор мнения с заменой, поиском и удалением фото", () => {
   const html = read("public/cabinet.html");
   assert.match(html, /id="opinion-editor"/);
+  assert.match(html, /id="op-photo-open"/);
+  assert.match(html, /id="op-photo-panel"/);
   assert.match(html, /id="op-photo-file"/);
   assert.match(html, /id="op-photo-find"/);
   assert.match(html, /id="op-photo-remove"/);

@@ -160,7 +160,10 @@
       <dialog class="drink-dialog opinion-dialog" id="opinion-editor" aria-label="Редактор мнения">
         <div class="opinion-dialog__inner">
           <div class="opinion-dialog__head">
-            <img id="op-image" alt="" loading="lazy">
+            <button class="opinion-photo" type="button" id="op-photo-open" title="Изменить фото" aria-label="Изменить фото">
+              <img id="op-image" alt="" loading="lazy">
+              <span class="opinion-photo__hint">фото ✎</span>
+            </button>
             <div class="opinion-dialog__title">
               <p class="eyebrow">Своё мнение</p>
               <h3 id="op-title">—</h3>
@@ -168,21 +171,36 @@
             </div>
             <button class="btn btn--ghost" type="button" id="op-close" aria-label="Закрыть">×</button>
           </div>
+
+          <div class="opinion-ai">
+            <div class="opinion-ai__row">
+              <input id="op-ai-text" type="text" placeholder="Скажи словами: «бодрит, вкус огонь, твёрдая четвёрка»" autocomplete="off">
+              <button class="btn btn--ghost" type="button" id="op-ai-parse" title="Нейросеть разложит на тир и отзыв — потом можно поправить">✦ Разобрать</button>
+              <button class="btn btn--ghost" type="button" id="op-record">● Голос</button>
+            </div>
+            <div class="voice-player" id="op-voice-player" hidden>
+              <audio id="op-voice-audio" controls preload="metadata"></audio>
+              <span class="voice-player__time" id="op-voice-duration">0:00</span>
+              <button class="btn btn--ghost" type="button" id="op-voice-retry" hidden>Распознать ещё раз</button>
+              <button class="btn btn--ghost" type="button" id="op-voice-clear" aria-label="Убрать запись">×</button>
+            </div>
+            <p class="form-status" id="op-voice-status" aria-live="polite"></p>
+          </div>
+
           <div class="opinion-dialog__fields">
             <label>Тир<select id="op-tier"></select></label>
             <label>Отзыв<textarea id="op-review" rows="4" maxlength="1000" placeholder="Что думаешь об этой банке…"></textarea></label>
           </div>
-          <div class="opinion-photo">
-            <div class="opinion-photo__actions">
-              <label class="btn btn--ghost btn--file">Заменить фото
+
+          <div class="opinion-photo-panel" id="op-photo-panel" hidden>
+            <div class="opinion-photo-panel__actions">
+              <label class="btn btn--ghost btn--file">Свой файл
                 <input id="op-photo-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
               </label>
-              <button class="btn btn--ghost" type="button" id="op-photo-find">Найти фото</button>
+              <button class="btn btn--ghost" type="button" id="op-photo-find">Найти в интернете</button>
               <button class="btn btn--ghost" type="button" id="op-photo-redraw" title="Перерисовать банку через Gemini: прямой ракурс, ровный фон. Жмите, если ракурс плохой или фон удалился криво">🍌 Перерисовать</button>
               <button class="btn btn--ghost" type="button" id="op-photo-remove">Убрать фото</button>
-              <span class="form-status opinion-photo__status" id="op-photo-status" aria-live="polite"></span>
             </div>
-            <p class="hint">🍌 «Перерисовать» — жмите, если ракурс плохой или фон удалился криво.</p>
             <div class="photo-strip" id="op-photo-strip" hidden>
               <div class="photo-strip__head">
                 <input id="op-photo-query" type="search" placeholder="Бренд, название, вкус" autocomplete="off">
@@ -191,7 +209,9 @@
               </div>
               <div class="photo-strip__track" id="op-photo-track" role="listbox" aria-label="Найденные фото"></div>
             </div>
+            <p class="form-status opinion-photo__status" id="op-photo-status" aria-live="polite"></p>
           </div>
+
           <div class="form-row opinion-dialog__actions">
             <button class="btn" type="button" id="op-save">Сохранить</button>
             <button class="btn btn--ghost" type="button" id="op-cancel">Отмена</button>
@@ -205,7 +225,7 @@
           <h3>Ещё не оценил</h3>
           <span class="hint" id="unrated-count"></span>
         </div>
-        <p class="hint">Банки, которые завели другие. Выбери тир — оценка сразу уйдёт в индекс, отзыв можно дописать потом в «Моих оценках».</p>
+        <p class="hint">Банки, которые завели другие. Жми тир — откроется редактор: там можно проверить тир, написать или надиктовать отзыв (ИИ разложит), поправить фото и сохранить.</p>
         <div class="unrated-grid" id="unrated-list"></div>
         <button class="btn btn--ghost" type="button" id="unrated-more" hidden>Показать ещё</button>
       </div>

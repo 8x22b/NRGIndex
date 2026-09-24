@@ -691,13 +691,24 @@ a.reviewer:hover b { text-decoration: underline; }
 }
 
 /* --- редактор своего мнения --- */
-.opinion-dialog { width: min(40rem, calc(100% - 2rem)); }
+.opinion-dialog { width: min(42rem, calc(100% - 2rem)); }
 .opinion-dialog__inner { display: grid; gap: 1.1rem; padding: 1.4rem; }
 .opinion-dialog__head { display: flex; align-items: center; gap: 1rem; }
-.opinion-dialog__head img { width: 4.2rem; height: 5.2rem; object-fit: contain; border-radius: .5rem; background: radial-gradient(60% 70% at 50% 45%, rgba(255,255,255,.08), transparent 75%); }
+.opinion-photo { position: relative; flex: 0 0 auto; width: 4.6rem; height: 5.8rem; padding: .3rem; border: 1px dashed var(--line); border-radius: .7rem; background: radial-gradient(60% 70% at 50% 42%, rgba(255,255,255,.08), transparent 75%); cursor: pointer; transition: border-color .2s, transform .2s; }
+.opinion-photo:hover { border-color: var(--paper); transform: translateY(-1px); }
+.opinion-photo img { width: 100%; height: 100%; object-fit: contain; }
+.opinion-photo__hint { position: absolute; left: 50%; bottom: -.6rem; transform: translateX(-50%); padding: .05rem .45rem; border: 1px solid var(--line); border-radius: .5rem; color: var(--muted); background: #171310; font-size: .44rem; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+.opinion-photo:hover .opinion-photo__hint { color: var(--paper); border-color: var(--paper); }
 .opinion-dialog__title { flex: 1; min-width: 0; }
 .opinion-dialog__title h3 { margin: .15rem 0 0; font: 500 1.8rem/1.05 var(--serif); letter-spacing: -.03em; }
 .opinion-dialog__title small { display: block; margin-top: .3rem; color: var(--muted); font-size: .55rem; letter-spacing: .1em; text-transform: uppercase; }
+.opinion-ai { display: grid; gap: .5rem; padding: .8rem .9rem; border: 1px solid var(--line); border-radius: .7rem; background: rgba(255,255,255,.02); }
+.opinion-ai__row { display: flex; gap: .5rem; }
+.opinion-ai__row input { flex: 1; min-width: 0; padding: .55rem .7rem; border: 1px solid var(--line); border-radius: .5rem; color: var(--paper); background: #0f0d0c; font: 500 .72rem var(--sans); }
+.opinion-ai__row input:focus { outline: 1px solid var(--orange); border-color: var(--orange); }
+.opinion-ai__row .btn { padding: .45rem .7rem; font-size: .58rem; white-space: nowrap; }
+.opinion-ai .voice-player { margin: 0; }
+.opinion-ai .form-status { margin: 0; }
 .opinion-dialog__fields { display: grid; gap: .7rem; }
 .opinion-dialog label { display: block; color: var(--muted); font-size: .55rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .opinion-dialog input[type="search"], .opinion-dialog input[type="text"], .opinion-dialog select, .opinion-dialog textarea {
@@ -706,10 +717,10 @@ a.reviewer:hover b { text-decoration: underline; }
 }
 .opinion-dialog textarea { resize: vertical; }
 .opinion-dialog input:focus, .opinion-dialog select:focus, .opinion-dialog textarea:focus { outline: 1px solid var(--orange); border-color: var(--orange); }
-.opinion-photo { display: grid; gap: .6rem; padding-top: .9rem; border-top: 1px solid var(--line); }
-.opinion-photo__actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
-.opinion-photo__actions .btn { padding: .45rem .8rem; font-size: .58rem; }
-.opinion-photo__status { flex: 1 1 100%; margin: 0; }
+.opinion-photo-panel { display: grid; gap: .6rem; padding: .8rem .9rem; border: 1px solid var(--line); border-radius: .7rem; background: rgba(255,255,255,.02); }
+.opinion-photo-panel__actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.opinion-photo-panel__actions .btn { padding: .45rem .75rem; font-size: .58rem; }
+.opinion-photo__status { margin: 0; }
 .opinion-dialog .photo-strip { margin-top: 0; }
 .opinion-dialog .photo-strip__head input[type="search"] { flex: 1; min-width: 0; margin-top: 0; }
 .opinion-dialog__actions { align-items: center; }
@@ -718,4 +729,6 @@ a.reviewer:hover b { text-decoration: underline; }
 @media (max-width: 720px) {
   .opinion-dialog__head { align-items: flex-start; }
   .opinion-dialog__title h3 { font-size: 1.4rem; }
+  .opinion-ai__row { flex-wrap: wrap; }
+  .opinion-ai__row input { flex: 1 1 100%; }
 }
