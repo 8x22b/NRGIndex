@@ -38,6 +38,7 @@ test("перерисовка шлёт необработанный оригин�
   assert.match(cabinetSource, /cutGreenBg/);
   assert.match(cabinetSource, /finishRedrawn/);
   assert.match(cabinetSource, /НЕОБРАБОТАННЫЙ оригинал/);
+  assert.match(cabinetSource, /g - Math\.max\(r, b\)/, "градиент хромакея режется по доминированию зелёного");
 });
 
 test("промпт просит прямой ракурс и зелёный фон", () => {

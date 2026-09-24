@@ -78,3 +78,42 @@ test("картинка автоматически кадрируется и по
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("хромакей с градиентом и JPEG-шумом вырезается по доминированию зелёного", async () => {
+  const width = 120;
+  const height = 120;
+  const raw = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // Диагональный градиент #00FF00 → #6EAA3C: углы уходят от медианы дальше TOL=54.
+      const t = (x + y) / (width + height - 2);
+      const offset = (y * width + x) * 4;
+      raw[offset] = Math.round(110 * t);
+      raw[offset + 1] = Math.round(255 - 85 * t);
+      raw[offset + 2] = Math.round(60 * t);
+      raw[offset + 3] = 255;
+    }
+  }
+  // Красная «банка» по центру — её зелёного нет, резать нельзя.
+  for (let y = 20; y < 100; y++) {
+    for (let x = 40; x < 80; x++) {
+      const offset = (y * width + x) * 4;
+      raw[offset] = 220;
+      raw[offset + 1] = 40;
+      raw[offset + 2] = 60;
+    }
+  }
+  const jpeg = await sharp(raw, { raw: { width, height, channels: 4 } }).jpeg({ quality: 70 }).toBuffer();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrg-img-"));
+  try {
+    const result = await saveProcessedImage(dir, `data:image/jpeg;base64,${jpeg.toString("base64")}`, 2 * 1024 * 1024);
+    const file = path.join(dir, path.basename(result.path));
+    const { data, info } = await sharp(fs.readFileSync(file)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (x, y) => data[(y * info.width + x) * 4 + 3];
+    assert.equal(alphaAt(0, 0), 0, "угол с чистым зелёным должен стать прозрачным");
+    assert.equal(alphaAt(info.width - 1, info.height - 1), 0, "угол с тёмным зелёным должен стать прозрачным");
+    assert.equal(alphaAt(Math.floor(info.width / 2), Math.floor(info.height / 2)), 255, "банка должна остаться непрозрачной");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

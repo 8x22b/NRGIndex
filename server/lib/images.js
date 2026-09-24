@@ -32,12 +32,17 @@ function removeBorderBackground(px, width, height) {
   }
   if (!channels[0].length) return false;
   const bg = [median(channels[0]), median(channels[1]), median(channels[2])];
+  // Рамка уверенно зелёная — хромакей от Nano Banana. Модель рисует не плоский
+  // #00FF00, а градиент с JPEG-шумом: края уходят от медианы дальше TOL,
+  // поэтому такой фон режем по доминированию зелёного, а не по расстоянию.
+  const chroma = bg[1] > 80 && bg[1] - Math.max(bg[0], bg[2]) > 50;
 
   const isBgish = (offset) => {
     if (px[offset + 3] < 16) return true;
     const r = px[offset];
     const g = px[offset + 1];
     const b = px[offset + 2];
+    if (chroma && g > 60 && g - Math.max(r, b) > 35) return true;
     if (Math.hypot(r - bg[0], g - bg[1], b - bg[2]) < BG.TOL) return true;
     return (
       Math.min(r, g, b) > BG.BRIGHT_MIN && Math.max(r, g, b) - Math.min(r, g, b) < BG.NEUTRAL_MAX
@@ -87,7 +92,8 @@ function removeBorderBackground(px, width, height) {
   let bgShare = 0;
   for (let index = 0; index < size; index++) bgShare += mask[index];
   bgShare /= size;
-  if (bgShare < BG.MIN_SHARE) return false;
+  // Хромакей режем даже малой долей (банка впритык к краям) — кромку всё равно надо снять.
+  if (bgShare < BG.MIN_SHARE && !chroma) return false;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
