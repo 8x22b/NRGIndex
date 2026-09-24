@@ -65,3 +65,32 @@ test("кнопка 🍌 в форме напитка шлёт исходник �
   assert.match(adminJs, /api\("POST", "api\/cabinet\/ai\/photo-redraw", \{ imageDataUrl: source \}\)/);
   assert.match(adminJs, /оригинал не сохранился/);
 });
+
+test("форма напитка: все способы замены фото в панели за превью", () => {
+  assert.match(adminHtml, /id="d-image-open"/);
+  assert.match(adminHtml, /id="d-image-tools"[^>]*hidden/);
+  assert.match(adminJs, /\$\("d-image-open"\)\.onclick/);
+
+  const toolsStart = adminHtml.indexOf('id="d-image-tools"');
+  const tools = adminHtml.slice(toolsStart, adminHtml.indexOf("</form>", toolsStart));
+  for (const id of [
+    "d-image-file",
+    "d-image-url",
+    "btn-drink-image-url",
+    "d-photo-query",
+    "btn-drink-photo-search",
+    "btn-drink-redraw",
+    "btn-drink-image-clear",
+    "d-photo-strip",
+  ]) {
+    assert.ok(tools.includes(`id="${id}"`), `${id} должен быть в панели фото`);
+  }
+
+  const formStart = adminHtml.indexOf('id="drink-form"');
+  const form = adminHtml.slice(formStart, adminHtml.indexOf("</form>", formStart));
+  const actionsStart = form.lastIndexOf('class="admin-actions"');
+  const formActions = form.slice(actionsStart);
+  assert.match(formActions, /Сохранить/);
+  assert.doesNotMatch(formActions, /btn-drink-image-clear|btn-drink-redraw/, "фото-кнопки не должны торчать в нижнем ряду");
+  assert.match(adminJs, /d-image-tools"\)\.hidden = true/);
+});

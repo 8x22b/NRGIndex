@@ -205,6 +205,7 @@
       preview.removeAttribute("src");
     }
     resetPhotoStrip();
+    $("d-image-tools").hidden = true;
     $("d-photo-query").value = drink
       ? [drink.brand, drink.name, drink.flavor].filter(Boolean).join(" ")
       : "";
@@ -226,6 +227,13 @@
     $("drink-form").hidden = true;
     $("drink-form").reset();
     resetPhotoStrip();
+  };
+
+  // Все способы замены фото живут за кликом по превью — форма не завалена кнопками.
+  $("d-image-open").onclick = () => {
+    const tools = $("d-image-tools");
+    tools.hidden = !tools.hidden;
+    if (!tools.hidden) status("drink-status", "Выбери способ: файл, ссылка, поиск или перерисовка 🍌");
   };
 
   $("d-image-file").addEventListener("change", async (event) => {
