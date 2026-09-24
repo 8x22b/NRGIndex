@@ -1,6 +1,6 @@
-﻿const test = require("node:test");
+const test = require("node:test");
 const assert = require("node:assert/strict");
-const { transcribeAudio, refineTranscription, STT_CLEANUP_PROMPT } = require("../server/lib/ai");
+const { transcribeAudio, refineTranscription, STT_CLEANUP_PROMPT } = require("../../server/lib/ai");
 
 test("refineTranscription отправляет текст через отдельную text API настройку", async () => {
   let call;

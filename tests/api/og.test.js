@@ -1,7 +1,7 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const sharp = require("sharp");
-const { startServer } = require("./helpers");
+const { startServer } = require("../helpers");
 
 let ctx;
 

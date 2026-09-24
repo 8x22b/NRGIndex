@@ -11,7 +11,7 @@ const {
   searchCanImages,
   photoTerms,
   SYSTEM_PROMPT,
-} = require("../server/lib/ai");
+} = require("../../server/lib/ai");
 
 const chatReply = (payload) => ({
   ok: true,

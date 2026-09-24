@@ -6,7 +6,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-const APP = fs.readFileSync(path.join(__dirname, "..", "public", "app.js"), "utf8");
+const APP = fs.readFileSync(path.join(__dirname, "..", "..", "public", "app.js"), "utf8");
 
 function makeSummary() {
   return {
