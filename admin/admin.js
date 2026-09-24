@@ -415,6 +415,7 @@
               <td><span class="admin-badge ${user.isActive ? "admin-badge--on" : "admin-badge--off"}">${user.isActive ? "активен" : "отключён"}</span></td>
               <td><span class="admin-badge ${user.isPublic ? "admin-badge--on" : "admin-badge--off"}">${user.isPublic ? "на сайте" : "скрыт"}</span></td>
               <td class="admin-actions">
+                <a class="btn btn--ghost" href="/profile.html?u=${encodeURIComponent(user.username)}" target="_blank" rel="noopener">Профиль</a>
                 <button class="btn btn--ghost" type="button" data-edit="${user.id}">Править</button>
                 <button class="btn btn--ghost" type="button" data-reset="${user.id}">Сбросить пароль</button>
                 <button class="btn btn--danger" type="button" data-delete="${user.id}">Удалить</button>
