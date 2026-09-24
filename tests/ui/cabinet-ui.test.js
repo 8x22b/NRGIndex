@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const cabinetSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "cabinet.js"), "utf8");
+const cabinetHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "cabinet.html"), "utf8");
+const cabinetRoutes = fs.readFileSync(path.join(__dirname, "..", "..", "server", "routes", "cabinet.js"), "utf8");
 
 test("кабинет показывает красную кнопку удаления оценки", () => {
   assert.match(cabinetSource, /<button class=\"btn btn--danger\" type=\"button\" data-m-del-rating>удалить<\/button>/);
@@ -15,4 +17,18 @@ test("кнопка удаления оценки сохраняет DELETE об�
   assert.notEqual(handlerStart, -1);
   const handler = cabinetSource.slice(handlerStart, cabinetSource.indexOf('row.querySelector("[data-m-del-drink]")', handlerStart));
   assert.match(handler, /api\("DELETE", `api\/cabinet\/ratings\/\$\{encodeURIComponent\(slug\)\}`\)/);
+});
+
+test("ленты фото дожимают через прокси при хотлинк-бане, а не молча пустуют", () => {
+  assert.match(cabinetSource, /loadImageWithFallback/);
+  assert.match(cabinetSource, /dataset\.proxied/);
+  assert.match(cabinetSource, /api\/cabinet\/ai\/photo-proxy\?url=/);
+  assert.match(cabinetRoutes, /router\.get\("\/ai\/photo-proxy"/);
+});
+
+test("кнопки перерисовки на белом фоне есть в смарт-форме и редакторе мнения", () => {
+  assert.match(cabinetHtml, /id="btn-redraw"/);
+  assert.match(cabinetHtml, /id="op-photo-redraw"/);
+  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/photo-redraw"/);
+  assert.match(cabinetRoutes, /router\.post\("\/ai\/photo-redraw"/);
 });

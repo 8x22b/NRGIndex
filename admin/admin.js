@@ -37,7 +37,15 @@
     if (!["http:", "https:"].includes(url.protocol)) {
       throw new Error("Ссылка должна начинаться с http:// или https://");
     }
-    const response = await fetch(url, { mode: "cors" });
+    // Сайты режут хотлинк/CORS — при ошибке идём через серверный прокси.
+    const proxyUrl = `api/cabinet/ai/photo-proxy?url=${encodeURIComponent(url.toString())}`;
+    let response = null;
+    try {
+      response = await fetch(url, { mode: "cors" });
+      if (!response.ok) response = await fetch(proxyUrl);
+    } catch {
+      response = await fetch(proxyUrl);
+    }
     if (!response.ok) throw new Error(`Не удалось загрузить картинку (HTTP ${response.status})`);
     const blob = await response.blob();
     if (!blob.type.startsWith("image/")) throw new Error("Ссылка ведёт не на изображение");
@@ -316,11 +324,18 @@
         tile.className = "photo-tile";
         tile.title = [item.title, item.source].filter(Boolean).join(" · ");
         const img = document.createElement("img");
-        img.src = item.url;
         img.alt = "";
         img.loading = "lazy";
         img.referrerPolicy = "no-referrer";
-        img.onerror = () => tile.remove();
+        img.src = item.url;
+        img.onerror = () => {
+          if (img.dataset.proxied) {
+            tile.remove();
+            return;
+          }
+          img.dataset.proxied = "1";
+          img.src = `api/cabinet/ai/photo-proxy?url=${encodeURIComponent(item.url)}`;
+        };
         tile.appendChild(img);
         tile.onclick = () => pickDrinkPhoto(item, tile);
         $("d-photo-track").appendChild(tile);
@@ -682,6 +697,14 @@
         : "не задан";
     // CX не секрет — показываем сохранённый, из env не подставляем
     $("s-google-cx").value = settings.googleCseCx || "";
+    $("s-gemini-key").value = "";
+    $("s-gemini-key").placeholder = settings.geminiFromEnv
+      ? "задан через GEMINI_API_KEY — ввод заменит на значение из БД"
+      : settings.geminiKeySet
+        ? "задан — оставьте пустым, чтобы не менять"
+        : "не задан";
+    $("s-gemini-model").value = settings.geminiImageModel || "";
+    $("s-gemini-model").placeholder = "gemini-3.1-flash-lite-image";
   };
 
   $("btn-ai-check").onclick = async () => {
@@ -708,10 +731,12 @@
       textBaseUrl: $("s-base-url").value.trim(),
       aiProxyUrl: $("s-proxy").value.trim(),
       googleCseCx: $("s-google-cx").value.trim(),
+      geminiImageModel: $("s-gemini-model").value.trim(),
     };
     if ($("s-key").value) payload.textApiKey = $("s-key").value;
     if ($("s-openrouter-key").value) payload.openrouterKey = $("s-openrouter-key").value;
     if ($("s-google-key").value) payload.googleCseKey = $("s-google-key").value;
+    if ($("s-gemini-key").value) payload.geminiKey = $("s-gemini-key").value;
     try {
       await api("PUT", "api/admin/settings", payload);
       await refresh();
@@ -780,6 +805,37 @@
       await api("PUT", "api/admin/settings", { googleCseKey: "" });
       await refresh();
       status("settings-status", "Ключ Google убран");
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
+  };
+
+  $("btn-gemini-check").onclick = async () => {
+    status("settings-status", "Проверяю Gemini… (генерации нет, квота картинок не тратится)");
+    try {
+      const result = await api("POST", "api/admin/settings/gemini-check", {
+        geminiKey: $("s-gemini-key").value,
+        geminiModel: $("s-gemini-model").value.trim(),
+      });
+      if (result.ok) status("settings-status", `Gemini отвечает ✓ (${result.ms} мс, модель: ${result.model})`);
+      else status("settings-status", `Gemini не отвечает: ${result.error}`, true);
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
+  };
+
+  $("btn-gemini-key-clear").onclick = async () => {
+    const ok = await window.nrgConfirm({
+      title: "Убрать ключ Gemini?",
+      message: "Перерисовка фото на белом фоне перестанет работать.",
+      details: ["Ключ не сохраняется в журнале — откатить не получится"],
+      confirmText: "Убрать ключ",
+    });
+    if (!ok) return;
+    try {
+      await api("PUT", "api/admin/settings", { geminiKey: "" });
+      await refresh();
+      status("settings-status", "Ключ Gemini убран");
     } catch (error) {
       status("settings-status", error.message, true);
     }

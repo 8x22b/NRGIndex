@@ -10,6 +10,7 @@ const {
   TIERS,
 } = require("../lib/ai");
 const { saveProcessedImage } = require("../lib/images");
+const { redrawCanOnWhite } = require("../lib/gemini");
 const history = require("../lib/history");
 const {
   ACCENTS,
@@ -302,6 +303,66 @@ module.exports = (db, auth, config) => {
     if (photoCache.size >= PHOTO_CACHE_MAX) photoCache.delete(photoCache.keys().next().value);
     photoCache.set(key, { images, expiresAt: Date.now() + PHOTO_CACHE_MS });
     res.json({ images });
+  });
+
+  // Прокси картинок из поиска: многие сайты режут хотлинк и не отдают CORS,
+  // поэтому <img> пустые, а canvas падает. Клиент подменяет src на прокси
+  // при ошибке загрузки. Лимит общий с поиском фото.
+  const PHOTO_PROXY_MAX_BYTES = 8 * 1024 * 1024;
+
+  router.get("/ai/photo-proxy", async (req, res) => {
+    const raw = str(req.query?.url ?? "", "Ссылка", { max: 2000 });
+    let target;
+    try {
+      target = new URL(raw);
+    } catch {
+      throw badRequest("Некорректная ссылка на картинку");
+    }
+    if (!["http:", "https:"].includes(target.protocol)) throw badRequest("Только http/https ссылки");
+    checkPhotoLimit(req.user.id);
+    const ai = aiSettings(db);
+    const upstream = await ai.fetchImpl(target.toString(), {
+      headers: { "user-agent": "NRGIndex/2.0 (energy drink tier list)", accept: "image/*" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!upstream.ok) throw badRequest(`Сайт не отдал картинку (HTTP ${upstream.status})`);
+    const contentType = String(upstream.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    if (!contentType.startsWith("image/")) throw badRequest("Ссылка ведёт не на изображение");
+    const buffer = Buffer.from(await upstream.arrayBuffer());
+    if (!buffer.length || buffer.length > PHOTO_PROXY_MAX_BYTES) {
+      throw badRequest("Картинка слишком большая для прокси");
+    }
+    res.set("content-type", contentType);
+    res.set("cache-control", "public, max-age=86400");
+    res.send(buffer);
+  });
+
+  // Перерисовка банки через Nano Banana: свой фото-лимит (генерация не бесплатная
+  // бесконечно, но при ~10/день free tier хватает).
+  const redrawUsage = new Map();
+  const REDRAW_LIMIT = 20;
+
+  function checkRedrawLimit(userId) {
+    const now = Date.now();
+    const entry = redrawUsage.get(userId);
+    if (!entry || entry.resetAt < now) {
+      redrawUsage.set(userId, { count: 1, resetAt: now + AI_WINDOW_MS });
+      return;
+    }
+    entry.count += 1;
+    if (entry.count > REDRAW_LIMIT) throw tooMany("Лимит перерисовок: 20 в час");
+  }
+
+  router.post("/ai/photo-redraw", async (req, res) => {
+    checkRedrawLimit(req.user.id);
+    const imageDataUrl = str(req.body?.imageDataUrl ?? "", "Картинка", { max: 12 * 1024 * 1024 });
+    const ai = aiSettings(db);
+    const { imageDataUrl: redrawn } = await redrawCanOnWhite(imageDataUrl, {
+      key: ai.geminiKey,
+      model: ai.geminiImageModel,
+      fetchImpl: ai.fetchImpl,
+    });
+    res.json({ imageDataUrl: redrawn });
   });
 
   return router;

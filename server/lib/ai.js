@@ -67,6 +67,7 @@ function aiSettings(db) {
   const parseBaseUrl = getSetting(db, "parse_base_url", "") || getSetting(db, "text_base_url", "") || process.env.PARSE_BASE_URL || getSetting(db, "ai_base_url", "") || process.env.AI_BASE_URL || DEFAULT_BASE_URL;
   const googleCseKey = getSetting(db, "google_cse_key", "") || process.env.GOOGLE_CSE_KEY || "";
   const googleCseCx = getSetting(db, "google_cse_cx", "") || process.env.GOOGLE_CSE_CX || "";
+  const geminiKey = getSetting(db, "gemini_api_key", "") || process.env.GEMINI_API_KEY || "";
   return {
     key: sttKey,
     sttKey,
@@ -82,6 +83,10 @@ function aiSettings(db) {
     googleCseKey,
     googleCseCx,
     googleCseFromEnv: !getSetting(db, "google_cse_key", "") && Boolean(process.env.GOOGLE_CSE_KEY),
+    geminiKey,
+    geminiImageModel:
+      getSetting(db, "gemini_image_model", "") || process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-lite-image",
+    geminiFromEnv: !getSetting(db, "gemini_api_key", "") && Boolean(process.env.GEMINI_API_KEY),
     // все запросы к ИИ-провайдеру идут через этот fetch: прозрачно, с прокси или без
     fetchImpl: proxiedFetch(proxyUrl),
   };

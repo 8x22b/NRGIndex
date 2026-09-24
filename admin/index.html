@@ -19,6 +19,8 @@
     .admin-table .muted { opacity: .55; }
     .admin-form { display: grid; gap: 12px; margin: 16px 0; padding: 16px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; }
     .admin-form label { display: grid; gap: 4px; font-size: 13px; }
+    .admin-form label:has(> input[type="checkbox"]) { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+    .admin-form label:has(> input[type="checkbox"]) input { width: auto; margin: 0; accent-color: var(--accent, #ff4f79); }
     .admin-form input, .admin-form select, .admin-form textarea { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; }
     .admin-form .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     .drink-related { grid-column: 1 / -1; }
@@ -222,17 +224,24 @@
             <input id="s-google-key" type="password" placeholder="оставьте пустым — не менять">
           </label>
           <label>ID поисковика Google (CX)<input id="s-google-cx" type="text" spellcheck="false" autocapitalize="none" placeholder="например 0123456789abcdefg"></label>
+          <label>Gemini API-ключ (перерисовка фото)
+            <input id="s-gemini-key" type="password" placeholder="оставьте пустым — не менять">
+          </label>
+          <label>Модель Gemini для картинок<input id="s-gemini-model" type="text" spellcheck="false" autocapitalize="none" placeholder="gemini-3.1-flash-lite-image"></label>
         </div>
         <p class="admin-hint">Base URL — корень API без <code>/chat/completions</code>. Запросы идут на <code>{base}/chat/completions</code> и <code>{base}/audio/transcriptions</code>. Для OpenRouter аудио отправляется JSON-ом, для остальных — multipart, как в OpenAI API. Пустое поле — значение по умолчанию.</p>
         <p class="admin-hint">Прокси прозрачный: разбор текста и распознавание голоса идут через него целиком (HTTPS туннелируется через CONNECT, ключ и данные прокси не видит). Поддерживаются <code>http://</code>, <code>https://</code> и <code>socks5://</code>, логин и пароль — прямо в адресе. Поиск фото ходит напрямую. Пароль в поле показан как <code>***</code> — не трогай его, и он сохранится. Можно задать и через <code>AI_PROXY_URL</code> в env.</p>
-        <p class="admin-hint">Google CSE — первый источник фото (бесплатно 100 запросов/день). Без ключа работают Open Food Facts + Wikimedia. Ключ: <code>console.cloud.google.com → Custom Search API → API key</code>; CX: <code>programmablesearchengine.google.com → Search entire web + Image search</code>. Можно задать и через <code>GOOGLE_CSE_KEY</code> / <code>GOOGLE_CSE_CX</code> в env.</p>
+        <p class="admin-hint">Google CSE — первый источник фото (бесплатно 100 запросов/день). Без ключа работают DuckDuckGo + Open Food Facts + Wikimedia. Ключ: <code>console.cloud.google.com → Custom Search API → API key</code>; CX: <code>programmablesearchengine.google.com → Search entire web + Image search</code>. Можно задать и через <code>GOOGLE_CSE_KEY</code> / <code>GOOGLE_CSE_CX</code> в env.</p>
+        <p class="admin-hint">Gemini (Nano Banana) перерисовывает банку на белом фоне под прямым ракурсом — кнопка «🍌» рядом с фото в кабинете. Ключ бесплатный: <code>aistudio.google.com → Get API key</code>, free tier хватает. Можно задать и через <code>GEMINI_API_KEY</code> / <code>GEMINI_IMAGE_MODEL</code> в env.</p>
         <div class="admin-actions">
           <button class="btn" type="submit">Сохранить</button>
           <button class="btn btn--ghost" type="button" id="btn-ai-check">Проверить связь с ИИ</button>
           <button class="btn btn--ghost" type="button" id="btn-photo-check">Проверить Google CSE</button>
+          <button class="btn btn--ghost" type="button" id="btn-gemini-check">Проверить Gemini</button>
           <button class="btn btn--ghost" type="button" id="btn-key-clear">Убрать ключ STT</button>
           <button class="btn btn--ghost" type="button" id="btn-text-key-clear">Убрать ключ разбора</button>
           <button class="btn btn--ghost" type="button" id="btn-google-key-clear">Убрать ключ Google</button>
+          <button class="btn btn--ghost" type="button" id="btn-gemini-key-clear">Убрать ключ Gemini</button>
         </div>
         <p class="form-status" id="settings-status" aria-live="polite"></p>
       </form>

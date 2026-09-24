@@ -359,11 +359,10 @@
         tile.className = "photo-tile";
         tile.title = item.title || "";
         const img = document.createElement("img");
-        img.src = item.url;
         img.alt = "";
         img.loading = "lazy";
         img.referrerPolicy = "no-referrer";
-        img.onerror = () => tile.remove();
+        bindTileImage(img, tile, item.url);
         tile.appendChild(img);
         tile.onclick = async () => {
           try {
@@ -404,6 +403,14 @@
     $("op-image").src = "assets/favicon.svg";
     setOpPhotoStatus("фото будет убрано при сохранении");
   };
+
+  $("op-photo-redraw").onclick = () =>
+    redrawCurrentPhoto({
+      get: () => opinion.image,
+      set: (dataUrl) => pickOpinionImage(dataUrl, "перерисовано на белом фоне 🍌"),
+      button: $("op-photo-redraw"),
+      say: setOpPhotoStatus,
+    });
 
   $("op-save").onclick = async () => {
     const slug = opinion.slug;
@@ -491,6 +498,33 @@
       img.onerror = reject;
       img.src = src;
     });
+
+  // Сайты часто режут хотлинк и не отдают CORS — тогда грузим через наш прокси:
+  // он same-origin, canvas после него чистый.
+  const proxiedPhotoUrl = (url) => `api/cabinet/ai/photo-proxy?url=${encodeURIComponent(url)}`;
+
+  const loadImageWithFallback = async (src) => {
+    try {
+      return await loadImage(src);
+    } catch (error) {
+      if (/^(blob:|data:|api\/cabinet\/ai\/photo-proxy)/.test(src)) throw error;
+      return await loadImage(proxiedPhotoUrl(src));
+    }
+  };
+
+  // <img> в лентах: сначала напрямую (не жрём трафик сервера),
+  // при ошибке — один раз через прокси, потом убираем плитку.
+  const bindTileImage = (img, tile, url) => {
+    img.src = url;
+    img.onerror = () => {
+      if (img.dataset.proxied) {
+        tile.remove();
+        return;
+      }
+      img.dataset.proxied = "1";
+      img.src = proxiedPhotoUrl(url);
+    };
+  };
 
   // Стоковое фото = края картинки прозрачные или ровно белые/светло-серые.
   // Поисковики такого фильтра не дают, поэтому меряем сами по пикселям рамки.
@@ -644,7 +678,27 @@
     return canvas.toDataURL("image/jpeg", 0.85);
   };
 
-  const processImageUrl = async (url) => prepareImage(await loadImage(url)).dataUrl;
+  const processImageUrl = async (url) => prepareImage(await loadImageWithFallback(url)).dataUrl;
+
+  // Перерисовка через Nano Banana: текущий dataURL → белый фон, прямой ракурс.
+  // get/set/статус инжектятся, потому что превьюшек две: смарт-форма и редактор мнения.
+  const redrawCurrentPhoto = async ({ get, set, button, say }) => {
+    const current = get();
+    if (!current || !current.startsWith("data:")) {
+      say("сначала выбери или приложи фото", true);
+      return;
+    }
+    button.disabled = true;
+    try {
+      say("🍌 перерисовываю банку…");
+      const { imageDataUrl } = await api("POST", "api/cabinet/ai/photo-redraw", { imageDataUrl: current });
+      set(imageDataUrl);
+    } catch (error) {
+      say(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  };
 
   /* ---------- smart flow ---------- */
   const TIERS = ["S", "A", "B", "C", "D"];
@@ -817,7 +871,7 @@
         const item = strip.items[index];
         try {
           await new Promise((resolve) => setTimeout(resolve, 0));
-          const result = prepareImage(await loadImage(item.url));
+          const result = prepareImage(await loadImageWithFallback(item.url));
           item.dataUrl = result.dataUrl;
           item.cut = result.cut;
           item.isStock = result.stock >= STOCK_MIN;
@@ -1156,6 +1210,24 @@
       $("smart-status").textContent = pending.photoSource === "url" ? "Фото взято ✓" : pending.photoNote;
     }
   };
+
+  $("btn-redraw").onclick = () =>
+    redrawCurrentPhoto({
+      get: () => pending.image,
+      set: (dataUrl) => {
+        pending.image = dataUrl;
+        pending.photoSource = "redraw";
+        pending.photoNote = "перерисовано на белом фоне 🍌";
+        strip.selected = -1;
+        markSelected();
+        updatePreviewImage();
+        $("smart-status").textContent = "Банка перерисована ✓";
+      },
+      button: $("btn-redraw"),
+      say: (text) => {
+        $("smart-status").textContent = text;
+      },
+    });
 
   /* ---------- voice ---------- */
   // Запись через MediaRecorder, распознавание — на сервере (Whisper через OpenRouter).

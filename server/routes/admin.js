@@ -10,6 +10,7 @@ const { userToApi, drinkToAdmin } = require("../lib/serialize");
 const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl, providerFailureDetail, searchGoogleCse } = require("../lib/ai");
 const history = require("../lib/history");
 const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../lib/proxy");
+const { checkGeminiKey, DEFAULT_IMAGE_MODEL } = require("../lib/gemini");
 
 const ROLES = ["admin", "editor", "user"];
 
@@ -105,6 +106,9 @@ module.exports = (db, auth, config) => {
       googleCseKeySet: Boolean(ai.googleCseKey),
       googleCseCx: ai.googleCseCx,
       googleCseFromEnv: ai.googleCseFromEnv,
+      geminiKeySet: Boolean(ai.geminiKey),
+      geminiImageModel: ai.geminiImageModel,
+      geminiFromEnv: ai.geminiFromEnv,
       defaults: { aiBaseUrl: DEFAULT_BASE_URL, parseBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
     };
     const audit = isAdmin(req) ? history.listAudit(db) : [];
@@ -478,6 +482,12 @@ module.exports = (db, auth, config) => {
     if ("googleCseCx" in body) {
       next.google_cse_cx = str(body.googleCseCx ?? "", "ID поисковика Google", { required: false, max: 100 });
     }
+    if ("geminiKey" in body) {
+      next.gemini_api_key = str(body.geminiKey ?? "", "Ключ Gemini", { required: false, max: 200 });
+    }
+    if ("geminiImageModel" in body) {
+      next.gemini_image_model = str(body.geminiImageModel || DEFAULT_IMAGE_MODEL, "Модель Gemini", { max: 100 });
+    }
     if ("aiProxyUrl" in body) {
       const raw = str(body.aiProxyUrl ?? "", "Прокси", { required: false, max: 500 });
       const stored = getSetting(db, "ai_proxy_url", "");
@@ -494,6 +504,8 @@ module.exports = (db, auth, config) => {
       parse_api_key: getSetting(db, "parse_api_key", "") || process.env.PARSE_API_KEY || "",
       google_cse_key: getSetting(db, "google_cse_key", ""),
       google_cse_cx: getSetting(db, "google_cse_cx", ""),
+      gemini_api_key: getSetting(db, "gemini_api_key", ""),
+      gemini_image_model: getSetting(db, "gemini_image_model", ""),
       ai_proxy_url: getSetting(db, "ai_proxy_url", ""),
     };
     const before = Object.fromEntries(
@@ -584,6 +596,38 @@ module.exports = (db, auth, config) => {
         ms: Date.now() - started,
         ...(Number.isFinite(status) ? { status } : {}),
         error: detail,
+      });
+    }
+  });
+
+  // Проверка ключа Gemini: models.get на настроенной модели — ничего не генерирует,
+  // квоту картинок не тратит. Можно передать несохранённые ключ/модель из формы.
+  router.post("/settings/gemini-check", requireAdmin, async (req, res) => {
+    const ai = aiSettings(db);
+    let key = ai.geminiKey;
+    let model = ai.geminiImageModel;
+    if (req.body && "geminiKey" in req.body) {
+      const raw = str(req.body.geminiKey ?? "", "Ключ Gemini", { required: false, max: 200 });
+      if (raw) key = raw;
+    }
+    if (req.body && "geminiModel" in req.body) {
+      const raw = str(req.body.geminiModel ?? "", "Модель Gemini", { required: false, max: 100 });
+      if (raw) model = raw;
+    }
+    if (!key) {
+      return res.json({ ok: false, error: "задайте ключ Gemini (aistudio.google.com → Get API key)" });
+    }
+    const started = Date.now();
+    try {
+      const info = await checkGeminiKey({ key, model, fetchImpl: proxiedFetch(ai.proxyUrl) });
+      res.json({ ok: true, ms: Date.now() - started, model: info.model, error: "" });
+    } catch (error) {
+      const status = Number(error?.status);
+      res.json({
+        ok: false,
+        ms: Date.now() - started,
+        ...(Number.isFinite(status) ? { status } : {}),
+        error: String(error?.message || "ошибка сети").slice(0, 200),
       });
     }
   });
