@@ -199,14 +199,25 @@
 
       card.addEventListener("pointermove", (event) => {
         if (window.matchMedia("(pointer: coarse)").matches) return;
-        const rect = card.getBoundingClientRect();
-        const x = (event.clientX - rect.left) / rect.width - 0.5;
-        const y = (event.clientY - rect.top) / rect.height - 0.5;
-        card.style.setProperty("--rx", `${-y * 8}deg`);
-        card.style.setProperty("--ry", `${x * 10}deg`);
+        if (card._tiltRaf) return;
+        const { clientX, clientY } = event;
+        card._tiltRaf = requestAnimationFrame(() => {
+          card._tiltRaf = 0;
+          const rect = card.getBoundingClientRect();
+          const x = (clientX - rect.left) / rect.width - 0.5;
+          const y = (clientY - rect.top) / rect.height - 0.5;
+          card.classList.add("is-tilting");
+          card.style.setProperty("--rx", `${-y * 8}deg`);
+          card.style.setProperty("--ry", `${x * 10}deg`);
+        });
       });
 
       card.addEventListener("pointerleave", () => {
+        if (card._tiltRaf) {
+          cancelAnimationFrame(card._tiltRaf);
+          card._tiltRaf = 0;
+        }
+        card.classList.remove("is-tilting");
         card.style.setProperty("--rx", "0deg");
         card.style.setProperty("--ry", "0deg");
       });

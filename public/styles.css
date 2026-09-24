@@ -209,6 +209,9 @@ img { display: block; max-width: 100%; }
 
 .drink-card { --rx: 0deg; --ry: 0deg; position: relative; width: clamp(12rem, 17vw, 15rem); min-height: 10.8rem; flex: 0 0 auto; display: grid; grid-template-rows: 1fr auto; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: .75rem; color: var(--paper); background: #201b18; cursor: pointer; text-align: left; transform: perspective(850px) rotateX(var(--rx)) rotateY(var(--ry)); transform-style: preserve-3d; transition: transform .22s ease, border-color .3s, box-shadow .35s var(--ease); }
 .drink-card:hover { border-color: color-mix(in srgb, var(--card-accent) 65%, white); box-shadow: 0 1.5rem 3rem rgba(0,0,0,.35), 0 0 2.2rem color-mix(in srgb, var(--card-accent) 18%, transparent); }
+/* Пока курсор ведёт наклон — без transition на transform, иначе карточка догоняет
+   курсор с лагом, hover дёргается и бейджи мерцают. Transition возвращается на leave. */
+.drink-card.is-tilting { transition: border-color .3s, box-shadow .35s var(--ease); }
 .drink-card__visual { position: relative; min-height: 7.2rem; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--card-accent) 62%, white), var(--card-accent) 38%, #251b1b 70%); }
 .drink-card__visual::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8.6rem; height: 8.6rem; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(255,255,255,.55) 0%, rgba(255,255,255,.22) 45%, rgba(255,255,255,0) 70%); pointer-events: none; }
 .drink-card__visual::before { content: ""; position: absolute; width: 8rem; height: 8rem; border: 1px solid rgba(255,255,255,.22); border-radius: 50%; }

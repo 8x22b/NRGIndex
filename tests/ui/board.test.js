@@ -28,6 +28,12 @@ test("доска: фильтр тиров переключает чипы", () =
   assert.match(appSource, /querySelectorAll\("\[data-tier-filter\]"\)/);
 });
 
+test("доска: наклон карточки не мерцает — rAF и без transition во время ведения", () => {
+  assert.match(appSource, /requestAnimationFrame/);
+  assert.match(appSource, /is-tilting/);
+  assert.match(appSource, /cancelAnimationFrame/);
+});
+
 test("диплинк: /d/:slug открывает карточку, закрытие чистит URL", () => {
   assert.match(appSource, /location\.pathname\.match\(\/\^\\\/d\\\//);
   assert.match(appSource, /history\.replaceState\(null, "", `\/d\/\$\{encodeURIComponent\(drink\.id\)\}`\)/);
