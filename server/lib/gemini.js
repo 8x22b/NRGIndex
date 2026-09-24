@@ -21,24 +21,55 @@ function geminiError(res, data) {
   return new ApiError(res.status >= 500 ? 502 : res.status, `Gemini: HTTP ${res.status}${message ? ` — ${message}` : ""}`, "gemini_failed");
 }
 
+// Картинка в ответе Interactions API лежит НЕ в output_image (это аксессор SDK),
+// а в steps[].content[]: { type: "image", data: base64, mime_type }.
+// Дополнительно держим output_image и candidates[].parts[].inlineData на случай
+// других форм ответа — лишь бы base64 не потерять.
+function extractImage(data) {
+  for (const step of data?.steps || []) {
+    for (const item of step?.content || []) {
+      if (item?.type === "image" && typeof item?.data === "string" && item.data.length > 0) {
+        return { data: item.data, mime: item.mime_type };
+      }
+    }
+  }
+  const out = data?.output_image;
+  if (typeof out?.data === "string" && out.data.length > 0) return { data: out.data, mime: out.mime_type };
+  for (const part of data?.candidates?.[0]?.content?.parts || []) {
+    const inline = part?.inlineData || part?.inline_data;
+    if (typeof inline?.data === "string" && inline.data.length > 0) {
+      return { data: inline.data, mime: inline.mimeType || inline.mime_type };
+    }
+  }
+  return null;
+}
+
 // HTTP 200, но картинки нет: тащим причину из ответа вместо глухой заглушки —
-// модель иногда возвращает текст отказа, blockReason или finishReason.
+// текст из steps/candidates, blockReason, status, finishReason; в крайнем случае
+// показываем поля ответа, чтобы было видно реальную форму JSON.
 function noImageError(data) {
-  const parts = data?.candidates?.[0]?.content?.parts || [];
-  const text = parts
-    .map((part) => part?.text)
-    .filter(Boolean)
-    .join(" ")
-    .trim()
-    .slice(0, 300);
+  const texts = [];
+  for (const step of data?.steps || []) {
+    for (const item of step?.content || []) {
+      if (item?.type === "text" && item?.text) texts.push(item.text);
+    }
+  }
+  for (const part of data?.candidates?.[0]?.content?.parts || []) {
+    if (part?.text) texts.push(part.text);
+  }
+  const text = texts.join(" ").trim().slice(0, 300);
   if (text) return new ApiError(502, `Gemini не вернул картинку: ${text}`, "gemini_no_image");
   const blocked = data?.promptFeedback?.blockReason;
   if (blocked) return new ApiError(502, `Gemini отклонил запрос: ${blocked}`, "gemini_blocked");
+  if (data?.status && data.status !== "completed") {
+    return new ApiError(502, `Gemini не завершил задачу: ${data.status}`, "gemini_no_image");
+  }
   const finish = data?.candidates?.[0]?.finishReason;
   if (finish && finish !== "STOP") {
     return new ApiError(502, `Gemini оборвал генерацию: ${finish}`, "gemini_no_image");
   }
-  return new ApiError(502, "Gemini не вернул картинку", "gemini_no_image");
+  const keys = data && typeof data === "object" ? Object.keys(data).join(", ") : "";
+  return new ApiError(502, `Gemini не вернул картинку${keys ? ` (поля ответа: ${keys})` : ""}`, "gemini_no_image");
 }
 
 // Перерисовывает банку на белом фоне под прямым ракурсом.
@@ -59,6 +90,7 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
           { type: "text", text: REDRAW_PROMPT },
           { type: "image", mime_type: mime, data: buffer.toString("base64") },
         ],
+        response_format: { type: "image", mime_type: "image/png" },
       }),
       signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
     });
@@ -73,10 +105,10 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
     data = null;
   }
   if (!res.ok) throw geminiError(res, data);
-  const out = data?.output_image;
-  if (!out?.data) throw noImageError(data);
-  const outMime = /image\/(png|jpeg|webp)/.test(out.mime_type || "") ? out.mime_type : "image/png";
-  return { imageDataUrl: `data:${outMime};base64,${out.data}` };
+  const found = extractImage(data);
+  if (!found) throw noImageError(data);
+  const outMime = /image\/(png|jpeg|webp)/.test(found.mime || "") ? found.mime : "image/png";
+  return { imageDataUrl: `data:${outMime};base64,${found.data}` };
 }
 
 // Дешёвая проверка ключа и модели: models.get ничего не генерирует,

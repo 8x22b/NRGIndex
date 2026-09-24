@@ -64,6 +64,32 @@ test("redrawCanOnWhite: текст отказа модели идёт в оши�
   assert.match(error.message, /I can't preserve the logo/);
 });
 
+test("redrawCanOnWhite: картинка из steps[].content[] (форма Interactions API)", async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({
+      id: "int_1",
+      status: "completed",
+      steps: [{ type: "model_output", content: [{ type: "text", text: "Here is your image:" }, { type: "image", mime_type: "image/png", data: PNG_1X1 }] }],
+    }),
+  });
+  const { imageDataUrl } = await redrawCanOnWhite(DATA_URL, { key: "k", fetchImpl });
+  assert.ok(imageDataUrl.startsWith("data:image/png;base64,"));
+});
+
+test("redrawCanOnWhite: текст из steps идёт в ошибку", async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({
+      id: "int_2",
+      status: "completed",
+      steps: [{ type: "model_output", content: [{ type: "text", text: "cannot keep the logo" }] }],
+    }),
+  });
+  const error = await redrawCanOnWhite(DATA_URL, { key: "k", fetchImpl }).catch((err) => err);
+  assert.match(error.message, /cannot keep the logo/);
+});
+
 test("redrawCanOnWhite: blockReason идёт в ошибку", async () => {
   const fetchImpl = async () => ({
     ok: true,
