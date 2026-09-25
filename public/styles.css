@@ -554,8 +554,18 @@ a.review-link { text-decoration: none; }
 /* --- кабинет: дубли, фильтр, неоценённые --- */
 .similar-box { margin-top: 1.2rem; padding: 1rem; border: 1px solid rgba(255,116,72,.45); border-radius: .8rem; background: rgba(255,116,72,.06); }
 .similar-box__title { margin: 0 0 .6rem; color: var(--orange); font-size: .7rem; font-weight: 700; }
-.similar-box__ack { display: flex; align-items: center; gap: .5rem; margin-top: .8rem; padding-top: .8rem; border-top: 1px dashed rgba(255,116,72,.35); color: var(--paper); font-size: .72rem; font-weight: 600; cursor: pointer; }
-.similar-box__ack input { width: auto; margin: 0; accent-color: var(--orange); }
+/* Селектор длиннее, чем «.cabinet-form label»: иначе капс и letter-spacing формы ломают строку. */
+.similar-box .similar-box__ack {
+  display: flex; align-items: center; gap: .65rem;
+  margin: .9rem 0 0; padding: .7rem .85rem;
+  border: 1px dashed rgba(255,116,72,.5); border-radius: .7rem;
+  color: var(--paper); font: 600 .72rem/1.35 var(--sans);
+  letter-spacing: .02em; text-transform: none;
+  cursor: pointer; transition: background .25s, border-color .25s;
+}
+.similar-box .similar-box__ack:hover { border-color: var(--orange); background: rgba(255,116,72,.1); }
+.similar-box .similar-box__ack:has(input:checked) { border-style: solid; border-color: var(--orange); background: rgba(255,116,72,.16); }
+.similar-box .similar-box__ack input { flex: 0 0 auto; width: 1.05rem; height: 1.05rem; margin: 0; padding: 0; accent-color: var(--orange); }
 .similar-row { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; gap: .8rem; align-items: center; padding: .5rem 0; border-top: 1px solid var(--line); }
 .similar-row:first-child { border-top: 0; }
 .similar-row img { width: 3rem; height: 3.8rem; object-fit: contain; border-radius: .4rem; background: radial-gradient(circle, #2c2320, #151311); }
@@ -787,3 +797,25 @@ a.reviewer:hover b { text-decoration: underline; }
   border: 1px solid color-mix(in srgb, var(--person-color, #9fb7ff) 70%, white); border-radius: 50%;
   color: var(--person-color, #9fb7ff); font-size: .8rem; font-weight: 700; overflow: hidden; text-transform: uppercase;
 }
+.me-card__avatar { position: relative; flex: 0 0 auto; }
+.me-card__avatar-edit {
+  position: absolute; top: -.25rem; right: -.25rem; display: grid; place-items: center;
+  width: 1.35rem; aspect-ratio: 1; padding: 0; border: 1px solid rgba(255,255,255,.35); border-radius: 50%;
+  color: var(--ink); background: var(--paper); cursor: pointer; font-size: .62rem; line-height: 1;
+  transition: background .25s, border-color .25s;
+}
+.me-card__avatar-edit:hover { background: var(--acid); border-color: var(--acid); }
+.avatar-dialog { width: min(24rem, calc(100% - 2rem)); }
+.avatar-dialog__inner { display: grid; gap: 1rem; justify-items: center; padding: 1.3rem; }
+.avatar-dialog__head { display: flex; align-items: center; gap: .8rem; width: 100%; }
+.avatar-dialog__head h3 { flex: 1; margin: 0; font: 500 1.6rem/1 var(--serif); letter-spacing: -.03em; }
+.avatar-crop {
+  position: relative; width: 240px; max-width: 100%; aspect-ratio: 1; overflow: hidden;
+  border-radius: 50%; background: #0d0b0a; cursor: grab; touch-action: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.25);
+}
+.avatar-crop:active { cursor: grabbing; }
+.avatar-crop img { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; }
+.avatar-zoom { width: 100%; color: var(--muted); font-size: .55rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.avatar-zoom input { width: 100%; margin-top: .35rem; accent-color: var(--orange); }
+.avatar-dialog__actions { align-items: center; width: 100%; }

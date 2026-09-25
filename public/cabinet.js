@@ -82,7 +82,7 @@
     await refreshAll();
   };
 
-  // Аватар в кабинете: квадратный кроп делаем на клиенте, сервер всё равно
+  // Аватар в кабинете: кроп с зумом и сдвигом делаем на клиенте, сервер всё равно
   // приводит к 256×256. Превью — и в карточке профиля, и в блоке «Аккаунт».
   const setAvatarNode = (node, user) => {
     if (!node) return;
@@ -97,41 +97,94 @@
     setAvatarNode($("me-avatar"), state.me);
     setAvatarNode($("avatar-preview"), state.me);
     $("btn-avatar-remove").hidden = !state.me?.avatar;
+    $("avatar-crop-remove").hidden = !state.me?.avatar;
   };
 
-  const AVATAR_SIDE = 384;
-  const avatarDataUrl = (file) =>
-    new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        const side = Math.min(img.naturalWidth, img.naturalHeight);
-        const out = Math.min(AVATAR_SIDE, side);
-        const canvas = document.createElement("canvas");
-        canvas.width = out;
-        canvas.height = out;
-        canvas
-          .getContext("2d")
-          .drawImage(
-            img,
-            (img.naturalWidth - side) / 2,
-            (img.naturalHeight - side) / 2,
-            side,
-            side,
-            0,
-            0,
-            out,
-            out,
-          );
-        URL.revokeObjectURL(url);
-        resolve(canvas.toDataURL("image/jpeg", 0.9));
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("не удалось прочитать файл"));
-      };
-      img.src = url;
-    });
+  const CROP_VIEW = 240; // сторона круга кропа, должна совпадать с CSS .avatar-crop
+  const AVATAR_SIDE = 384; // квадрат перед отправкой; сервер сожмёт до 256
+  const cropMath = window.nrgAvatarCrop;
+  const crop = { img: null, zoom: 1, cx: 0, cy: 0 };
+  let cropObjectUrl = "";
+  let cropDrag = null;
+
+  const setAvatarCropStatus = (message, isError = false) => {
+    const node = $("avatar-crop-status");
+    node.textContent = message;
+    node.style.color = isError ? "#ff8a8a" : "";
+  };
+
+  const releaseCropObjectUrl = () => {
+    if (cropObjectUrl) URL.revokeObjectURL(cropObjectUrl);
+    cropObjectUrl = "";
+  };
+
+  const renderCrop = () => {
+    if (!crop.img) return;
+    // cropRect возвращает зажатый центр — синхронизируем состояние после драга
+    const { side, x, y } = cropMath.cropRect(
+      crop.img.naturalWidth,
+      crop.img.naturalHeight,
+      crop.zoom,
+      crop.cx,
+      crop.cy,
+    );
+    crop.cx = x + side / 2;
+    crop.cy = y + side / 2;
+    const scale = CROP_VIEW / side;
+    const node = $("avatar-crop-img");
+    node.style.width = `${crop.img.naturalWidth * scale}px`;
+    node.style.height = `${crop.img.naturalHeight * scale}px`;
+    node.style.left = `${CROP_VIEW / 2 - crop.cx * scale}px`;
+    node.style.top = `${CROP_VIEW / 2 - crop.cy * scale}px`;
+  };
+
+  const resetCropUi = () => {
+    crop.img = null;
+    crop.zoom = 1;
+    $("avatar-crop-img").removeAttribute("src");
+    $("avatar-crop").hidden = true;
+    $("avatar-zoom-row").hidden = true;
+    $("avatar-save").disabled = true;
+    $("avatar-crop-hint").hidden = false;
+  };
+
+  const setCropImage = (src) => {
+    const img = new Image();
+    img.onload = () => {
+      crop.img = img;
+      crop.zoom = 1;
+      crop.cx = img.naturalWidth / 2;
+      crop.cy = img.naturalHeight / 2;
+      $("avatar-crop-img").src = src;
+      $("avatar-crop").hidden = false;
+      $("avatar-zoom-row").hidden = false;
+      $("avatar-zoom").value = "1";
+      $("avatar-save").disabled = false;
+      $("avatar-crop-hint").hidden = true;
+      renderCrop();
+    };
+    img.onerror = () => setAvatarCropStatus("не удалось прочитать картинку", true);
+    img.src = src;
+  };
+
+  const setCropZoom = (value) => {
+    if (!crop.img) return;
+    crop.zoom = cropMath.clamp(Number(value) || 1, 1, cropMath.MAX_ZOOM);
+    $("avatar-zoom").value = String(crop.zoom);
+    renderCrop();
+  };
+
+  const openAvatarDialog = () => {
+    setAvatarCropStatus("");
+    $("avatar-dialog-file").value = "";
+    releaseCropObjectUrl();
+    resetCropUi();
+    if (state.me?.avatar) setCropImage(state.me.avatar);
+    $("avatar-dialog").showModal();
+    document.body.classList.add("is-dialog-open");
+  };
+
+  const closeAvatarDialog = () => $("avatar-dialog").close();
 
   const saveAvatar = async (body) => {
     const { user } = await api("PUT", "api/cabinet/avatar", body);
@@ -139,28 +192,97 @@
     renderAvatars();
   };
 
-  $("avatar-file").addEventListener("change", async (event) => {
+  $("avatar-dialog-file").addEventListener("change", (event) => {
     const file = event.target.files[0];
+    event.target.value = "";
     if (!file) return;
-    $("avatar-status").textContent = "сохраняю…";
-    try {
-      await saveAvatar({ imageDataUrl: await avatarDataUrl(file) });
-      $("avatar-status").textContent = "аватар обновлён ✓";
-    } catch (error) {
-      $("avatar-status").textContent = error.message;
-    } finally {
-      event.target.value = "";
-    }
+    releaseCropObjectUrl();
+    cropObjectUrl = URL.createObjectURL(file);
+    setAvatarCropStatus("");
+    setCropImage(cropObjectUrl);
   });
 
-  $("btn-avatar-remove").onclick = async () => {
+  $("avatar-zoom").addEventListener("input", (event) => setCropZoom(event.target.value));
+
+  const cropNode = $("avatar-crop");
+  cropNode.addEventListener("pointerdown", (event) => {
+    if (!crop.img) return;
+    cropDrag = { x: event.clientX, y: event.clientY, cx: crop.cx, cy: crop.cy };
+    cropNode.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  cropNode.addEventListener("pointermove", (event) => {
+    if (!cropDrag || !crop.img) return;
+    const side = cropMath.cropSide(crop.img.naturalWidth, crop.img.naturalHeight, crop.zoom);
+    const scale = CROP_VIEW / side;
+    crop.cx = cropDrag.cx - (event.clientX - cropDrag.x) / scale;
+    crop.cy = cropDrag.cy - (event.clientY - cropDrag.y) / scale;
+    renderCrop();
+  });
+  const endCropDrag = () => {
+    cropDrag = null;
+  };
+  cropNode.addEventListener("pointerup", endCropDrag);
+  cropNode.addEventListener("pointercancel", endCropDrag);
+  cropNode.addEventListener(
+    "wheel",
+    (event) => {
+      if (!crop.img) return;
+      event.preventDefault();
+      setCropZoom(crop.zoom * (event.deltaY < 0 ? 1.1 : 1 / 1.1));
+    },
+    { passive: false },
+  );
+
+  $("avatar-save").onclick = async () => {
+    if (!crop.img) return;
+    const { side, x, y } = cropMath.cropRect(
+      crop.img.naturalWidth,
+      crop.img.naturalHeight,
+      crop.zoom,
+      crop.cx,
+      crop.cy,
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = AVATAR_SIDE;
+    canvas.height = AVATAR_SIDE;
+    canvas.getContext("2d").drawImage(crop.img, x, y, side, side, 0, 0, AVATAR_SIDE, AVATAR_SIDE);
+    setAvatarCropStatus("сохраняю…");
+    try {
+      await saveAvatar({ imageDataUrl: canvas.toDataURL("image/jpeg", 0.9) });
+      $("avatar-status").textContent = "аватар обновлён ✓";
+      closeAvatarDialog();
+    } catch (error) {
+      setAvatarCropStatus(error.message, true);
+    }
+  };
+
+  const removeAvatar = async () => {
     try {
       await saveAvatar({ removeAvatar: true });
       $("avatar-status").textContent = "аватар убран";
+      setAvatarCropStatus("аватар убран");
+      if ($("avatar-dialog").open) closeAvatarDialog();
     } catch (error) {
       $("avatar-status").textContent = error.message;
+      setAvatarCropStatus(error.message, true);
     }
   };
+  $("btn-avatar-remove").onclick = removeAvatar;
+  $("avatar-crop-remove").onclick = removeAvatar;
+
+  $("btn-avatar-edit").onclick = openAvatarDialog;
+  $("btn-avatar-change").onclick = openAvatarDialog;
+  $("avatar-close").onclick = closeAvatarDialog;
+  $("avatar-cancel").onclick = closeAvatarDialog;
+  $("avatar-dialog").addEventListener("click", (event) => {
+    if (event.target === $("avatar-dialog")) closeAvatarDialog();
+  });
+  $("avatar-dialog").addEventListener("close", () => {
+    document.body.classList.remove("is-dialog-open");
+    releaseCropObjectUrl();
+    resetCropUi();
+  });
 
   const refreshAll = async () => {
     const [summary, mine] = await Promise.all([
