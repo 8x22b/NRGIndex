@@ -17,6 +17,15 @@ test("pipeline: тесты и деплой живут в одном workflow", (
   assert.match(yml, /workflow_dispatch:/);
 });
 
+test("pipeline: master не гоняет тесты — только путь к production", () => {
+  const yml = read("pipeline.yml");
+  const onBlock = yml.slice(yml.indexOf("on:"), yml.indexOf("permissions:"));
+  assert.match(onBlock, /pull_request:[\s\S]*?branches: \[production\]/);
+  assert.match(onBlock, /push:[\s\S]*?branches: \[production\]/);
+  assert.doesNotMatch(onBlock, /master/, "пуш в master не должен запускать прогон");
+  assert.match(yml, /if: \$\{\{ github\.event_name == 'pull_request' \}\}/, "ubuntu-тесты — только на PR");
+});
+
 test("pipeline: деплой — только production и строго после тестов", () => {
   const yml = read("pipeline.yml");
   assert.match(yml, /pre-deploy:[\s\S]*?needs: test/);
