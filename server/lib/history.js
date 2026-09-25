@@ -462,6 +462,7 @@ function listAudit(db, limit = 300) {
        FROM audit_log a
        LEFT JOIN users u ON u.id = a.user_id
        LEFT JOIN users ub ON ub.id = a.undone_by
+       WHERE a.entity NOT IN ('ai', 'error')
        ORDER BY a.id DESC LIMIT ?`,
     )
     .all(limit);
@@ -490,6 +491,21 @@ function listAudit(db, limit = 300) {
   });
 }
 
+// Логи для админки: запросы к ИИ/STT и ошибки сервера. Отдельно от действий,
+// чтобы лимит listAudit не вытеснял откатываемые записи машинными логами.
+function listLogs(db, limit = 300) {
+  return db
+    .prepare(
+      `SELECT a.id, a.action, a.entity, a.summary, a.details, a.created_at,
+              u.username, u.display_name
+       FROM audit_log a
+       LEFT JOIN users u ON u.id = a.user_id
+       WHERE a.entity IN ('ai', 'error')
+       ORDER BY a.id DESC LIMIT ?`,
+    )
+    .all(limit);
+}
+
 function readSettings(db, keys, defaults = {}) {
   return Object.fromEntries(keys.map((key) => [key, getSetting(db, key, defaults[key] ?? "")]));
 }
@@ -506,6 +522,7 @@ module.exports = {
   recordSettings,
   undoEntry,
   listAudit,
+  listLogs,
   readSettings,
   quote,
   drinkLabel,

@@ -112,7 +112,8 @@ module.exports = (db, auth, config) => {
       defaults: { aiBaseUrl: DEFAULT_BASE_URL, parseBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
     };
     const audit = isAdmin(req) ? history.listAudit(db) : [];
-    res.json({ me: req.user, drinks, tiers, users, settings, audit });
+    const logs = isAdmin(req) ? history.listLogs(db) : [];
+    res.json({ me: req.user, drinks, tiers, users, settings, audit, logs });
   });
 
   const MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];

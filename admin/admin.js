@@ -82,7 +82,7 @@
     document.querySelectorAll("#admin-tabs .btn").forEach((button) => {
       button.classList.toggle("is-active", button.dataset.tab === tab);
     });
-    for (const name of ["drinks", "tiers", "users", "settings", "audit", "stats"]) {
+    for (const name of ["drinks", "tiers", "users", "settings", "audit", "logs", "stats"]) {
       $(`tab-${name}`).hidden = name !== tab;
     }
     render();
@@ -95,6 +95,7 @@
     else if (state.tab === "users") renderUsers();
     else if (state.tab === "settings") renderSettings();
     else if (state.tab === "stats") renderStats();
+    else if (state.tab === "logs") renderLogs();
     else renderAudit();
   };
 
@@ -1050,6 +1051,63 @@
 
   $("audit-search").addEventListener("input", () => renderAudit());
   $("audit-filter").addEventListener("change", () => renderAudit());
+
+  /* ---------- логи (ИИ/STT и ошибки) ---------- */
+  const LOG_ICONS = { ai: "◆", error: "!" };
+
+  const logRowHtml = (row) => {
+    const kind = row.entity === "error" ? "error" : "ai";
+    const date = parseUtc(row.createdAt);
+    const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const details = String(row.details || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return `
+      <li class="audit-item">
+        <span class="audit-item__time" title="${esc(date.toLocaleString("ru-RU"))} · запись #${row.id}">${esc(time)}</span>
+        <span class="audit-item__icon audit-item__icon--${kind}" aria-hidden="true">${LOG_ICONS[kind]}</span>
+        <div>
+          <div class="audit-item__summary"><span class="audit-item__who">${esc(row.displayName || row.username || "система")}</span> ${esc(row.summary || row.action)}</div>
+          ${details.length ? `<ul class="audit-item__details">${details.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+        </div>
+        <div></div>
+      </li>`;
+  };
+
+  const renderLogs = () => {
+    const all = state.data.logs || [];
+    const query = $("logs-search").value.trim().toLowerCase();
+    const kind = $("logs-filter").value;
+    const rows = all.filter((row) => {
+      if (kind && row.entity !== kind) return false;
+      if (!query) return true;
+      return [row.summary, row.details, row.displayName, row.username]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+    if (!rows.length) {
+      $("logs-table").innerHTML = `<p class="admin-hint">Пока пусто.</p>`;
+      return;
+    }
+    const groups = [];
+    for (const row of rows) {
+      const label = dayLabel(parseUtc(row.createdAt));
+      if (groups.at(-1)?.label !== label) groups.push({ label, rows: [] });
+      groups.at(-1).rows.push(row);
+    }
+    $("logs-table").innerHTML = groups
+      .map(
+        (group) => `
+        <h3 class="audit-day">${esc(group.label)}</h3>
+        <ul class="audit-list">${group.rows.map(logRowHtml).join("")}</ul>`,
+      )
+      .join("");
+  };
+
+  $("logs-search").addEventListener("input", () => renderLogs());
+  $("logs-filter").addEventListener("change", () => renderLogs());
 
   /* ---------- статистика ---------- */
   const TIER_COLORS = { S: "#ff5f5a", A: "#f1a653", B: "#e7d471", C: "#8ebd93", D: "#8093b7" };

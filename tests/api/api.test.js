@@ -629,6 +629,65 @@ test("разбор отметки существующей банки: имя о
   }
 });
 
+test("логи: запросы к ИИ и серверные ошибки видны в админке, но не засоряют журнал действий", async () => {
+  const http = require("node:http");
+  let fail = false;
+  const provider = http.createServer((req, res) => {
+    res.writeHead(fail ? 500 : 200, { "content-type": "application/json" });
+    res.end(
+      fail
+        ? JSON.stringify({ error: { message: "провайдер сломался" } })
+        : JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({ tier: "B", review: "Норм" }) } }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, cost: 0.0001 },
+          }),
+    );
+  });
+  await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve));
+  const putSetting = (key, value) =>
+    ctx.db
+      .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(key, value);
+  putSetting("parse_api_key", "test-key");
+  putSetting("parse_base_url", `http://127.0.0.1:${provider.address().port}/v1`);
+  putSetting("ai_proxy_url", "");
+
+  try {
+    const ok = await request(ctx.base, "POST", "/api/cabinet/ai/parse", {
+      cookie: userCookie,
+      body: { text: "приторно, но пить можно", drink: { brand: "Burn", name: "Tropic" } },
+    });
+    assert.equal(ok.status, 200);
+    fail = true;
+    const bad = await request(ctx.base, "POST", "/api/cabinet/ai/parse", {
+      cookie: userCookie,
+      body: { text: "приторно, но пить можно", drink: { brand: "Burn", name: "Tropic" } },
+    });
+    assert.equal(bad.status, 502);
+  } finally {
+    await new Promise((resolve) => provider.close(resolve));
+  }
+
+  const data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  const aiRow = data.json.logs.find((row) => row.entity === "ai" && row.action === "ai.parse");
+  assert.ok(aiRow, "запрос к ИИ должен попасть в логи");
+  assert.match(aiRow.summary, /Разбор текста/);
+  assert.match(aiRow.details, /openai\/gpt-4o-mini/);
+  assert.match(aiRow.details, /Токены: 15/);
+  assert.match(aiRow.details, /Время: \d/);
+
+  const errorRow = data.json.logs.find((row) => row.entity === "error");
+  assert.ok(errorRow, "ошибка сервера должна попасть в логи");
+  assert.match(errorRow.summary, /^Ошибка 502/);
+  assert.match(errorRow.details, /POST \/api\/cabinet\/ai\/parse/);
+
+  assert.equal(
+    data.json.audit.some((row) => row.entity === "ai" || row.entity === "error"),
+    false,
+    "машинные логи не должны вытеснять журнал действий",
+  );
+});
+
 test("CSP разрешает blob: для аудио", async () => {
   const res = await fetch(`${ctx.base}/cabinet.html`);
   assert.match(res.headers.get("content-security-policy"), /media-src 'self' blob:/);

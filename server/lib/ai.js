@@ -223,6 +223,7 @@ function estimateCostUsd(model, usage) {
 }
 
 async function requestParsedJson(messages, { key, model, baseUrl = DEFAULT_BASE_URL, fetchImpl = fetch }) {
+  const startedAt = Date.now();
   const res = await postWithTimeout(
     fetchImpl,
     `${baseUrl}/chat/completions`,
@@ -242,7 +243,7 @@ async function requestParsedJson(messages, { key, model, baseUrl = DEFAULT_BASE_
   const end = raw.lastIndexOf("}");
   try {
     const parsed = JSON.parse(start >= 0 && end > start ? raw.slice(start, end + 1) : raw);
-    return { parsed, usage: normalizeUsage(json?.usage) };
+    return { parsed, usage: { ...normalizeUsage(json?.usage), ms: Date.now() - startedAt } };
   } catch {
     throw new ApiError(502, "ИИ вернул не JSON, попробуйте переформулировать", "ai_bad_response");
   }
@@ -351,7 +352,7 @@ async function refineTranscription(text, { parseKey, textApiKey, parseBaseUrl, t
   return cleaned.slice(0, 2000);
 }
 
-async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model: textModel, fetchImpl = fetch, onUsage } = {}) {
+async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model: textModel, fetchImpl = fetch, onUsage, onError } = {}) {
   key = sttKey || key;
   const effectiveBaseUrl = sttBaseUrl || baseUrl || DEFAULT_BASE_URL;
   requireKey(key);
@@ -379,13 +380,14 @@ async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBas
     form.append("temperature", "0");
     init = { method: "POST", headers: authHeaders(key), body: form };
   }
+  const startedAt = Date.now();
   const res = await postWithTimeout(fetchImpl, url, init, 60_000);
   if (!res.ok) throw await providerError(res, "Распознавание речи не удалось");
   const json = await res.json();
   const text = String(json?.text || "").trim();
   if (!text) throw new ApiError(422, "В записи не удалось разобрать речь", "stt_empty");
   // Whisper не отдаёт токены — пишем запрос с нулями: счётчик запросов важен сам по себе.
-  const sttUsage = normalizeUsage(json?.usage);
+  const sttUsage = { ...normalizeUsage(json?.usage), ms: Date.now() - startedAt };
   onUsage?.({ ...sttUsage, costUsd: estimateCostUsd(sttModelEffective, sttUsage) }, sttModelEffective, "stt");
   const rawText = text.slice(0, 2000);
   // Чистка речи — косметика: провайдер может быть не настроен, недоступен или
@@ -403,6 +405,7 @@ async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBas
     });
   } catch (error) {
     console.warn("[nrgindex] stt cleanup skipped:", error?.message || error);
+    onError?.(error, "cleanup");
     return rawText;
   }
 }

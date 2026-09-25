@@ -119,6 +119,8 @@
     .audit-item__icon--delete { background: rgba(255,138,138,.18); color: #ff8a8a; }
     .audit-item__icon--update { background: rgba(159,183,255,.18); color: #9fb7ff; }
     .audit-item__icon--undo { background: rgba(239,238,135,.18); color: #efee87; }
+    .audit-item__icon--ai { background: rgba(159,183,255,.18); color: #9fb7ff; }
+    .audit-item__icon--error { background: rgba(255,138,138,.2); color: #ff8a8a; }
     .audit-item__who { font-weight: 700; }
     .audit-item__summary { font-size: 14px; line-height: 1.45; }
     .audit-item__details { margin: 4px 0 0; padding: 0; list-style: none; font-size: 12.5px; line-height: 1.55; opacity: .7; }
@@ -167,6 +169,7 @@
       <button class="btn" type="button" data-tab="settings" data-admin-only>Настройки</button>
       <button class="btn" type="button" data-tab="stats" data-admin-only>Статистика</button>
       <button class="btn" type="button" data-tab="audit" data-admin-only>Журнал</button>
+      <button class="btn" type="button" data-tab="logs" data-admin-only>Логи</button>
     </nav>
 
     <section id="tab-drinks" hidden>
@@ -358,6 +361,19 @@
       </div>
       <p class="admin-hint">«Откатить» возвращает объект в состояние до действия. Откатывать можно по порядку: если объект менялся позже, сначала откатите более свежую запись.</p>
       <div id="audit-table"></div>
+    </section>
+
+    <section id="tab-logs" hidden>
+      <div class="audit-toolbar">
+        <input id="logs-search" type="search" placeholder="поиск: модель, ошибка, имя…">
+        <select id="logs-filter">
+          <option value="">все записи</option>
+          <option value="ai">ИИ и STT</option>
+          <option value="error">ошибки</option>
+        </select>
+      </div>
+      <p class="admin-hint">Запросы к ИИ и распознаванию речи: модель, токены, цена и время. Ошибки — серверные (5xx), в том числе сбои ИИ. Журнал действий — на вкладке «Журнал».</p>
+      <div id="logs-table"></div>
     </section>
   </main>
 

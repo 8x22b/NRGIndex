@@ -12,7 +12,7 @@ const {
 } = require("../lib/ai");
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
 const { redrawCanOnWhite } = require("../lib/gemini");
-const { recordAiUsage } = require("../db");
+const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
 const {
   ACCENTS,
@@ -298,6 +298,13 @@ module.exports = (db, auth, config) => {
     const text = await transcribeAudio(buffer, mimeType, {
       ...aiSettings(db),
       onUsage: (usage, model, kind) => recordAiUsage(db, req.user.id, kind, model, usage),
+      // Чистка расшифровки падает молча (отдаём сырой текст) — ошибку всё равно пишем в логи.
+      onError: (error, kind) => {
+        const message = String(error?.message || error).replace(/\s+/g, " ").slice(0, 300);
+        writeAudit(db, req.user, `ai.${kind}`, "ai", "", message, {
+          summary: `Ошибка чистки расшифровки: ${message}`,
+        });
+      },
     });
     res.json({ text });
   });

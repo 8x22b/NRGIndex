@@ -201,8 +201,17 @@ function writeAudit(db, user, action, entity = "", entityId = "", details = "", 
     ).lastInsertRowid;
 }
 
+// Человеческие подписи ИИ-видов для журнала логов.
+const AI_LOG_LABELS = {
+  parse: "Разбор текста",
+  stt: "Распознавание речи",
+  cleanup: "Чистка расшифровки",
+  redraw: "Перерисовка фото",
+};
+
 // Учёт ИИ-запроса: вид (parse/stt/cleanup/redraw), модель, токены и цена.
 // Пишем всегда, даже если провайдер не вернул usage — счётчик запросов важен сам по себе.
+// Дублируем запись в audit_log: в админке это вкладка «Логи».
 // ponytail: это телеметрия — если запись не удалась, сам запрос пользователю не валим.
 function recordAiUsage(db, userId, kind, model, usage = {}) {
   try {
@@ -218,6 +227,16 @@ function recordAiUsage(db, userId, kind, model, usage = {}) {
       Number(usage.totalTokens) || 0,
       Math.round((Number(usage.costUsd) || 0) * 1e6) / 1e6,
     );
+    const details = [];
+    if (model) details.push(`Модель: ${model}`);
+    if (Number(usage.totalTokens)) {
+      details.push(`Токены: ${usage.totalTokens} (вход ${Number(usage.promptTokens) || 0}, выход ${Number(usage.completionTokens) || 0})`);
+    }
+    if (Number(usage.costUsd)) details.push(`Цена: $${Number(Number(usage.costUsd).toPrecision(4))}`);
+    if (Number(usage.ms)) details.push(`Время: ${(Number(usage.ms) / 1000).toFixed(1)} с`);
+    writeAudit(db, { id: userId }, `ai.${String(kind || "").slice(0, 20)}`, "ai", "", details.join("\n"), {
+      summary: `${AI_LOG_LABELS[kind] || "ИИ-запрос"}${model ? ` · ${model}` : ""}`,
+    });
   } catch (error) {
     console.warn("[nrgindex] ai usage not recorded:", error?.message || error);
   }
