@@ -353,6 +353,30 @@ function unlinkQuiet(file) {
   }
 }
 
+// Аватары: квадратный кроп по центру, без вырезания фона. Одна WebP на 256px —
+// в круглом превью больше не нужно, а грузится мгновенно.
+const AVATAR_SIZE = 256;
+
+async function saveAvatarImage(uploadsDir, dataUrl, maxBytes) {
+  const { buffer } = imageFromDataUrl(dataUrl, { maxBytes });
+  const name = `${Date.now().toString(36)}-${crypto.randomBytes(8).toString("hex")}`;
+  fs.mkdirSync(uploadsDir, { recursive: true });
+  await sharp(buffer)
+    .rotate()
+    .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: "cover" })
+    .webp({ quality: 82, effort: 6 })
+    .toFile(path.join(uploadsDir, `${name}.webp`));
+  return { path: `/uploads/${name}.webp` };
+}
+
+// Удаление своего файла из uploads по сохранённому пути. basename + белый список
+// расширений отсекают выход за каталог.
+function deleteUpload(uploadsDir, uploadPath) {
+  const name = path.basename(String(uploadPath || ""));
+  if (!/^[a-z0-9-]+\.(png|jpe?g|webp)$/i.test(name)) return;
+  unlinkQuiet(path.join(uploadsDir, name));
+}
+
 async function saveProcessedImage(uploadsDir, dataUrl, maxBytes) {
   const { buffer } = imageFromDataUrl(dataUrl, { maxBytes });
   const processed = await processImageBuffer(buffer);
@@ -378,6 +402,8 @@ async function reprocessStoredImage(uploadsDir, imagePath) {
 module.exports = {
   saveProcessedImage,
   reprocessStoredImage,
+  saveAvatarImage,
+  deleteUpload,
   processImageBuffer,
   accentFromPixels,
   removeBorderBackground,

@@ -10,7 +10,7 @@ const {
   searchCanImages,
   TIERS,
 } = require("../lib/ai");
-const { saveProcessedImage } = require("../lib/images");
+const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
 const { redrawCanOnWhite } = require("../lib/gemini");
 const history = require("../lib/history");
 const {
@@ -21,7 +21,7 @@ const {
   relationsForDrink,
   findSimilarDrinks,
 } = require("../lib/content");
-const { drinkToAdmin } = require("../lib/serialize");
+const { drinkToAdmin, userToApi } = require("../lib/serialize");
 
 function drinkFields(body) {
   return {
@@ -72,6 +72,26 @@ module.exports = (db, auth, config) => {
       .prepare("SELECT id, slug FROM drinks WHERE created_by = ? ORDER BY id DESC")
       .all(req.user.id);
     res.json({ user: req.user, ratings, addedDrinks: added });
+  });
+
+  // Свой аватар: квадратный кроп, хранится в uploads. Старый файл удаляем, чтобы
+  // замена не оставляла мусор, а невалидная картинка не подменяла текущую.
+  router.put("/avatar", async (req, res) => {
+    const remove = req.body?.removeAvatar === true;
+    const before = db.prepare("SELECT avatar_path FROM users WHERE id = ?").get(req.user.id);
+    let avatarPath = "";
+    if (!remove) {
+      const image = await saveAvatarImage(config.uploadsDir, req.body?.imageDataUrl, config.maxUploadBytes);
+      avatarPath = image.path;
+    }
+    db.prepare("UPDATE users SET avatar_path = ?, updated_at = datetime('now') WHERE id = ?").run(
+      avatarPath,
+      req.user.id,
+    );
+    if (before?.avatar_path && before.avatar_path !== avatarPath) {
+      deleteUpload(config.uploadsDir, before.avatar_path);
+    }
+    res.json({ user: userToApi(db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id)) });
   });
 
   router.put("/ratings/:slug", (req, res) => {

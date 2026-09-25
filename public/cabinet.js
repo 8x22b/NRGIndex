@@ -45,6 +45,8 @@
     photoNote: "",
     photoSource: "auto",
     userPhoto: false,
+    similarCount: 0, // сколько похожих банок нашёл ИИ
+    duplicateAck: true, // «это не он» — без этого новую банку не сохраняем
   };
 
   /* ---------- views ---------- */
@@ -63,18 +65,94 @@
     $("auth-view").hidden = true;
     $("password-view").hidden = true;
     $("cab-view").hidden = false;
-    $("me-avatar").textContent =
-      state.me.initials || String(state.me.displayName || "?").slice(0, 2).toUpperCase();
-    $("me-avatar").style.setProperty("--person-color", safeColor(state.me.color, "#fff"));
+    renderAvatars();
     $("me-name").textContent = state.me.displayName;
     $("me-role").textContent = state.me.title || state.me.role;
-    $("profile-button").href = `/profile.html?u=${encodeURIComponent(state.me.username)}`;
-    $("profile-button").hidden = false;
     if (state.me.role === "admin") $("admin-button").hidden = false;
     if (state.me.role === "admin" || state.me.role === "editor") $("admin-link").hidden = false;
     $("profile-link").href = `profile.html?u=${encodeURIComponent(state.me.username)}`;
     $("profile-link").hidden = !state.me.isPublic;
     await refreshAll();
+  };
+
+  // Аватар в кабинете: квадратный кроп делаем на клиенте, сервер всё равно
+  // приводит к 256×256. Превью — и в карточке профиля, и в блоке «Аккаунт».
+  const setAvatarNode = (node, user) => {
+    if (!node) return;
+    node.style.setProperty("--person-color", safeColor(user?.color, "#fff"));
+    if (user?.avatar) node.innerHTML = `<img src="${esc(user.avatar)}" alt="">`;
+    else
+      node.textContent =
+        user?.initials || String(user?.displayName || "?").slice(0, 2).toUpperCase();
+  };
+
+  const renderAvatars = () => {
+    setAvatarNode($("me-avatar"), state.me);
+    setAvatarNode($("avatar-preview"), state.me);
+    $("btn-avatar-remove").hidden = !state.me?.avatar;
+  };
+
+  const AVATAR_SIDE = 384;
+  const avatarDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        const out = Math.min(AVATAR_SIDE, side);
+        const canvas = document.createElement("canvas");
+        canvas.width = out;
+        canvas.height = out;
+        canvas
+          .getContext("2d")
+          .drawImage(
+            img,
+            (img.naturalWidth - side) / 2,
+            (img.naturalHeight - side) / 2,
+            side,
+            side,
+            0,
+            0,
+            out,
+            out,
+          );
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/jpeg", 0.9));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("не удалось прочитать файл"));
+      };
+      img.src = url;
+    });
+
+  const saveAvatar = async (body) => {
+    const { user } = await api("PUT", "api/cabinet/avatar", body);
+    state.me = { ...state.me, ...user };
+    renderAvatars();
+  };
+
+  $("avatar-file").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    $("avatar-status").textContent = "сохраняю…";
+    try {
+      await saveAvatar({ imageDataUrl: await avatarDataUrl(file) });
+      $("avatar-status").textContent = "аватар обновлён ✓";
+    } catch (error) {
+      $("avatar-status").textContent = error.message;
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  $("btn-avatar-remove").onclick = async () => {
+    try {
+      await saveAvatar({ removeAvatar: true });
+      $("avatar-status").textContent = "аватар убран";
+    } catch (error) {
+      $("avatar-status").textContent = error.message;
+    }
   };
 
   const refreshAll = async () => {
@@ -1197,6 +1275,13 @@
   };
 
   const saveDrink = async (parsed) => {
+    // Защита от дублей: если ИИ нашёл похожую банку, без явного «это не он»
+    // новую не заводим — иначе предупреждение проскакивают и плодятся копии.
+    if (pending.similarCount && !pending.duplicateAck) {
+      $("smart-status").textContent =
+        "Похоже на дубликат. Если это правда другой энергос — отметь галочку «Это не тот энергос» выше.";
+      return;
+    }
     const body = {
       brand: parsed.brand,
       name: parsed.name,
@@ -1233,7 +1318,13 @@
   // а не заводить дубль. Тир и отзыв берём из того же разбора.
   const renderSimilar = (similar) => {
     const box = $("similar-box");
+    pending.similarCount = similar.length;
+    pending.duplicateAck = !similar.length;
     box.hidden = !similar.length;
+    $("similar-ack").checked = false;
+    $("similar-ack-wrap").hidden = !similar.length;
+    // Пока похожие не подтверждены «это не он», кнопка «В индекс» заблокирована.
+    $("btn-confirm").disabled = similar.length > 0;
     if (!similar.length) {
       $("similar-list").innerHTML = "";
       return;
@@ -1263,6 +1354,13 @@
       aiText: $("smart-input").value.trim(),
       fromSmart: true,
     });
+  });
+
+  // Снимаем блокировку только явной галочкой. Кнопка «Оценить эту» рядом —
+  // правильный путь при дубле.
+  $("similar-ack").addEventListener("change", (event) => {
+    pending.duplicateAck = event.target.checked;
+    $("btn-confirm").disabled = !event.target.checked;
   });
 
   const submitSmart = async (event) => {

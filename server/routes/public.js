@@ -74,7 +74,7 @@ module.exports = (db) => {
       .all();
     const participants = db
       .prepare(
-        "SELECT username, display_name, initials, title, color FROM users WHERE is_active = 1 AND is_public = 1 ORDER BY id",
+        "SELECT username, display_name, initials, title, color, avatar_path FROM users WHERE is_active = 1 AND is_public = 1 ORDER BY id",
       )
       .all()
       .map(userToParticipant);
@@ -103,7 +103,7 @@ module.exports = (db) => {
   router.get("/profile/:username", (req, res) => {
     const user = db
       .prepare(
-        `SELECT id, username, display_name, initials, title, color, created_at
+        `SELECT id, username, display_name, initials, title, color, avatar_path, created_at
          FROM users WHERE username = ? AND is_active = 1 AND is_public = 1`,
       )
       .get(String(req.params.username || "").slice(0, 64));

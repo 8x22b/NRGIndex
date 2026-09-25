@@ -97,3 +97,16 @@ test("похожая банка из ИИ-разбора: редактор от�
   assert.match(handler, /fromSmart: true/);
   assert.doesNotMatch(handler, /api\("PUT"/, "без редакции ничего не публикуем");
 });
+
+test("дубликаты: без явного «это не он» новую банку не сохранить", () => {
+  assert.match(cabinetHtml, /id="similar-ack"/);
+  assert.match(cabinetHtml, /Это не тот энергос — добавить новую банку/);
+  assert.match(cabinetSource, /pending\.similarCount && !pending\.duplicateAck/);
+  assert.match(cabinetSource, /similar-ack"\)\.addEventListener\("change"/);
+  assert.match(cabinetSource, /\$\("btn-confirm"\)\.disabled = similar\.length > 0/);
+});
+
+test("перед сохранением сказано, что уйдут и текст, и фото", () => {
+  assert.match(cabinetHtml, /id="parsed-save-note"/);
+  assert.match(cabinetHtml, /тир, отзыв и фото/);
+});

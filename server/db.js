@@ -131,6 +131,9 @@ const MIGRATIONS = [
   ALTER TABLE drinks ADD COLUMN image_height INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE drinks ADD COLUMN image_srcset TEXT NOT NULL DEFAULT '';
   `,
+  `
+  ALTER TABLE users ADD COLUMN avatar_path TEXT NOT NULL DEFAULT '';
+  `,
 ];
 
 function migrate(db) {
