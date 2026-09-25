@@ -1,20 +1,65 @@
-name: Deploy to LXC
+name: Pipeline
 
+# Один workflow на всё: тесты на пуш/PR, пре-деплойные тесты и деплой на прод.
+# В интерфейсе Actions это один прогон: Tests → Pre-deploy tests → Deploy to LXC.
 on:
+  pull_request:
+    branches: [master, production]
   push:
-    branches: [production]
+    branches: [master, production]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-prod
-  cancel-in-progress: false
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit and API tests
+        run: npm test
+
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: "Smoke: сервер стартует и отвечает"
+        run: |
+          DB_PATH="$RUNNER_TEMP/nrg-ci.db" UPLOADS_DIR="$RUNNER_TEMP/nrg-ci-uploads" PORT=3210 \
+            node server/index.js > /tmp/nrg-ci.log 2>&1 &
+          server_pid=$!
+          ok=""
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3210/api/health > /dev/null; then ok=1; break; fi
+            sleep 0.5
+          done
+          if [ -z "$ok" ]; then
+            echo "Сервер не поднялся:"; cat /tmp/nrg-ci.log; kill "$server_pid" 2>/dev/null || true; exit 1
+          fi
+          curl -fsS http://127.0.0.1:3210/api/health | grep -q '"ok":true'
+          curl -fsS -o /dev/null http://127.0.0.1:3210/
+          curl -fsS -o /dev/null http://127.0.0.1:3210/cabinet.html
+          kill "$server_pid"
+
+  # Перепроверяем тот же коммит на боевом раннере: окружение деплоя бывает строже CI.
+  pre-deploy:
     name: Pre-deploy tests
+    needs: test
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, nrgindex]
     steps:
       - uses: actions/checkout@v7
@@ -34,8 +79,9 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
   deploy:
-    name: Deploy site
-    needs: test
+    name: Deploy to LXC
+    needs: pre-deploy
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, nrgindex]
     environment: production
     steps:
