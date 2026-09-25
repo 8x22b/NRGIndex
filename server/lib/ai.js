@@ -135,12 +135,12 @@ async function postWithTimeout(fetchImpl, url, init, timeoutMs) {
     return await fetchImpl(url, { ...init, signal: controller.signal });
   } catch (error) {
     if (error?.name === "AbortError") throw new ApiError(504, "ИИ не ответил вовремя", "ai_timeout");
-    const viaProxy = String(error?.message || "").startsWith("прокси:");
+    const reason = String(error?.message || "").replace(/\s+/g, " ").slice(0, 160);
     throw new ApiError(
       502,
-      viaProxy
-        ? `Не удалось связаться с ИИ через ${String(error.message).slice(0, 160)}`
-        : "Не удалось связаться с ИИ-провайдером",
+      reason.startsWith("прокси:")
+        ? `Не удалось связаться с ИИ через ${reason}`
+        : `Не удалось связаться с ИИ-провайдером${reason ? `: ${reason}` : ""}`,
       "ai_failed",
     );
   } finally {
@@ -173,7 +173,20 @@ async function providerFailureDetail(res, maxLength = 200) {
 
 async function providerError(res, what) {
   const detail = await providerFailureDetail(res);
-  return new ApiError(502, `${what}: HTTP ${res.status}${detail ? ` — ${detail}` : ""}`, "ai_failed");
+  return new ApiError(502, `${what}: HTTP ${res.status} — ${providerHint(res.status)}${detail ? ` (${detail})` : ""}`, "ai_failed");
+}
+
+// Поясняем код провайдера человеческим языком, чтобы в UI было не просто «HTTP 401».
+function providerHint(status) {
+  if (status === 400) return "провайдер отклонил запрос (проверь модель и URL)";
+  if (status === 401) return "ключ ИИ неверный или отозван";
+  if (status === 402) return "у провайдера ИИ закончились средства";
+  if (status === 403) return "доступ к модели запрещён";
+  if (status === 404) return "модель или адрес ИИ не найдены";
+  if (status === 408) return "провайдер ИИ не ответил вовремя";
+  if (status === 429) return "лимит запросов к ИИ исчерпан";
+  if (status >= 500) return "провайдер ИИ недоступен";
+  return "провайдер ИИ ответил ошибкой";
 }
 
 const authHeaders = (key) => ({

@@ -131,6 +131,18 @@ test("parseRatingText без названия банки — понятная о
   await assert.rejects(() => parseRatingText("норм", {}, { key: "k" }), /название банки/i);
 });
 
+test("parseDrinkText: ошибка провайдера несёт код, пояснение и тело ответа", async () => {
+  const fetchImpl = async () => ({
+    ok: false,
+    status: 401,
+    text: async () => JSON.stringify({ error: { message: "API key not valid" } }),
+  });
+  const error = await parseDrinkText("тест", { key: "bad", fetchImpl }).catch((err) => err);
+  assert.match(error.message, /HTTP 401/);
+  assert.match(error.message, /ключ ИИ неверный или отозван/);
+  assert.match(error.message, /API key not valid/);
+});
+
 test("transcribeAudio: OpenRouter получает JSON с input_audio", async () => {
   let captured;
   const fetchImpl = async (url, options) => {

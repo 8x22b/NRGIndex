@@ -127,6 +127,54 @@ function removeBorderBackground(px, width, height) {
       if (touchesMask && isBgish(index * 4)) px[index * 4 + 3] = 0;
     }
   }
+
+  // Рез пиксель-в-пиксель — кромка рваная. 1) Прозрачной кайме у контура
+  // подкладываем цвет банки: иначе полупрозрачность вытянет зелёный/фон наружу.
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      if (px[index * 4 + 3]) continue;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      let n = 0;
+      const bleed = (from) => {
+        if (px[from * 4 + 3] !== 255) return;
+        r += px[from * 4];
+        g += px[from * 4 + 1];
+        b += px[from * 4 + 2];
+        n += 1;
+      };
+      if (x > 0) bleed(index - 1);
+      if (x < width - 1) bleed(index + 1);
+      if (y > 0) bleed(index - width);
+      if (y < height - 1) bleed(index + width);
+      if (!n) continue;
+      px[index * 4] = r / n;
+      px[index * 4 + 1] = g / n;
+      px[index * 4 + 2] = b / n;
+    }
+  }
+  // 2) Малюсенькое размытие альфы [1,2,1] — мягкий переход шириной ~1px.
+  const alpha = new Float32Array(size);
+  for (let index = 0; index < size; index++) alpha[index] = px[index * 4 + 3];
+  const tmp = new Float32Array(size);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      const left = x > 0 ? alpha[index - 1] : alpha[index];
+      const right = x < width - 1 ? alpha[index + 1] : alpha[index];
+      tmp[index] = (left + 2 * alpha[index] + right) / 4;
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = y * width + x;
+      const up = y > 0 ? tmp[index - width] : tmp[index];
+      const down = y < height - 1 ? tmp[index + width] : tmp[index];
+      px[index * 4 + 3] = Math.round((up + 2 * tmp[index] + down) / 4);
+    }
+  }
   return true;
 }
 

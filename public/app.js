@@ -95,7 +95,7 @@
       <button class="drink-card" type="button" data-drink="${esc(drink.id)}" style="--card-accent:${accent}" aria-label="Открыть карточку ${esc(drink.name)}">
         <span class="drink-card__visual">
           <span class="drink-card__votes">${esc(voteText)}</span>
-          <span class="drink-card__rank">${esc(activeView === "average" ? value : rating.tier)}</span>
+          <span class="drink-card__rank${activeView === "average" ? " is-num" : ""}">${esc(activeView === "average" ? value : rating.tier)}</span>
           ${drinkImg(drink, "(max-width: 720px) 45vw, 240px")}
         </span>
         <span class="drink-card__copy">

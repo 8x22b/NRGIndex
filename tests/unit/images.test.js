@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const sharp = require("sharp");
-const { saveProcessedImage } = require("../../server/lib/images");
+const { saveProcessedImage, removeBorderBackground } = require("../../server/lib/images");
 const { imageFromDataUrl } = require("../../server/lib/validate");
 
 const PNG_1X1 =
@@ -171,4 +171,31 @@ test("хромакей с градиентом и JPEG-шумом вырезае
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("кромка после вырезания сглажена: есть полупрозрачные пиксели", () => {
+  const width = 120;
+  const height = 120;
+  const raw = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    raw[i * 4] = 255;
+    raw[i * 4 + 1] = 255;
+    raw[i * 4 + 2] = 255;
+    raw[i * 4 + 3] = 255;
+  }
+  for (let y = 30; y < 90; y++) {
+    for (let x = 30; x < 90; x++) {
+      const offset = (y * width + x) * 4;
+      raw[offset] = 220;
+      raw[offset + 1] = 40;
+      raw[offset + 2] = 60;
+    }
+  }
+  assert.equal(removeBorderBackground(raw, width, height), true);
+  let partial = 0;
+  for (let i = 0; i < width * height; i++) {
+    const a = raw[i * 4 + 3];
+    if (a > 0 && a < 255) partial += 1;
+  }
+  assert.ok(partial > 0, "на кромке должны быть полупрозрачные пиксели после сглаживания");
 });

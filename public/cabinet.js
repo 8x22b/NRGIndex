@@ -32,7 +32,7 @@
     } catch {
       json = null;
     }
-    if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+    if (!res.ok) throw new Error(json?.error || `Сервер ответил HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""}`);
     return json;
   };
 
@@ -1243,7 +1243,7 @@
         (drink) => `
         <div class="similar-row" data-drink="${esc(drink.slug)}">
           <img src="${esc(drink.image)}" alt="" loading="lazy">
-          <div><b>${esc(drink.name)}</b><small>${esc(drink.flavor)}${drink.myTier ? ` · у тебя уже ${esc(drink.myTier)}` : ""}</small></div>
+          <div><b>${esc(drink.name)}</b><small>${esc(drink.flavor)}${drink.reason ? ` · ${esc(drink.reason)}` : ""}${drink.myTier ? ` · у тебя уже ${esc(drink.myTier)}` : ""}</small></div>
           <button class="btn" type="button" data-rate-existing>${drink.myTier ? "Обновить оценку" : "Оценить эту"}</button>
         </div>`,
       )

@@ -106,6 +106,40 @@ test("findSimilarDrinks: только бренд совпадает с «гол�
   assert.equal(hits[0]?.slug, "volt-original");
 });
 
+test("findSimilarDrinks: опечатку бренда ловит fuzzy-Dice, а не жёсткий отсев", () => {
+  ctx.db
+    .prepare("INSERT INTO drinks (slug, brand, name, flavor) VALUES (?, ?, ?, ?)")
+    .run("gorilla-mango", "Gorilla", "Gorilla Mango", "манго");
+  const hits = findSimilarDrinks(ctx.db, { brand: "Gorila", name: "Gorila Mango", flavor: "" });
+  assert.equal(hits[0]?.slug, "gorilla-mango");
+  assert.equal(hits[0]?.confidence, "high");
+  assert.match(hits[0]?.reason, /бренд/);
+});
+
+test("findSimilarDrinks: транслит «Ред Булл» ↔ «Red Bull» сходится по словам", () => {
+  ctx.db
+    .prepare("INSERT INTO drinks (slug, brand, name, flavor) VALUES (?, ?, ?, ?)")
+    .run("red-bull-blueberry", "Ред Булл", "Ред Булл Original", "черника");
+  const hits = findSimilarDrinks(ctx.db, { brand: "Red Bull", name: "Red Bull", flavor: "черника" });
+  assert.equal(hits[0]?.slug, "red-bull-blueberry");
+});
+
+test("findSimilarDrinks: скрытые банки не попадают к юзеру, но видны админу", () => {
+  ctx.db
+    .prepare("INSERT INTO drinks (slug, brand, name, flavor, is_published) VALUES (?, ?, ?, ?, 0)")
+    .run("hidden-volt", "Volt", "Volt Hidden", "манго");
+  const visible = findSimilarDrinks(ctx.db, { brand: "Volt", name: "Volt Hidden Mango", flavor: "манго" });
+  assert.equal(visible.some((hit) => hit.slug === "hidden-volt"), false);
+  const all = findSimilarDrinks(
+    ctx.db,
+    { brand: "Volt", name: "Volt Hidden Mango", flavor: "манго" },
+    { includeHidden: true },
+  );
+  const hidden = all.find((hit) => hit.slug === "hidden-volt");
+  assert.ok(hidden, "с includeHidden скрытая банка должна найтись");
+  assert.equal(hidden.hidden, true);
+});
+
 test("профиль: история изменений из действий, свежие сверху", async () => {
   const rated = await request(ctx.base, "PUT", "/api/cabinet/ratings/volt-original", {
     cookie: sanyaCookie,
