@@ -39,6 +39,61 @@
     .admin-photo__tools .admin-actions { flex-wrap: wrap; }
     .admin-photo__tools .admin-image-url-row { margin: 0; }
     .admin-photo__tools .photo-strip { margin: 0; }
+    .stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 14px; }
+    .stats-period { display: flex; gap: 6px; }
+    .stats-period .btn { padding: 6px 12px; font-size: 12px; }
+    .stats-period .btn.is-active { background: var(--accent, #ff4f79); color: #100e0d; border-color: transparent; }
+    .stats-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .stats-card { padding: 12px 14px; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; background: rgba(0,0,0,.25); }
+    .stats-card span { display: block; color: var(--muted); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+    .stats-card b { display: block; margin: 6px 0 4px; font: 500 26px/1 var(--serif); }
+    .stats-card small { color: rgba(255,255,255,.55); font-size: 11.5px; }
+    .stats-card--online b { color: var(--acid, #efee87); }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+    .stats-panel { padding: 14px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; background: rgba(0,0,0,.22); min-width: 0; }
+    .stats-panel--wide { grid-column: 1 / -1; }
+    .stats-panel__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+    .stats-panel__head h3 { margin: 0; font: 500 18px/1.1 var(--serif); }
+    .stats-chart { display: block; width: 100%; height: auto; }
+    .stats-chart text { font: 500 9px var(--sans, sans-serif); }
+    .stats-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; color: var(--muted); font-size: 11.5px; }
+    .stats-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; margin-right: 5px; }
+    .stats-online { display: grid; gap: 9px; }
+    .stats-online__row { display: flex; align-items: center; gap: 10px; }
+    .stats-online__dot { width: 8px; height: 8px; border-radius: 50%; background: #7ee6a8; box-shadow: 0 0 8px #7ee6a8; flex: 0 0 auto; }
+    .stats-avatar { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid color-mix(in srgb, var(--person-color, #9fb7ff) 70%, white); color: var(--person-color, #9fb7ff); font-size: 11px; text-transform: uppercase; flex: 0 0 auto; }
+    .stats-online__main { min-width: 0; flex: 1; }
+    .stats-online__main b { font-size: 13px; }
+    .stats-online__main small { display: block; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stats-online__time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .stats-donut { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .stats-donut svg { width: 150px; height: 150px; flex: 0 0 auto; }
+    .stats-donut__svg .stats-donut__total { font: 500 22px/1 var(--serif, serif); fill: var(--paper, #f6f1e7); }
+    .stats-donut__legend { display: grid; gap: 6px; min-width: 0; flex: 1; }
+    .stats-donut__row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+    .stats-donut__row i { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
+    .stats-donut__row b { margin-left: auto; font-variant-numeric: tabular-nums; }
+    .stats-top { display: grid; gap: 9px; }
+    .stats-top__row { display: grid; grid-template-columns: 20px 30px minmax(0, 1fr) 90px auto; align-items: center; gap: 8px; font-size: 12.5px; }
+    .stats-top__row img { width: 30px; height: 30px; object-fit: contain; }
+    .stats-top__rank { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .stats-top__main { min-width: 0; }
+    .stats-top__main b { display: block; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stats-top__main small { display: block; color: var(--muted); font-size: 11px; }
+    .stats-top__bar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.08); overflow: hidden; }
+    .stats-top__bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--pink, #ff4f79), var(--orange, #ff7448)); }
+    .stats-top__value { color: var(--muted); font-size: 11.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .stats-heat { display: grid; grid-template-columns: 26px repeat(24, minmax(0, 1fr)); gap: 3px; align-items: center; }
+    .stats-heat__label { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+    .stats-heat__hour { color: rgba(255,255,255,.35); font-size: 9px; text-align: center; }
+    .heat-cell { aspect-ratio: 1; border-radius: 3px; background: color-mix(in srgb, var(--acid, #efee87) calc(var(--heat, 0) * 100%), rgba(255,255,255,.05)); }
+    .heat-cell:hover { outline: 1px solid rgba(255,255,255,.5); }
+    .stats-empty { margin: 0; color: var(--muted); font-size: 12.5px; }
+    @media (max-width: 720px) {
+      .stats-top__row { grid-template-columns: 16px 26px minmax(0, 1fr) auto; }
+      .stats-top__bar { display: none; }
+      .stats-heat { grid-template-columns: 22px repeat(24, minmax(0, 1fr)); }
+    }
     .admin-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .admin-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid rgba(255,255,255,.25); }
     .admin-badge--on { border-color: #7ee6a8; color: #7ee6a8; }
@@ -103,6 +158,7 @@
       <button class="btn" type="button" data-tab="tiers">Тиры</button>
       <button class="btn" type="button" data-tab="users" data-admin-only>Пользователи</button>
       <button class="btn" type="button" data-tab="settings" data-admin-only>Настройки</button>
+      <button class="btn" type="button" data-tab="stats" data-admin-only>Статистика</button>
       <button class="btn" type="button" data-tab="audit" data-admin-only>Журнал</button>
     </nav>
 
@@ -267,6 +323,18 @@
         </div>
         <p class="form-status" id="settings-status" aria-live="polite"></p>
       </form>
+    </section>
+
+    <section id="tab-stats" hidden>
+      <div class="stats-toolbar">
+        <div class="stats-period" id="stats-period" role="group" aria-label="Период статистики">
+          <button class="btn btn--ghost" type="button" data-days="7">7 дней</button>
+          <button class="btn btn--ghost is-active" type="button" data-days="30">30 дней</button>
+          <button class="btn btn--ghost" type="button" data-days="90">90 дней</button>
+        </div>
+        <span class="admin-hint" id="stats-updated"></span>
+      </div>
+      <div id="stats-body"></div>
     </section>
 
     <section id="tab-audit" hidden>

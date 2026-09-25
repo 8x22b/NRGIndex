@@ -174,6 +174,40 @@ module.exports = (db) => {
     // 100% — ставит ровно как все; каждый тир расхождения в среднем = минус 25%
     const agreement = compared ? Math.max(0, Math.round(100 - (diffSum / compared) * 25)) : null;
 
+    // Мягкая активность: полгода по месяцам — оценки и добавленные банки.
+    const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+    const now = new Date();
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      months.push({
+        key: `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`,
+        label: MONTHS_SHORT[date.getUTCMonth()],
+        ratings: 0,
+        added: 0,
+      });
+    }
+    const monthByKey = new Map(months.map((month) => [month.key, month]));
+    const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 19).replace("T", " ");
+    let lastAt = "";
+    let last30 = 0;
+    for (const rating of rows) {
+      const at = String(rating.updated_at || "");
+      if (at > lastAt) lastAt = at;
+      if (at >= cutoff30) last30 += 1;
+      const month = monthByKey.get(at.slice(0, 7));
+      if (month) month.ratings += 1;
+    }
+    const addedRows = db
+      .prepare("SELECT created_at FROM drinks WHERE created_by = ? AND is_published = 1")
+      .all(user.id);
+    for (const drink of addedRows) {
+      const at = String(drink.created_at || "");
+      if (at > lastAt) lastAt = at;
+      const month = monthByKey.get(at.slice(0, 7));
+      if (month) month.added += 1;
+    }
+
     const placeholders = PROFILE_HISTORY_ACTIONS.map(() => "?").join(", ");
     const history = db
       .prepare(
@@ -204,6 +238,11 @@ module.exports = (db) => {
         average: avg === null ? null : Math.round(avg * 10) / 10,
         agreement,
         distribution,
+        activity: {
+          months,
+          last30,
+          lastAt: lastAt || null,
+        },
       },
       ratings,
       history,

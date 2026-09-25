@@ -74,6 +74,22 @@ test("профиль: пустой участник без оценок", async 
   assert.equal(res.json.stats.ratings, 0);
   assert.equal(res.json.stats.average, null);
   assert.equal(res.json.stats.agreement, null);
+  assert.equal(res.json.stats.activity.months.length, 6, "полгода столбиков даже у пустого");
+  assert.equal(res.json.stats.activity.months.reduce((sum, month) => sum + month.ratings + month.added, 0), 0);
+  assert.equal(res.json.stats.activity.lastAt, null);
+});
+
+test("профиль: мягкая активность за полгода", async () => {
+  const res = await request(ctx.base, "GET", "/api/public/profile/sanya");
+  assert.equal(res.status, 200);
+  const { activity } = res.json.stats;
+  assert.equal(activity.months.length, 6);
+  assert.equal(activity.months.reduce((sum, month) => sum + month.ratings, 0), 2, "две оценки у сани");
+  assert.equal(activity.months.reduce((sum, month) => sum + month.added, 0), 1, "одна добавленная банка");
+  assert.equal(activity.months.at(-1).ratings, 2, "обе оценки поставлены сейчас — в текущем месяце");
+  assert.equal(activity.last30, 2);
+  assert.match(activity.lastAt, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  assert.ok(activity.months.every((month) => typeof month.label === "string" && month.label.length));
 });
 
 test("страница профиля отдаётся статикой", async () => {
