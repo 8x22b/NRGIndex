@@ -37,14 +37,15 @@ test("pipeline: master не гоняет тесты — только путь к
   assert.match(yml, /if: \$\{\{ github\.event_name == 'pull_request' \}\}/, "ubuntu-тесты — только на PR");
 });
 
-test("pipeline: деплой — только production и строго после тестов", () => {
+test("pipeline: деплой — только после успешных пре-деплой-тестов", () => {
   const yml = read("pipeline.yml");
-  assert.match(yml, /pre-deploy:[\s\S]*?needs: test/);
-  assert.match(yml, /deploy:[\s\S]*?needs: pre-deploy/);
-  assert.match(yml, /github\.ref == 'refs\/heads\/production'/);
-
   const preDeploy = jobBlock(yml, "pre-deploy");
   const deploy = jobBlock(yml, "deploy");
+  assert.match(preDeploy, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/production'/);
+  assert.match(preDeploy, /workflow_dispatch/);
+  assert.match(deploy, /needs: pre-deploy/);
+  assert.doesNotMatch(deploy, /\n    if:/, "у деплоя не должно быть своих условий — гейт через needs");
+  assert.doesNotMatch(preDeploy, /needs: test/, "лишняя связь с Tests съедала деплой на пушах в production");
   assert.doesNotMatch(preDeploy, /pull_request/, "самохост не должен просыпаться на PR");
   assert.doesNotMatch(deploy, /pull_request/, "деплой не должен просыпаться на PR");
   assert.match(deploy, /runs-on: \[self-hosted, nrgindex\]/);
