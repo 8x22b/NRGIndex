@@ -2,10 +2,12 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { findSimilarDrinks, matchWords } = require("../../server/lib/content");
 
-// Лёгкий фейковый db: findSimilarDrinks зовёт только prepare(...).all().
+// Лёгкий фейковый db: findSimilarDrinks зовёт только prepare(...).all(includeHidden).
+// Флаг приходит параметром (? = 1), а не склейкой SQL — повторяем это в моке.
 const makeDb = (rows) => ({
   prepare: (sql) => ({
-    all: () => (sql.includes("WHERE is_published = 1") ? rows.filter((item) => item.is_published) : rows),
+    all: (includeHidden = 0) =>
+      sql.includes("? = 1") && includeHidden ? rows : rows.filter((item) => item.is_published),
   }),
 });
 

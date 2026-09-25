@@ -159,11 +159,10 @@ function findSimilarDrinks(
 
   const rows = db
     .prepare(
-      `SELECT id, slug, brand, name, flavor, edition, image_path, is_published FROM drinks${
-        includeHidden ? "" : " WHERE is_published = 1"
-      }`,
+      `SELECT id, slug, brand, name, flavor, edition, image_path, is_published FROM drinks
+       WHERE ? = 1 OR is_published = 1`,
     )
-    .all();
+    .all(includeHidden ? 1 : 0);
 
   const scored = [];
   for (const row of rows) {
