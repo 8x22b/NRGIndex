@@ -174,20 +174,22 @@ module.exports = (db) => {
     // 100% — ставит ровно как все; каждый тир расхождения в среднем = минус 25%
     const agreement = compared ? Math.max(0, Math.round(100 - (diffSum / compared) * 25)) : null;
 
-    // Мягкая активность: полгода по месяцам — оценки и добавленные банки.
-    const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+    // Мягкая активность: день за днём по сетке 15 недель, серия, любимый день,
+    // самый щедрый месяц. Всё из уже полученных дат — без новых тяжёлых запросов.
+    const activityDays = new Map();
+    const bumpDay = (value, field) => {
+      const day = String(value || "").slice(0, 10);
+      if (day.length !== 10) return;
+      const entry = activityDays.get(day) || { date: day, ratings: 0, added: 0 };
+      entry[field] += 1;
+      activityDays.set(day, entry);
+    };
+    const addedRows = db
+      .prepare("SELECT created_at FROM drinks WHERE created_by = ? AND is_published = 1")
+      .all(user.id);
+
     const now = new Date();
-    const months = [];
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-      months.push({
-        key: `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`,
-        label: MONTHS_SHORT[date.getUTCMonth()],
-        ratings: 0,
-        added: 0,
-      });
-    }
-    const monthByKey = new Map(months.map((month) => [month.key, month]));
+    const todayKey = now.toISOString().slice(0, 10);
     const cutoff30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 19).replace("T", " ");
     let lastAt = "";
     let last30 = 0;
@@ -195,18 +197,50 @@ module.exports = (db) => {
       const at = String(rating.updated_at || "");
       if (at > lastAt) lastAt = at;
       if (at >= cutoff30) last30 += 1;
-      const month = monthByKey.get(at.slice(0, 7));
-      if (month) month.ratings += 1;
+      bumpDay(at, "ratings");
     }
-    const addedRows = db
-      .prepare("SELECT created_at FROM drinks WHERE created_by = ? AND is_published = 1")
-      .all(user.id);
     for (const drink of addedRows) {
       const at = String(drink.created_at || "");
       if (at > lastAt) lastAt = at;
-      const month = monthByKey.get(at.slice(0, 7));
-      if (month) month.added += 1;
+      bumpDay(at, "added");
     }
+
+    const dateTs = (key) => Date.parse(`${key}T00:00:00Z`);
+    const dayKeys = [...activityDays.keys()].sort();
+    let streak = 0;
+    if (dayKeys.length) {
+      let cursor = dateTs(dayKeys.at(-1));
+      for (let i = dayKeys.length - 1; i >= 0; i--) {
+        if (dateTs(dayKeys[i]) !== cursor) break;
+        streak += 1;
+        cursor -= 86400000;
+      }
+    }
+    const streakAlive =
+      dayKeys.length > 0 && (dayKeys.at(-1) === todayKey || dateTs(todayKey) - dateTs(dayKeys.at(-1)) === 86400000);
+
+    const weekdayCounts = new Array(7).fill(0);
+    for (const day of activityDays.values()) {
+      weekdayCounts[new Date(`${day.date}T00:00:00Z`).getUTCDay()] += day.ratings + day.added;
+    }
+    const bestWeekday = weekdayCounts.some(Boolean) ? weekdayCounts.indexOf(Math.max(...weekdayCounts)) : null;
+
+    const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+    const monthTotals = [];
+    for (let i = 5; i >= 0; i--) {
+      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+      monthTotals.push({
+        key: `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`,
+        label: MONTHS_SHORT[date.getUTCMonth()],
+        count: 0,
+      });
+    }
+    const monthByKey = new Map(monthTotals.map((month) => [month.key, month]));
+    for (const day of activityDays.values()) {
+      const month = monthByKey.get(day.date.slice(0, 7));
+      if (month) month.count += day.ratings + day.added;
+    }
+    const topMonth = monthTotals.reduce((best, month) => (month.count > (best?.count || 0) ? month : best), null);
 
     const placeholders = PROFILE_HISTORY_ACTIONS.map(() => "?").join(", ");
     const history = db
@@ -239,7 +273,11 @@ module.exports = (db) => {
         agreement,
         distribution,
         activity: {
-          months,
+          heatmap: [...activityDays.values()].sort((a, b) => a.date.localeCompare(b.date)),
+          streak,
+          streakAlive,
+          bestWeekday,
+          topMonth: topMonth && topMonth.count ? { label: topMonth.label, count: topMonth.count } : null,
           last30,
           lastAt: lastAt || null,
         },

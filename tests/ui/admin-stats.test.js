@@ -40,23 +40,26 @@ test("админка: онлайн и последние изменения об
   assert.match(js, /recentMarkup/);
 });
 
-test("профиль: блок активности рисуется из stats.activity", () => {
+test("профиль: блок активности — хитмап и инсайты из stats.activity", () => {
   const js = read("public/profile.js");
   assert.match(js, /stats\.activity/);
   assert.match(js, /class="profile-activity"/);
-  assert.match(js, /activity-month__bar/);
-  assert.match(js, /за полгода/);
+  assert.match(js, /activity-heat/);
+  assert.match(js, /activity-chip/);
   assert.match(js, /const timeAgoSoft/);
+  assert.match(js, /WEEKDAY_GENITIVE/);
 
   const css = read("public/styles.css");
   assert.match(css, /\.profile-activity/);
-  assert.match(css, /\.activity-month__bar/);
+  assert.match(css, /\.activity-chip/);
+  assert.match(css, /\.activity-heat \.heat-cell/);
 });
 
 test("сервер: у профиля есть статистика активности, у админки — свой эндпоинт", () => {
   const routes = read("server/routes/public.js");
-  assert.match(routes, /activity: \{/);
-  assert.match(routes, /const monthByKey/);
+  assert.match(routes, /const activityDays = new Map/);
+  assert.match(routes, /streakAlive/);
+  assert.match(routes, /bestWeekday/);
   const admin = read("server/routes/admin.js");
   assert.match(admin, /router\.get\("\/stats", requireAdmin/);
   assert.match(admin, /function deviceLabel/);

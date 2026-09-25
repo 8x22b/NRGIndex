@@ -38,6 +38,7 @@
   };
 
   const username = new URLSearchParams(location.search).get("u") || "";
+  const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 
   // «сегодня / вчера / N дней назад» — мягкие подписи для активности
   const parseDbTime = (value) => Date.parse(String(value || "").replace(" ", "T") + "Z") || 0;
@@ -92,33 +93,110 @@
             ? "в целом согласен со столом"
             : "идёт против стола";
 
-    // Мягкий блок активности: полгода столбиками, без цифр ради цифр.
-    const activity = stats.activity || { months: [], last30: 0, lastAt: null };
-    const activityMax = Math.max(1, ...activity.months.map((month) => month.ratings + month.added));
-    const ratings6 = activity.months.reduce((sum, month) => sum + month.ratings, 0);
-    const added6 = activity.months.reduce((sum, month) => sum + month.added, 0);
-    const activityCopy =
-      ratings6 + added6
-        ? `${ratings6} ${wordForm(ratings6, ["оценка", "оценки", "оценок"])} и ${added6} ${wordForm(added6, ["банка", "банки", "банок"])} за полгода${activity.lastAt ? ` · последняя активность — ${timeAgoSoft(activity.lastAt)}` : ""}`
-        : "пока тихо — ни оценок, ни новых банок";
+    // Мягкая активность: сетка дней за 15 недель и пара живых инсайтов.
+    const activity = stats.activity || {
+      heatmap: [],
+      streak: 0,
+      streakAlive: false,
+      bestWeekday: null,
+      topMonth: null,
+      last30: 0,
+      lastAt: null,
+    };
+    const WEEKDAY_GENITIVE = [
+      "воскресеньям",
+      "понедельникам",
+      "вторникам",
+      "средам",
+      "четвергам",
+      "пятницам",
+      "субботам",
+    ];
+    const dayMap = new Map((activity.heatmap || []).map((day) => [day.date, day]));
+    const weeks = 15;
+    const today = new Date();
+    const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+    const firstWeek = new Date(end);
+    firstWeek.setUTCDate(firstWeek.getUTCDate() - ((firstWeek.getUTCDay() + 6) % 7) - (weeks - 1) * 7);
+    const columns = [];
+    const monthCells = [];
+    let lastMonth = -1;
+    let totalActions = 0;
+    for (let w = 0; w < weeks; w++) {
+      const monday = new Date(firstWeek);
+      monday.setUTCDate(monday.getUTCDate() + w * 7);
+      if (monday.getUTCMonth() !== lastMonth) {
+        monthCells.push(`<span>${MONTHS_SHORT[monday.getUTCMonth()]}</span>`);
+        lastMonth = monday.getUTCMonth();
+      } else {
+        monthCells.push(`<span></span>`);
+      }
+      const cells = [];
+      for (let d = 0; d < 7; d++) {
+        const date = new Date(firstWeek);
+        date.setUTCDate(date.getUTCDate() + w * 7 + d);
+        if (date > end) {
+          cells.push(`<span class="heat-cell is-future"></span>`);
+          continue;
+        }
+        const key = date.toISOString().slice(0, 10);
+        const entry = dayMap.get(key);
+        const count = entry ? entry.ratings + entry.added : 0;
+        totalActions += count;
+        const parts = [];
+        if (entry?.ratings) parts.push(`${entry.ratings} ${wordForm(entry.ratings, ["оценка", "оценки", "оценок"])}`);
+        if (entry?.added) parts.push(`${entry.added} ${wordForm(entry.added, ["банка", "банки", "банок"])}`);
+        const tip = `${date.getUTCDate()} ${MONTHS_SHORT[date.getUTCMonth()]}: ${parts.join(", ") || "тихо"}`;
+        const heat = count ? Math.min(1, 0.3 + count * 0.23) : 0;
+        cells.push(
+          `<span class="heat-cell${count ? "" : " is-empty"}" style="--heat:${Number(heat.toFixed(2))}" title="${esc(tip)}"></span>`,
+        );
+      }
+      columns.push(`<span class="heat-col">${cells.join("")}</span>`);
+    }
+    const chips = [];
+    if (activity.streak > 1) {
+      chips.push(
+        `<span class="activity-chip"><b>серия ${activity.streak} ${wordForm(activity.streak, ["день", "дня", "дней"])}</b> подряд${activity.streakAlive ? "" : " — самое время вернуться"}</span>`,
+      );
+    } else if (activity.streak === 1 && activity.streakAlive) {
+      chips.push(`<span class="activity-chip"><b>серия 1 день</b> — начало положено</span>`);
+    } else if (activity.lastAt) {
+      chips.push(`<span class="activity-chip">последняя — <b>${timeAgoSoft(activity.lastAt)}</b></span>`);
+    }
+    if (activity.bestWeekday !== null && (activity.heatmap || []).length > 2) {
+      chips.push(`<span class="activity-chip">чаще всего — по <b>${WEEKDAY_GENITIVE[activity.bestWeekday]}</b></span>`);
+    }
+    if (activity.topMonth && activity.topMonth.count >= 2) {
+      chips.push(
+        `<span class="activity-chip">самый щедрый месяц — <b>${activity.topMonth.label}</b> · ${activity.topMonth.count} ${wordForm(activity.topMonth.count, ["действие", "действия", "действий"])}</span>`,
+      );
+    }
+    if (activity.last30) {
+      chips.push(`<span class="activity-chip">за месяц — <b>${activity.last30}</b></span>`);
+    }
+    if (!chips.length) chips.push(`<span class="activity-chip">пока тихо — оцените первую банку</span>`);
     const activityMarkup = `
       <div class="profile-activity">
-        <p class="eyebrow">Активность</p>
-        <div class="activity-months" aria-label="Оценки и банки за последние полгода">
-          ${activity.months
-            .map((month) => {
-              const total = month.ratings + month.added;
-              const height = total ? Math.max(8, Math.round((total / activityMax) * 100)) : 4;
-              const tip = `${month.label}: ${month.ratings} ${wordForm(month.ratings, ["оценка", "оценки", "оценок"])}, ${month.added} ${wordForm(month.added, ["банка", "банки", "банок"])}`;
-              return `
-              <div class="activity-month" title="${esc(tip)}">
-                <span class="activity-month__bar${total ? "" : " is-empty"}" style="height:${Number(height)}%"></span>
-                <small>${month.label}</small>
-              </div>`;
-            })
-            .join("")}
+        <div class="profile-activity__head">
+          <p class="eyebrow">Активность</p>
+          <span class="profile-activity__meta">${
+            totalActions
+              ? `за 15 недель: ${totalActions} ${wordForm(totalActions, ["действие", "действия", "действий"])}`
+              : "за 15 недель — тихо"
+          }</span>
         </div>
-        <p class="hint profile-activity__copy">${esc(activityCopy)}</p>
+        <div class="activity-heat" role="img" aria-label="Активность по дням за 15 недель">
+          <div class="activity-heat__months" aria-hidden="true">${monthCells.join("")}</div>
+          <div class="activity-heat__row">
+            <div class="activity-heat__weekdays" aria-hidden="true"><span>пн</span><span></span><span>ср</span><span></span><span>пт</span><span></span><span>вс</span></div>
+            <div class="activity-heat__weeks">${columns.join("")}</div>
+          </div>
+        </div>
+        <div class="activity-insights">
+          ${chips.slice(0, 3).join("")}
+          <span class="activity-legend">меньше <i class="heat-cell is-empty"></i><i class="heat-cell" style="--heat:.55"></i><i class="heat-cell" style="--heat:1"></i> больше</span>
+        </div>
       </div>`;
 
     $("profile-hero").innerHTML = `
