@@ -155,7 +155,7 @@ img { display: block; max-width: 100%; }
 .hero__glow--pink { width: 32rem; height: 32rem; right: 5%; top: 15%; background: var(--pink); }
 .hero__glow--orange { width: 21rem; height: 21rem; left: -8%; bottom: -4%; background: var(--orange); }
 
-.marquee { overflow: hidden; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--paper); color: var(--ink); transform: rotate(-1.2deg) scale(1.02); }
+.marquee { position: relative; z-index: 6; overflow: hidden; padding: .55rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--paper); color: var(--ink); transform: rotate(-1.2deg) scale(1.02); }
 .marquee__track { display: flex; width: max-content; align-items: center; gap: 2.2rem; padding: .85rem 0; animation: marquee 22s linear infinite; will-change: transform; }
 .marquee span { font-family: var(--serif); font-size: 1.4rem; font-style: italic; }
 .marquee i { color: var(--pink); font-size: .9rem; }
@@ -296,7 +296,12 @@ img { display: block; max-width: 100%; }
   .hero { grid-template-columns: 1fr .7fr; }
   .hero__bottom { padding-left: 0; }
   .specimen-card { width: 30vw; }
-  .view-switcher { overflow-x: auto; }
+  /* Правый край растворяется — видно, что лента участников скроллится. */
+  .view-switcher {
+    overflow-x: auto;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.4rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 2.4rem), transparent);
+  }
   .view-switcher__people { display: flex; }
   .view-chip { min-width: 9rem; }
   .tier-row { grid-template-columns: 6.5rem minmax(0, 1fr); }
@@ -330,8 +335,10 @@ img { display: block; max-width: 100%; }
   .view-chip__number { width: 2rem; }
   .board-topline { gap: 1rem; font-size: .44rem; }
   .tier-row { min-height: 11rem; grid-template-columns: 4.8rem minmax(0, 1fr); }
-  .tier-label { padding: .8rem .55rem; }
-  .tier-letter { font-size: 3.3rem; }
+  .tier-label { padding: .8rem .55rem .8rem .7rem; }
+  /* Буква тира на узком экране: без отрицательного трекинга — иначе курсив
+     упирается в скруглённую кромку .board-wrap и обрезается. */
+  .tier-letter { font-size: 3.1rem; letter-spacing: 0; }
   .tier-label__copy b { font-size: .43rem; }
   .tier-label__copy span { font-size: .38rem; }
   .tier-items { padding: .6rem; gap: .6rem; }
@@ -684,8 +691,19 @@ a.drink-card { text-decoration: none; }
   .tier-label { padding: .7rem .5rem; }
 
   .cab-page { padding: 5.5rem 1rem 4rem; }
-  .me-card { flex-wrap: wrap; row-gap: .6rem; }
-  .me-card .btn { padding: .5rem .7rem; }
+  /* Плашка профиля на телефоне: сверху аватар+имя+счётчик одной строкой,
+     ниже кнопки складываются в список во всю ширину — наслоение невозможно. */
+  .me-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: .8rem;
+    row-gap: .5rem;
+    padding: 1rem;
+  }
+  .me-card__main b { white-space: normal; overflow-wrap: anywhere; }
+  .me-card > .cab-profile__meta { justify-self: end; }
+  .me-card > .btn { grid-column: 1 / -1; width: 100%; padding: .6rem .7rem; text-align: center; }
 }
 
 /* --- профили: кликабельные участники и история изменений --- */

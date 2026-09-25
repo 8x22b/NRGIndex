@@ -47,6 +47,18 @@ before(async () => {
   addAudit(sanyaId, "Саша изменил напиток", daysAgo(5));
   addAudit(kiraId, "Кира поставила оценку B", daysAgo(0));
 
+  // ИИ-запросы: свежий разбор + старая перерисовка (выйдет из окна 30 дней)
+  ctx.db
+    .prepare(
+      "INSERT INTO ai_usage (kind, model, user_id, prompt_tokens, completion_tokens, total_tokens, cost_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .run("parse", "openai/gpt-4o-mini", sanyaId, 900, 100, 1000, 0.000195, daysAgo(0));
+  ctx.db
+    .prepare(
+      "INSERT INTO ai_usage (kind, model, user_id, prompt_tokens, completion_tokens, total_tokens, cost_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .run("redraw", "gemini-3.1-flash-lite-image", kiraId, 120, 0, 120, 0.01, daysAgo(40));
+
   adminCookie = (await login(ctx.base, "admin", "admin-pass-123")).cookie;
   editorCookie = (await login(ctx.base, "editor", "editor-pass-123")).cookie;
   await login(ctx.base, "sanya", "sanya-pass-123");
@@ -148,4 +160,19 @@ test("статистика: тепловая карта неделя×час и 
     assert.ok(cell.n >= 1);
   }
   assert.match(recent[0].at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+});
+
+test("статистика: ИИ-запросы — виды, модели и трата за всё время", async () => {
+  const res = await stats(adminCookie);
+  assert.equal(res.status, 200);
+  const { ai } = res.json;
+  const parse = ai.kinds.find((row) => row.kind === "parse");
+  assert.equal(parse.requests, 1);
+  assert.equal(parse.totalTokens, 1000);
+  assert.ok(Math.abs(parse.costUsd - 0.000195) < 1e-9);
+  assert.ok(!ai.kinds.some((row) => row.kind === "redraw"), "перерисовка 40 дней назад — вне окна 30 дней");
+  const model = ai.models.find((row) => row.model === "openai/gpt-4o-mini");
+  assert.equal(model.requests, 1);
+  assert.equal(ai.allTime.requests, 2, "за всё время считаются оба запроса");
+  assert.ok(Math.abs(ai.allTime.costUsd - 0.010195) < 1e-9);
 });

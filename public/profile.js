@@ -212,7 +212,7 @@
         <div><b>${stats.ratings}</b><span>${wordForm(stats.ratings, ["оценка", "оценки", "оценок"])}</span></div>
         <div><b>${stats.reviews}</b><span>${wordForm(stats.reviews, ["отзыв", "отзыва", "отзывов"])}</span></div>
         <div><b>${stats.added}</b><span>${wordForm(stats.added, ["банку добавил", "банки добавил", "банок добавил"])}</span></div>
-        <div><b>${avgTier ? esc(avgTier.id) : "—"}</b><span>${stats.average ? `средний тир · ${String(stats.average).replace(".", ",")}` : "средний тир"}</span></div>
+        <div><b>${avgTier ? esc(avgTier.id) : "—"}</b><span>${stats.average ? `средний тир · ${String(Math.round(stats.average * 100) / 100).replace(".", ",")}` : "средний тир"}</span></div>
         <div><b>${stats.agreement === null ? "—" : `${stats.agreement}%`}</b><span>${agreementCopy}</span></div>
       </div>
       <div class="profile-dist" aria-label="Распределение по тирам">${bars}</div>

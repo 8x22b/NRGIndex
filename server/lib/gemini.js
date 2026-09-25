@@ -7,6 +7,10 @@ const { imageFromDataUrl } = require("./validate");
 const DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-lite-image";
 const GEMINI_TIMEOUT_MS = 120000;
 const REDRAW_MAX_BYTES = 7 * 1024 * 1024;
+// Примерная цена одной перерисовки, USD. Точного прайса у Interactions API нет —
+// поправить в одном месте при смене модели.
+// ponytail: константа вместо настройки; провайдер не отдаёт стоимость картинки.
+const REDRAW_COST_USD = 0.01;
 
 const REDRAW_PROMPT =
   "Redraw this energy drink can as a studio product photo: " +
@@ -108,7 +112,16 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
   const found = extractImage(data);
   if (!found) throw noImageError(data);
   const outMime = /image\/(png|jpeg|webp)/.test(found.mime || "") ? found.mime : "image/png";
-  return { imageDataUrl: `data:${outMime};base64,${found.data}` };
+  const meta = data?.usage_metadata || data?.usageMetadata || {};
+  return {
+    imageDataUrl: `data:${outMime};base64,${found.data}`,
+    usage: {
+      promptTokens: Number(meta.promptTokenCount ?? meta.prompt_token_count ?? 0) || 0,
+      completionTokens: Number(meta.candidatesTokenCount ?? meta.candidates_token_count ?? 0) || 0,
+      totalTokens: Number(meta.totalTokenCount ?? meta.total_token_count ?? 0) || 0,
+      costUsd: REDRAW_COST_USD,
+    },
+  };
 }
 
 // Дешёвая проверка ключа и модели: models.get ничего не генерирует,

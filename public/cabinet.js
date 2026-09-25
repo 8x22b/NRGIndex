@@ -32,7 +32,14 @@
     } catch {
       json = null;
     }
-    if (!res.ok) throw new Error(json?.error || `Сервер ответил HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""}`);
+    if (!res.ok) {
+      const error = new Error(
+        json?.error || `Сервер ответил HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""}`,
+      );
+      error.status = res.status;
+      error.code = json?.code || "";
+      throw error;
+    }
     return json;
   };
 
@@ -1671,7 +1678,11 @@
       status.textContent = ui.done;
       area.focus();
     } catch (error) {
-      status.textContent = `${error.message}. Можно повторить или вписать текст руками.`;
+      console.error("[nrgindex] распознавание не удалось:", error);
+      const detail = [error.message || "Распознавание не удалось", error.code ? `код ${error.code}` : ""]
+        .filter(Boolean)
+        .join(" · ");
+      status.textContent = `${detail}. Можно повторить или вписать текст руками.`;
       $(ui.retry).hidden = false;
     } finally {
       voice.busy = false;

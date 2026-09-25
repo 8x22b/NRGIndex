@@ -269,7 +269,7 @@ module.exports = (db) => {
         ratings: ratings.length,
         reviews: ratings.filter((rating) => rating.review.trim()).length,
         added,
-        average: avg === null ? null : Math.round(avg * 10) / 10,
+        average: avg === null ? null : Math.round(avg * 100) / 100,
         agreement,
         distribution,
         activity: {
