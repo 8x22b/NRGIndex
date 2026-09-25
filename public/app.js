@@ -215,7 +215,7 @@
           ${relatedDrinks
             .map(
               (related) => `
-            <button class="related-card" type="button" data-related-drink="${esc(related.id)}" style="--related-a:${safeColor(related.accent?.[0], "#ff4f79")};--related-b:${safeColor(related.accent?.[1], "#ff7448")}">
+            <button class="related-card" type="button" data-related-drink="${esc(related.id)}" style="--related-a:${safeColor(related.accent?.[0], "#ff4f79")}">
               <span class="related-card__visual">${drinkImg(related, "200px")}</span>
               <span class="related-card__copy"><b>${esc(related.name)}</b><small>${esc(related.flavor)}</small><i>открыть карточку →</i></span>
             </button>
@@ -259,7 +259,7 @@
     ].join("");
 
     dialogContent.innerHTML = `
-      <section class="dialog-hero" style="--dialog-a:${safeColor(drink.accent?.[0], "#ff4f79")};--dialog-b:${safeColor(drink.accent?.[1], "#ff7448")}">
+      <section class="dialog-hero" style="--dialog-a:${safeColor(drink.accent?.[0], "#ff4f79")}">
         <div class="dialog-product">${drinkImg(drink, "(max-width: 720px) 80vw, 352px", true)}</div>
         <div class="dialog-intro">
           <p class="dialog-kicker">Specimen ${specimenNumber(drink)} · ${esc(drink.edition || drink.brand)}</p>
