@@ -50,3 +50,9 @@ test("профиль: карточки ведут на /d/:slug", () => {
   assert.match(profileSource, /href="\/d\/\$\{encodeURIComponent\(rating\.drink\)\}"/);
   assert.doesNotMatch(profileSource, /\?drink=\$/);
 });
+
+test("главная: ссылка на профиль одна — в чипе участника, без дубля в описании", () => {
+  assert.match(appSource, /class="view-chip__profile" href="profile\.html\?u=/);
+  assert.doesNotMatch(appSource, /Профиль и отзывы/);
+  assert.doesNotMatch(appSource, /viewDescription\.insertAdjacentHTML/);
+});

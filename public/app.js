@@ -179,10 +179,6 @@
         ? `Личный тирлист участника «${person?.name || ""}». Здесь чужие голоса ни на что не влияют.`
         : `У ${person?.name || "участника"} пока нет выставленных оценок. Места уже накрыты — осталось начать дегустацию.`;
       document.querySelector("#rating-title").textContent = `Стол: ${person?.name || ""}`;
-      viewDescription.insertAdjacentHTML(
-        "beforeend",
-        ` <a class="header-cab" href="profile.html?u=${encodeURIComponent(activeView)}">Профиль и отзывы →</a>`,
-      );
     }
     if (isFiltering()) {
       const shown = data.drinks.filter((drink) => {
