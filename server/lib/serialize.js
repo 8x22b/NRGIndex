@@ -35,6 +35,7 @@ function userToParticipant(row) {
     initials: normalizeInitials(row.initials, row.display_name),
     role: row.title || "",
     color: row.color || "#9fb7ff",
+    avatar: row.avatar_path || "",
   };
 }
 
@@ -47,6 +48,7 @@ function userToApi(row) {
     title: row.title,
     initials: normalizeInitials(row.initials, row.display_name),
     color: row.color || "#9fb7ff",
+    avatar: row.avatar_path || "",
     isActive: Boolean(row.is_active),
     isPublic: Boolean(row.is_public),
     mustChangePassword: Boolean(row.must_change_password),

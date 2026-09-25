@@ -547,6 +547,8 @@ a.review-link { text-decoration: none; }
 /* --- кабинет: дубли, фильтр, неоценённые --- */
 .similar-box { margin-top: 1.2rem; padding: 1rem; border: 1px solid rgba(255,116,72,.45); border-radius: .8rem; background: rgba(255,116,72,.06); }
 .similar-box__title { margin: 0 0 .6rem; color: var(--orange); font-size: .7rem; font-weight: 700; }
+.similar-box__ack { display: flex; align-items: center; gap: .5rem; margin-top: .8rem; padding-top: .8rem; border-top: 1px dashed rgba(255,116,72,.35); color: var(--paper); font-size: .72rem; font-weight: 600; cursor: pointer; }
+.similar-box__ack input { width: auto; margin: 0; accent-color: var(--orange); }
 .similar-row { display: grid; grid-template-columns: 3rem minmax(0, 1fr) auto; gap: .8rem; align-items: center; padding: .5rem 0; border-top: 1px solid var(--line); }
 .similar-row:first-child { border-top: 0; }
 .similar-row img { width: 3rem; height: 3.8rem; object-fit: contain; border-radius: .4rem; background: radial-gradient(circle, #2c2320, #151311); }
@@ -741,4 +743,17 @@ a.reviewer:hover b { text-decoration: underline; }
   .opinion-dialog__title h3 { font-size: 1.4rem; }
   .opinion-ai__row { flex-wrap: wrap; }
   .opinion-ai__row input { flex: 1 1 100%; }
+}
+
+/* --- аватары --- */
+.cab-profile__avatar img,
+.avatar-editor__preview img,
+.view-chip__number img,
+.profile-avatar img,
+.reviewer__avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+.avatar-editor { display: flex; align-items: center; gap: .75rem; margin: .7rem 0 .3rem; }
+.avatar-editor__preview {
+  display: grid; place-items: center; flex: 0 0 auto; width: 4rem; aspect-ratio: 1;
+  border: 1px solid color-mix(in srgb, var(--person-color, #9fb7ff) 70%, white); border-radius: 50%;
+  color: var(--person-color, #9fb7ff); font-size: .8rem; font-weight: 700; overflow: hidden; text-transform: uppercase;
 }
