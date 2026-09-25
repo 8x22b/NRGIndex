@@ -590,6 +590,14 @@ a.review-link { text-decoration: none; }
 .dist-bar__fill { width: 100%; min-height: 3px; border-radius: .4rem .4rem .15rem .15rem; background: linear-gradient(180deg, var(--tier-color), color-mix(in srgb, var(--tier-color) 35%, #151311)); transition: height .8s var(--ease); }
 .dist-bar__count { color: var(--muted); font-size: .6rem; font-variant-numeric: tabular-nums; }
 .dist-bar b { color: var(--tier-color); font: 600 italic 1.5rem/1 var(--serif); }
+.profile-activity { grid-column: 1 / -1; display: grid; gap: .8rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
+.profile-activity .eyebrow { margin: 0; }
+.activity-months { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .7rem; align-items: end; height: 4.6rem; }
+.activity-month { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: .35rem; }
+.activity-month__bar { display: block; width: 100%; max-width: 3.4rem; min-height: 4px; border-radius: .4rem .4rem .15rem .15rem; background: linear-gradient(180deg, var(--acid), color-mix(in srgb, var(--acid) 30%, #151311)); transition: height .8s var(--ease); }
+.activity-month__bar.is-empty { background: rgba(255,255,255,.1); }
+.activity-month small { color: var(--muted); font-size: .48rem; letter-spacing: .14em; text-transform: uppercase; }
+.profile-activity__copy { margin: 0; }
 .profile-block { margin-bottom: 1.5rem; }
 .profile-block__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin: 2.5rem 0 1rem; }
 .profile-block__head h2 { margin: 0; font: 500 clamp(2.2rem, 4vw, 3.4rem)/.9 var(--serif); letter-spacing: -.04em; }

@@ -26,7 +26,7 @@
     return json;
   };
 
-  const state = { me: null, data: null, tab: "drinks", removeImage: false };
+  const state = { me: null, data: null, tab: "drinks", removeImage: false, stats: null, statsDays: 30 };
   // Исходник фото ДО вырезания фона (строго JPEG) — для отправки в Nano Banana.
   // Заполняется при выборе файла/ссылки/ленты; для уже сохранённого фото оригинала
   // нет — тогда шлём текущее с пометкой.
@@ -82,10 +82,11 @@
     document.querySelectorAll("#admin-tabs .btn").forEach((button) => {
       button.classList.toggle("is-active", button.dataset.tab === tab);
     });
-    for (const name of ["drinks", "tiers", "users", "settings", "audit"]) {
+    for (const name of ["drinks", "tiers", "users", "settings", "audit", "stats"]) {
       $(`tab-${name}`).hidden = name !== tab;
     }
     render();
+    if (tab === "stats") loadStats();
   };
 
   const render = () => {
@@ -93,6 +94,7 @@
     else if (state.tab === "tiers") renderTiers();
     else if (state.tab === "users") renderUsers();
     else if (state.tab === "settings") renderSettings();
+    else if (state.tab === "stats") renderStats();
     else renderAudit();
   };
 
@@ -1048,6 +1050,355 @@
 
   $("audit-search").addEventListener("input", () => renderAudit());
   $("audit-filter").addEventListener("change", () => renderAudit());
+
+  /* ---------- статистика ---------- */
+  const TIER_COLORS = { S: "#ff5f5a", A: "#f1a653", B: "#e7d471", C: "#8ebd93", D: "#8093b7" };
+
+  const safeColor = (value, fallback) => (/^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? value : fallback);
+
+  const wordForm = (value, forms) => {
+    const n = Math.abs(value) % 100;
+    const n1 = n % 10;
+    if (n > 10 && n < 20) return forms[2];
+    if (n1 > 1 && n1 < 5) return forms[1];
+    if (n1 === 1) return forms[0];
+    return forms[2];
+  };
+
+  const parseDbTime = (value) => Date.parse(String(value || "").replace(" ", "T") + "Z") || 0;
+
+  const timeAgo = (value) => {
+    const ts = parseDbTime(value);
+    if (!ts) return "—";
+    const minutes = Math.round((Date.now() - ts) / 60000);
+    if (minutes < 1) return "только что";
+    if (minutes < 60) return `${minutes} мин назад`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} ч назад`;
+    const days = Math.round(hours / 24);
+    return days === 1 ? "вчера" : `${days} дн назад`;
+  };
+
+  const fmtNumber = (value) => new Intl.NumberFormat("ru-RU").format(value || 0);
+
+  // Столбики по дням: оценки — жёлтая часть, новые банки — оранжевая сверху.
+  const barsChart = (days) => {
+    const W = 1100;
+    const H = 210;
+    const left = 30;
+    const bottom = 26;
+    const top = 12;
+    const innerW = W - left - 10;
+    const innerH = H - bottom - top;
+    const max = Math.max(1, ...days.map((day) => day.ratings + day.drinks));
+    const step = innerW / days.length;
+    const barW = Math.max(3, Math.min(18, step * 0.62));
+    const bars = days
+      .map((day, index) => {
+        const x = left + index * step + (step - barW) / 2;
+        const total = day.ratings + day.drinks;
+        const height = (total / max) * innerH;
+        const drinksH = total ? (day.drinks / total) * height : 0;
+        const ratingsH = Math.max(0, height - drinksH);
+        const y = H - bottom - height;
+        const result =
+          ratingsH > 0
+            ? `<rect x="${x.toFixed(1)}" y="${(y + drinksH).toFixed(1)}" width="${barW.toFixed(1)}" height="${ratingsH.toFixed(1)}" rx="2" fill="url(#statsBars)"><title>${day.label}: ${day.ratings} ${wordForm(day.ratings, ["оценка", "оценки", "оценок"])}</title></rect>`
+            : "";
+        const drinks =
+          drinksH > 0
+            ? `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${drinksH.toFixed(1)}" rx="2" fill="#ff7448"><title>${day.label}: новых банок ${day.drinks}</title></rect>`
+            : "";
+        return result + drinks;
+      })
+      .join("");
+    const labelEvery = Math.ceil(days.length / 8);
+    const labels = days
+      .map((day, index) =>
+        index % labelEvery === 0
+          ? `<text x="${(left + index * step + step / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" fill="rgba(255,255,255,.42)">${day.label}</text>`
+          : "",
+      )
+      .join("");
+    const grid = [...new Set([0, Math.round(max / 2), max])]
+      .map((value) => {
+        const y = H - bottom - (value / max) * innerH;
+        return `<line x1="${left}" x2="${W - 10}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,.07)"/><text x="${left - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="rgba(255,255,255,.35)">${value}</text>`;
+      })
+      .join("");
+    return `<svg class="stats-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Оценки и новые банки по дням">
+      <defs><linearGradient id="statsBars" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0" stop-color="#efee87" stop-opacity=".3"/><stop offset="1" stop-color="#efee87"/>
+      </linearGradient></defs>
+      ${grid}${bars}${labels}
+    </svg>`;
+  };
+
+  // Накопительный рост оценок за период — мягкая линия с заливкой.
+  const areaChart = (days) => {
+    const W = 1100;
+    const H = 190;
+    const left = 30;
+    const bottom = 22;
+    const top = 12;
+    const innerW = W - left - 10;
+    const innerH = H - bottom - top;
+    let acc = 0;
+    const values = days.map((day) => (acc += day.ratings));
+    const max = Math.max(1, ...values);
+    const points = values.map((value, index) => [
+      left + (days.length === 1 ? innerW / 2 : (index / (days.length - 1)) * innerW),
+      top + innerH - (value / max) * innerH,
+    ]);
+    const line = points.map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+    const area = `${line} L${points.at(-1)[0].toFixed(1)} ${H - bottom} L${points[0][0].toFixed(1)} ${H - bottom} Z`;
+    const labelIndexes = [0, Math.floor((days.length - 1) / 2), days.length - 1].filter(
+      (value, index, list) => list.indexOf(value) === index,
+    );
+    const labels = labelIndexes
+      .map((index) => {
+        const x = left + (days.length === 1 ? innerW / 2 : (index / (days.length - 1)) * innerW);
+        return `<text x="${x.toFixed(1)}" y="${H - 6}" text-anchor="middle" fill="rgba(255,255,255,.42)">${days[index].label}</text>`;
+      })
+      .join("");
+    const last = points.at(-1);
+    return `<svg class="stats-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Накопительный рост оценок">
+      <defs><linearGradient id="statsArea" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#8ebd93" stop-opacity=".45"/><stop offset="1" stop-color="#8ebd93" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${area}" fill="url(#statsArea)"/>
+      <path d="${line}" fill="none" stroke="#8ebd93" stroke-width="2"/>
+      <circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.5" fill="#efee87"/>
+      <text x="${last[0].toFixed(1)}" y="${(last[1] - 8).toFixed(1)}" text-anchor="end" fill="rgba(255,255,255,.7)">${values.at(-1)}</text>
+      ${labels}
+    </svg>`;
+  };
+
+  const donutChart = (tiers, total) => {
+    const radius = 54;
+    const circumference = 2 * Math.PI * radius;
+    let offset = 0;
+    const segments = tiers
+      .filter((tier) => tier.count > 0)
+      .map((tier) => {
+        const length = (tier.count / total) * circumference;
+        const segment = `<circle cx="70" cy="70" r="${radius}" fill="none" stroke="${safeColor(TIER_COLORS[tier.tier], "#ff4f79")}" stroke-width="14" stroke-dasharray="${length.toFixed(2)} ${(circumference - length).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 70 70)"><title>${tier.tier}: ${tier.count}</title></circle>`;
+        offset += length;
+        return segment;
+      })
+      .join("");
+    return `<svg viewBox="0 0 140 140" class="stats-donut__svg" role="img" aria-label="Распределение тиров">
+      <circle cx="70" cy="70" r="${radius}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="14"/>
+      ${segments}
+      <text x="70" y="72" text-anchor="middle" class="stats-donut__total">${total}</text>
+      <text x="70" y="88" text-anchor="middle" fill="rgba(255,255,255,.45)">ОЦЕНОК</text>
+    </svg>`;
+  };
+
+  const heatmapGrid = (cells) => {
+    const byKey = new Map(cells.map((cell) => [`${cell.w}:${cell.h}`, cell.n]));
+    const max = Math.max(1, ...cells.map((cell) => cell.n));
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    const names = { 1: "пн", 2: "вт", 3: "ср", 4: "чт", 5: "пт", 6: "сб", 0: "вс" };
+    const head = `<span class="stats-heat__label"></span>${Array.from(
+      { length: 24 },
+      (_, hour) => `<span class="stats-heat__hour">${hour % 3 === 0 ? hour : ""}</span>`,
+    ).join("")}`;
+    const rows = order
+      .map((weekday) => {
+        const squares = Array.from({ length: 24 }, (_, hour) => {
+          const count = byKey.get(`${weekday}:${hour}`) || 0;
+          const label = `${names[weekday]} ${String(hour).padStart(2, "0")}:00 — ${count} ${wordForm(count, ["событие", "события", "событий"])}`;
+          return `<span class="heat-cell" style="--heat:${Number((count / max).toFixed(2))}" title="${esc(label)}"></span>`;
+        }).join("");
+        return `<span class="stats-heat__label">${names[weekday]}</span>${squares}`;
+      })
+      .join("");
+    return `<div class="stats-heat">${head}${rows}</div>`;
+  };
+
+  const topDrinksList = (drinks) => {
+    const max = Math.max(1, ...drinks.map((drink) => drink.votes));
+    return `<div class="stats-top">${drinks
+      .map(
+        (drink, index) => `
+        <div class="stats-top__row">
+          <span class="stats-top__rank">${index + 1}</span>
+          <img src="${esc(drink.image)}" alt="" loading="lazy">
+          <div class="stats-top__main"><b>${esc(drink.name)}</b><small>${esc(drink.brand)}${drink.published ? "" : " · скрыт"}</small></div>
+          <span class="stats-top__bar"><i style="width:${Number(((drink.votes / max) * 100).toFixed(1))}%"></i></span>
+          <span class="stats-top__value">${drink.votes} ${wordForm(drink.votes, ["оценка", "оценки", "оценок"])}${drink.avgScore ? ` · ${String(drink.avgScore).replace(".", ",")}` : ""}</span>
+        </div>`,
+      )
+      .join("")}</div>`;
+  };
+
+  const topUsersList = (users) => {
+    const max = Math.max(1, ...users.map((user) => user.ratings + user.added));
+    return `<div class="stats-top">${users
+      .map(
+        (user, index) => `
+        <div class="stats-top__row">
+          <span class="stats-top__rank">${index + 1}</span>
+          <span class="stats-avatar" style="--person-color:${safeColor(user.color, "#9fb7ff")}">${esc(user.initials)}</span>
+          <div class="stats-top__main"><b>${esc(user.name)}</b><small>${user.reviews} ${wordForm(user.reviews, ["отзыв", "отзыва", "отзывов"])} · ${user.added} ${wordForm(user.added, ["банка", "банки", "банок"])}${user.lastSeen ? ` · был ${timeAgo(user.lastSeen)}` : ""}</small></div>
+          <span class="stats-top__bar"><i style="width:${Number((((user.ratings + user.added) / max) * 100).toFixed(1))}%"></i></span>
+          <span class="stats-top__value">${user.ratings} ${wordForm(user.ratings, ["оценка", "оценки", "оценок"])}</span>
+        </div>`,
+      )
+      .join("")}</div>`;
+  };
+
+  const onlineMarkup = (online) =>
+    online.length
+      ? `<div class="stats-online">${online
+          .map(
+            (user) => `
+          <div class="stats-online__row">
+            <span class="stats-online__dot"></span>
+            <span class="stats-avatar" style="--person-color:${safeColor(user.color, "#9fb7ff")}">${esc(user.initials)}</span>
+            <div class="stats-online__main">
+              <b>${esc(user.name)}</b>
+              <small>${esc(user.device)}${user.ip ? ` · ${esc(user.ip)}` : ""}</small>
+            </div>
+            <span class="stats-online__time">${timeAgo(user.lastSeen)}</span>
+          </div>`,
+          )
+          .join("")}</div>`
+      : `<p class="stats-empty">Сейчас никого — все офлайн.</p>`;
+
+  const recentMarkup = (recent) =>
+    recent.length
+      ? `<ul class="audit-list">${recent
+          .map((row) => {
+            const kind = row.action.includes("create")
+              ? "create"
+              : row.action.includes("delete")
+                ? "delete"
+                : row.action.includes("undo")
+                  ? "undo"
+                  : "update";
+            const icon = { create: "+", delete: "×", update: "✎", undo: "↺" }[kind];
+            return `
+            <li class="audit-item">
+              <span class="audit-item__time">${timeAgo(row.at)}</span>
+              <span class="audit-item__icon audit-item__icon--${kind}">${icon}</span>
+              <div>
+                <b class="audit-item__who">${esc(row.who)}</b>
+                <p class="audit-item__summary">${esc(row.summary)}</p>
+              </div>
+            </li>`;
+          })
+          .join("")}</ul>`
+      : `<p class="stats-empty">Журнал пока пуст.</p>`;
+
+  const statCard = (label, value, note, extra = "") => `
+    <div class="stats-card${extra}">
+      <span>${label}</span>
+      <b>${value}</b>
+      <small>${note}</small>
+    </div>`;
+
+  const renderStats = () => {
+    const data = state.stats;
+    if (!data) {
+      $("stats-body").innerHTML = `<p class="stats-empty">Считаю статистику…</p>`;
+      return;
+    }
+    const { totals, period, days, tiers, topDrinks, topUsers, online, recent } = data;
+    const totalRatings = tiers.reduce((sum, tier) => sum + tier.count, 0);
+    $("stats-updated").textContent = `обновлено в ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} · онлайн считается за 15 минут`;
+    $("stats-body").innerHTML = `
+      <div class="stats-cards">
+        ${statCard("Банки", fmtNumber(totals.drinks), `${totals.published} опубликовано · ${totals.hidden} скрыто`)}
+        ${statCard("Участники", fmtNumber(totals.activeUsers), `${totals.sharedUsers} публичных профиля`)}
+        ${statCard("Оценки", fmtNumber(totals.ratings), `${totals.reviews} ${wordForm(totals.reviews, ["отзыв", "отзыва", "отзывов"])} с текстом`)}
+        ${statCard("Средний балл", totals.avgScore === null ? "—" : String(totals.avgScore).replace(".", ","), `${String(totals.ratingsPerDrink).replace(".", ",")} оценки на банку`)}
+        ${statCard("Онлайн", fmtNumber(online.length), "за последние 15 минут", " stats-card--online")}
+        ${statCard(`За ${data.period.days} дней`, `+${fmtNumber(period.ratings)}`, `оценок · ${period.drinks} банок · ${period.logins} заходов`)}
+      </div>
+      <div class="stats-grid">
+        <div class="stats-panel stats-panel--wide">
+          <div class="stats-panel__head"><h3>Активность по дням</h3><span class="admin-hint">${period.events} событий за период${period.bestDay ? ` · пик: ${period.bestDay.label} (${period.bestDay.events})` : ""}</span></div>
+          ${barsChart(days)}
+          <div class="stats-legend">
+            <span><i style="background:#efee87"></i>оценки</span>
+            <span><i style="background:#ff7448"></i>новые банки</span>
+            <span>заходы: ${period.logins}${period.failures ? ` · неудачных: ${period.failures}` : ""}</span>
+          </div>
+        </div>
+        <div class="stats-panel">
+          <div class="stats-panel__head"><h3>Рост оценок</h3><span class="admin-hint">накопительно за ${data.period.days} дней</span></div>
+          ${areaChart(days)}
+        </div>
+        <div class="stats-panel">
+          <div class="stats-panel__head"><h3>Онлайн сейчас</h3><span class="admin-hint">${online.length} ${wordForm(online.length, ["человек", "человека", "человек"])}</span></div>
+          ${onlineMarkup(online)}
+        </div>
+        <div class="stats-panel">
+          <div class="stats-panel__head"><h3>Распределение тиров</h3><span class="admin-hint">${fmtNumber(totalRatings)} оценок всего</span></div>
+          ${
+            totalRatings
+              ? `<div class="stats-donut">${donutChart(tiers, totalRatings)}<div class="stats-donut__legend">${tiers
+                  .map(
+                    (tier) => `
+                  <div class="stats-donut__row">
+                    <i style="background:${safeColor(TIER_COLORS[tier.tier], "#ff4f79")}"></i>
+                    <span>${esc(tier.tier)}${tier.score ? ` · ${tier.score}` : ""}</span>
+                    <b>${tier.count}${totalRatings ? ` · ${Math.round((tier.count / totalRatings) * 100)}%` : ""}</b>
+                  </div>`,
+                  )
+                  .join("")}</div></div>`
+              : `<p class="stats-empty">Оценок ещё нет.</p>`
+          }
+        </div>
+        <div class="stats-panel">
+          <div class="stats-panel__head"><h3>Топ банок</h3><span class="admin-hint">по числу оценок</span></div>
+          ${topDrinks.length ? topDrinksList(topDrinks) : `<p class="stats-empty">Пока никто ничего не оценил.</p>`}
+        </div>
+        <div class="stats-panel">
+          <div class="stats-panel__head"><h3>Топ участников</h3><span class="admin-hint">оценки и добавленные банки</span></div>
+          ${topUsers.length ? topUsersList(topUsers) : `<p class="stats-empty">Пока пусто.</p>`}
+        </div>
+        <div class="stats-panel stats-panel--wide">
+          <div class="stats-panel__head"><h3>Когда что-то происходит</h3><span class="admin-hint">журнал за 90 дней · будни × часы</span></div>
+          ${heatmapGrid(data.heatmap)}
+        </div>
+        <div class="stats-panel stats-panel--wide">
+          <div class="stats-panel__head"><h3>Последние изменения</h3><span class="admin-hint">${recent[0] ? `самое свежее — ${timeAgo(recent[0].at)}` : "пока ничего"}</span></div>
+          ${recentMarkup(recent)}
+        </div>
+      </div>`;
+  };
+
+  const loadStats = async ({ refresh = false } = {}) => {
+    if (!refresh && state.stats && state.stats.period.days === state.statsDays) {
+      renderStats();
+      return;
+    }
+    try {
+      state.stats = await api("GET", `api/admin/stats?days=${state.statsDays}`);
+      renderStats();
+    } catch (error) {
+      status("global-status", error.message, true);
+    }
+  };
+
+  $("stats-period").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-days]");
+    if (!button) return;
+    state.statsDays = Number(button.dataset.days);
+    document
+      .querySelectorAll("#stats-period [data-days]")
+      .forEach((item) => item.classList.toggle("is-active", item === button));
+    state.stats = null;
+    loadStats();
+  });
+
+  // Раз в минуту обновляем только если открыта вкладка статистики: онлайн не застывает.
+  setInterval(() => {
+    if (state.tab === "stats" && document.visibilityState === "visible") loadStats({ refresh: true });
+  }, 60_000);
 
   /* ---------- helpers ---------- */
   // В Nano Banana шлём исходник ДО вырезания фона и строго JPEG:

@@ -39,6 +39,19 @@
 
   const username = new URLSearchParams(location.search).get("u") || "";
 
+  // «сегодня / вчера / N дней назад» — мягкие подписи для активности
+  const parseDbTime = (value) => Date.parse(String(value || "").replace(" ", "T") + "Z") || 0;
+  const timeAgoSoft = (value) => {
+    const ts = parseDbTime(value);
+    if (!ts) return "";
+    const days = Math.floor((Date.now() - ts) / 86400000);
+    if (days <= 0) return "сегодня";
+    if (days === 1) return "вчера";
+    if (days < 30) return `${days} ${wordForm(days, ["день", "дня", "дней"])} назад`;
+    const months = Math.round(days / 30);
+    return `${months} ${wordForm(months, ["месяц", "месяца", "месяцев"])} назад`;
+  };
+
   const renderPeople = (participants, active) => {
     $("profile-people").innerHTML = participants
       .map(
@@ -79,6 +92,35 @@
             ? "в целом согласен со столом"
             : "идёт против стола";
 
+    // Мягкий блок активности: полгода столбиками, без цифр ради цифр.
+    const activity = stats.activity || { months: [], last30: 0, lastAt: null };
+    const activityMax = Math.max(1, ...activity.months.map((month) => month.ratings + month.added));
+    const ratings6 = activity.months.reduce((sum, month) => sum + month.ratings, 0);
+    const added6 = activity.months.reduce((sum, month) => sum + month.added, 0);
+    const activityCopy =
+      ratings6 + added6
+        ? `${ratings6} ${wordForm(ratings6, ["оценка", "оценки", "оценок"])} и ${added6} ${wordForm(added6, ["банка", "банки", "банок"])} за полгода${activity.lastAt ? ` · последняя активность — ${timeAgoSoft(activity.lastAt)}` : ""}`
+        : "пока тихо — ни оценок, ни новых банок";
+    const activityMarkup = `
+      <div class="profile-activity">
+        <p class="eyebrow">Активность</p>
+        <div class="activity-months" aria-label="Оценки и банки за последние полгода">
+          ${activity.months
+            .map((month) => {
+              const total = month.ratings + month.added;
+              const height = total ? Math.max(8, Math.round((total / activityMax) * 100)) : 4;
+              const tip = `${month.label}: ${month.ratings} ${wordForm(month.ratings, ["оценка", "оценки", "оценок"])}, ${month.added} ${wordForm(month.added, ["банка", "банки", "банок"])}`;
+              return `
+              <div class="activity-month" title="${esc(tip)}">
+                <span class="activity-month__bar${total ? "" : " is-empty"}" style="height:${Number(height)}%"></span>
+                <small>${month.label}</small>
+              </div>`;
+            })
+            .join("")}
+        </div>
+        <p class="hint profile-activity__copy">${esc(activityCopy)}</p>
+      </div>`;
+
     $("profile-hero").innerHTML = `
       <div class="profile-id" style="--person-color:${color}">
         <span class="profile-avatar">${esc(profile.initials)}</span>
@@ -96,6 +138,7 @@
         <div><b>${stats.agreement === null ? "—" : `${stats.agreement}%`}</b><span>${agreementCopy}</span></div>
       </div>
       <div class="profile-dist" aria-label="Распределение по тирам">${bars}</div>
+      ${activityMarkup}
     `;
   };
 

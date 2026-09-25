@@ -115,6 +115,249 @@ module.exports = (db, auth, config) => {
     res.json({ me: req.user, drinks, tiers, users, settings, audit });
   });
 
+  const MONTHS_RU = ["янв", "фев", "мар", "апр", "май", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+
+  function deviceLabel(userAgent) {
+    const ua = String(userAgent || "");
+    const os = /Android/i.test(ua)
+      ? "Android"
+      : /iPhone|iPad|iPod|iOS/i.test(ua)
+        ? "iOS"
+        : /Windows/i.test(ua)
+          ? "Windows"
+          : /Mac OS|Macintosh/i.test(ua)
+            ? "macOS"
+            : /Linux/i.test(ua)
+              ? "Linux"
+              : "";
+    const browser = /Firefox\//.test(ua)
+      ? "Firefox"
+      : /Edg\//.test(ua)
+        ? "Edge"
+        : /OPR\//.test(ua)
+          ? "Opera"
+          : /Chrome\//.test(ua)
+            ? "Chrome"
+            : /Safari\//.test(ua)
+              ? "Safari"
+              : /curl/i.test(ua)
+                ? "curl"
+                : /PowerShell/i.test(ua)
+                  ? "PowerShell"
+                  : "";
+    return [browser, os].filter(Boolean).join(" · ") || "браузер не опознан";
+  }
+
+  // Полная статистика для админов: сводка, активность по дням, тиры, топы,
+  // онлайн-сессии и последние изменения. Все цифры считает SQLite.
+  router.get("/stats", requireAdmin, (req, res) => {
+    const days = Math.min(90, Math.max(7, Number(req.query?.days) || 30));
+    const since = `-${days - 1} days`;
+
+    const drinks = db
+      .prepare("SELECT COUNT(*) AS n, COALESCE(SUM(is_published), 0) AS published FROM drinks")
+      .get();
+    const users = db
+      .prepare(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(is_active), 0) AS active, COALESCE(SUM(is_public), 0) AS shared FROM users",
+      )
+      .get();
+    const ratings = db
+      .prepare("SELECT COUNT(*) AS n, COALESCE(SUM(TRIM(review) <> ''), 0) AS reviews FROM ratings")
+      .get();
+    const avgScore = db
+      .prepare("SELECT AVG(t.score) AS value FROM ratings r JOIN tiers t ON t.id = r.tier_id")
+      .get().value;
+    const relations = db.prepare("SELECT COUNT(*) AS n FROM drink_relations").get().n;
+
+    const ratingsByDay = db
+      .prepare("SELECT date(updated_at) AS d, COUNT(*) AS n FROM ratings WHERE updated_at >= date('now', ?) GROUP BY d")
+      .all(since);
+    const createdByDay = db
+      .prepare("SELECT date(created_at) AS d, COUNT(*) AS n FROM drinks WHERE created_at >= date('now', ?) GROUP BY d")
+      .all(since);
+    const loginsByDay = db
+      .prepare(
+        "SELECT date(created_at) AS d, COUNT(*) AS n, COALESCE(SUM(success), 0) AS ok FROM login_attempts WHERE created_at >= date('now', ?) GROUP BY d",
+      )
+      .all(since);
+    const eventsByDay = db
+      .prepare("SELECT date(created_at) AS d, COUNT(*) AS n FROM audit_log WHERE created_at >= date('now', ?) GROUP BY d")
+      .all(since);
+
+    const now = new Date();
+    const dayRows = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      date.setUTCDate(date.getUTCDate() - i);
+      dayRows.push({
+        date: date.toISOString().slice(0, 10),
+        label: `${date.getUTCDate()} ${MONTHS_RU[date.getUTCMonth()]}`,
+        ratings: 0,
+        drinks: 0,
+        logins: 0,
+        failures: 0,
+        events: 0,
+      });
+    }
+    const byDate = new Map(dayRows.map((row) => [row.date, row]));
+    for (const row of ratingsByDay) if (byDate.has(row.d)) byDate.get(row.d).ratings = row.n;
+    for (const row of createdByDay) if (byDate.has(row.d)) byDate.get(row.d).drinks = row.n;
+    for (const row of loginsByDay) {
+      const item = byDate.get(row.d);
+      if (item) {
+        item.logins = row.ok;
+        item.failures = row.n - row.ok;
+      }
+    }
+    for (const row of eventsByDay) if (byDate.has(row.d)) byDate.get(row.d).events = row.n;
+
+    const tierList = db.prepare("SELECT id, score FROM tiers ORDER BY position, id").all();
+    const tierCounts = new Map(
+      db.prepare("SELECT tier_id AS tier, COUNT(*) AS n FROM ratings GROUP BY tier_id").all().map((row) => [row.tier, row.n]),
+    );
+    const tierDistribution = tierList.map((tier) => ({
+      tier: tier.id,
+      score: tier.score,
+      count: tierCounts.get(tier.id) || 0,
+    }));
+
+    const topDrinks = db
+      .prepare(
+        `SELECT d.slug, d.name, d.brand, d.image_path, d.is_published,
+                COUNT(r.user_id) AS votes, AVG(t.score) AS avg_score
+         FROM drinks d
+         LEFT JOIN ratings r ON r.drink_id = d.id
+         LEFT JOIN tiers t ON t.id = r.tier_id
+         GROUP BY d.id
+         HAVING votes > 0
+         ORDER BY votes DESC, avg_score DESC
+         LIMIT 8`,
+      )
+      .all()
+      .map((row) => ({
+        slug: row.slug,
+        name: row.name,
+        brand: row.brand,
+        image: row.image_path || "assets/favicon.svg",
+        published: Boolean(row.is_published),
+        votes: row.votes,
+        avgScore: row.avg_score === null ? null : Math.round(row.avg_score * 10) / 10,
+      }));
+
+    const topUsers = db
+      .prepare(
+        `SELECT u.id, u.username, u.display_name, u.initials, u.color, u.role,
+                (SELECT COUNT(*) FROM ratings r WHERE r.user_id = u.id) AS ratings,
+                (SELECT COUNT(*) FROM ratings r WHERE r.user_id = u.id AND TRIM(r.review) <> '') AS reviews,
+                (SELECT COUNT(*) FROM drinks d WHERE d.created_by = u.id) AS added,
+                (SELECT MAX(s.last_seen_at) FROM sessions s WHERE s.user_id = u.id) AS last_seen
+         FROM users u
+         WHERE u.is_active = 1
+         ORDER BY ratings DESC, added DESC, u.id
+         LIMIT 8`,
+      )
+      .all()
+      .map((row) => ({
+        username: row.username,
+        name: row.display_name,
+        initials: row.initials,
+        color: row.color,
+        role: row.role,
+        ratings: row.ratings,
+        reviews: row.reviews,
+        added: row.added,
+        lastSeen: row.last_seen,
+      }));
+
+    const online = db
+      .prepare(
+        `SELECT u.id, u.username, u.display_name, u.initials, u.color, u.role,
+                MAX(s.last_seen_at) AS last_seen, s.ip, s.user_agent
+         FROM sessions s JOIN users u ON u.id = s.user_id
+         WHERE s.last_seen_at > datetime('now', '-15 minutes') AND u.is_active = 1
+         GROUP BY u.id
+         ORDER BY last_seen DESC`,
+      )
+      .all()
+      .map((row) => ({
+        username: row.username,
+        name: row.display_name,
+        initials: row.initials,
+        color: row.color,
+        role: row.role,
+        ip: row.ip,
+        device: deviceLabel(row.user_agent),
+        lastSeen: row.last_seen,
+      }));
+
+    const recent = db
+      .prepare(
+        `SELECT a.id, a.action, a.summary, a.details, a.created_at,
+                u.display_name, u.initials, u.color
+         FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+         ORDER BY a.id DESC LIMIT 12`,
+      )
+      .all()
+      .map((row) => ({
+        id: row.id,
+        action: row.action,
+        summary: String(row.summary || row.details || "").slice(0, 240),
+        at: row.created_at,
+        who: row.display_name || "система",
+        initials: row.initials || "??",
+        color: row.color || "#9fb7ff",
+      }));
+
+    const heatmap = db
+      .prepare(
+        `SELECT CAST(strftime('%w', created_at) AS INTEGER) AS w,
+                CAST(strftime('%H', created_at) AS INTEGER) AS h,
+                COUNT(*) AS n
+         FROM audit_log
+         WHERE created_at >= datetime('now', '-90 days')
+         GROUP BY w, h`,
+      )
+      .all();
+
+    const sum = (key) => dayRows.reduce((total, row) => total + row[key], 0);
+    const bestDay = dayRows.reduce((best, row) => (row.events > (best?.events || 0) ? row : best), null);
+
+    res.json({
+      days,
+      totals: {
+        drinks: drinks.n,
+        published: drinks.published,
+        hidden: drinks.n - drinks.published,
+        users: users.n,
+        activeUsers: users.active,
+        sharedUsers: users.shared,
+        ratings: ratings.n,
+        reviews: ratings.reviews,
+        relations,
+        avgScore: avgScore === null ? null : Math.round(avgScore * 100) / 100,
+        ratingsPerDrink: drinks.n ? Math.round((ratings.n / drinks.n) * 10) / 10 : 0,
+        ratingsPerUser: users.active ? Math.round((ratings.n / users.active) * 10) / 10 : 0,
+      },
+      period: {
+        days,
+        ratings: sum("ratings"),
+        drinks: sum("drinks"),
+        logins: sum("logins"),
+        failures: sum("failures"),
+        events: sum("events"),
+        bestDay: bestDay && bestDay.events ? { date: bestDay.date, label: bestDay.label, events: bestDay.events } : null,
+      },
+      days: dayRows,
+      tiers: tierDistribution,
+      topDrinks,
+      topUsers,
+      online,
+      recent,
+      heatmap,
+    });
+  });
+
   router.post("/audit/:id/undo", requireAdmin, (req, res) => {
     const id = int(req.params.id, "id", { min: 1 });
     const { notes } = history.undoEntry(db, id, { actor: req.user, auth });
