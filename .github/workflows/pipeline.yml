@@ -58,11 +58,10 @@ jobs:
           kill "$server_pid"
 
   # Перепроверяем тот же коммит на боевом раннере: окружение деплоя бывает строже CI.
-  # На пуше в production джоба Tests пропущена — это нормально, тесты тут и есть гейт.
+  # Джоба не зависит от Tests: они бывают только на PR, а тут — свой прогон на раннере.
   pre-deploy:
     name: Pre-deploy tests
-    needs: test
-    if: ${{ always() && needs.test.result != 'failure' && needs.test.result != 'cancelled' && ((github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch') }}
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, nrgindex]
     steps:
       - uses: actions/checkout@v7
@@ -85,10 +84,12 @@ jobs:
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
 
+  # Деплой стартует только после успешного пре-деплоя (needs без собственных условий):
+  # если тесты на раннере упали — джоба просто не запустится. На PR пре-деплой пропущен,
+  # поэтому пропущен и деплой.
   deploy:
     name: Deploy to LXC
     needs: pre-deploy
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, nrgindex]
     environment: production
     steps:
