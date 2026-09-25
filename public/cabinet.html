@@ -62,7 +62,6 @@
         </div>
         <div class="cab-profile__meta"><b id="me-count">0</b><span id="me-count-label">оценок</span></div>
         <a class="btn btn--ghost" id="profile-link" href="profile.html">Мой профиль</a>
-        <a class="btn btn--ghost" id="profile-button" href="/profile.html" hidden>Мой профиль</a>
         <a class="btn" id="admin-button" href="/admin" hidden>Админ-панель</a>
         <button class="btn btn--ghost" type="button" id="btn-logout">Выйти</button>
       </div>
@@ -92,6 +91,10 @@
         <div class="similar-box" id="similar-box" hidden>
           <p class="similar-box__title">Похоже, такая банка уже в индексе — может, просто оценить её?</p>
           <div id="similar-list"></div>
+          <label class="similar-box__ack" id="similar-ack-wrap" hidden>
+            <input type="checkbox" id="similar-ack">
+            Это не тот энергос — добавить новую банку
+          </label>
         </div>
 
         <div class="parsed-card" id="smart-preview" hidden>
@@ -108,6 +111,7 @@
             <button class="btn btn--ghost" type="button" id="btn-retry-photo">Следующее фото</button>
             <button class="btn btn--ghost" type="button" id="btn-redraw" title="Перерисовать банку через Gemini: прямой ракурс, ровный фон. Жмите, если ракурс плохой или фон удалился криво">🍌 Перерисовать</button>
           </div>
+          <p class="hint" id="parsed-save-note">Сохраним всё разом: бренд, название, вкус, издание, тир, отзыв и фото выше.</p>
           <p class="hint">🍌 «Перерисовать» — жмите, если ракурс плохой или фон удалился криво.</p>
         </div>
 
@@ -232,6 +236,14 @@
 
       <details class="cabinet-ai">
         <summary>Аккаунт</summary>
+        <div class="avatar-editor">
+          <span class="avatar-editor__preview" id="avatar-preview" style="--person-color:#fff">?</span>
+          <label class="btn btn--ghost btn--file">Аватар
+            <input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          </label>
+          <button class="btn btn--ghost" type="button" id="btn-avatar-remove" hidden>Убрать</button>
+        </div>
+        <p class="form-status" id="avatar-status" aria-live="polite"></p>
         <div class="form-row">
           <input id="old-pass" type="password" placeholder="текущий пароль" autocomplete="current-password">
           <input id="change-pass" type="password" placeholder="новый пароль" autocomplete="new-password">

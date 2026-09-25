@@ -73,7 +73,7 @@
         (person, index) => `
       <div class="view-chip-wrap">
         <button class="view-chip" type="button" data-view="${esc(person.id)}">
-          <span class="view-chip__number" style="--person-color:${safeColor(person.color, "#9fb7ff")}">${esc(person.initials || String(index + 1).padStart(2, "0"))}</span>
+          <span class="view-chip__number" style="--person-color:${safeColor(person.color, "#9fb7ff")}">${person.avatar ? `<img src="${esc(person.avatar)}" alt="">` : esc(person.initials || String(index + 1).padStart(2, "0"))}</span>
           <span><b>${esc(person.name)}</b><small>${esc(person.role || `участник ${String(index + 1).padStart(2, "0")}`)}</small></span>
         </button>
         <a class="view-chip__profile" href="profile.html?u=${encodeURIComponent(person.id)}" aria-label="Открыть профиль ${esc(person.name)}">профиль →</a>
@@ -232,7 +232,7 @@
       return `
         <article class="review-row${rating ? "" : " is-untried"}">
           <a class="reviewer" href="profile.html?u=${encodeURIComponent(person.id)}" style="--person-color:${safeColor(person.color, "#9fb7ff")}" aria-label="Открыть профиль ${esc(person.name)}">
-            <span class="reviewer__avatar">${esc(person.initials)}</span>
+            <span class="reviewer__avatar">${person.avatar ? `<img src="${esc(person.avatar)}" alt="">` : esc(person.initials)}</span>
             <span><b>${esc(person.name)}</b><small>${esc(person.role)}</small><i class="reviewer__hint">профиль →</i></span>
           </a>
           <div class="review-tier ${rating ? "" : "is-empty"}">${esc(rating?.tier || "—")}</div>

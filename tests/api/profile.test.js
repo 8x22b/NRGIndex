@@ -236,7 +236,7 @@ test("на участника можно нажать: ссылки на про�
   const app = read("public/app.js");
   assert.match(app, /class="view-chip__profile" href="profile\.html\?u=/);
   assert.match(app, /<a class="reviewer" href="profile\.html\?u=/);
-  assert.match(read("public/cabinet.html"), /id="profile-button"/);
+  assert.match(read("public/cabinet.html"), /id="profile-link"/);
   assert.match(
     read("public/cabinet.js"),
     /profile\.html\?u=\$\{encodeURIComponent\(state\.me\.username\)\}/,

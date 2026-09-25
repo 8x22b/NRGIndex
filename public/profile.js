@@ -57,7 +57,7 @@
       .map(
         (person) => `
         <a class="view-chip ${person.id === active ? "is-active" : ""}" href="/profile.html?u=${encodeURIComponent(person.id)}">
-          <span class="view-chip__number" style="--person-color:${safeColor(person.color, "#9fb7ff")}">${esc(person.initials)}</span>
+          <span class="view-chip__number" style="--person-color:${safeColor(person.color, "#9fb7ff")}">${person.avatar ? `<img src="${esc(imgSrc(person.avatar))}" alt="">` : esc(person.initials)}</span>
           <span><b>${esc(person.name)}</b><small>${esc(person.role || "участник")}</small></span>
         </a>`,
       )
@@ -123,7 +123,7 @@
 
     $("profile-hero").innerHTML = `
       <div class="profile-id" style="--person-color:${color}">
-        <span class="profile-avatar">${esc(profile.initials)}</span>
+        <span class="profile-avatar">${profile.avatar ? `<img src="${esc(imgSrc(profile.avatar))}" alt="">` : esc(profile.initials)}</span>
         <div>
           <p class="eyebrow">Участник${profile.since ? ` · с ${esc(profile.since)}` : ""}</p>
           <h1>${esc(profile.name)}</h1>

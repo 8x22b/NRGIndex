@@ -232,6 +232,12 @@ test("кабинет: пользователь добавляет свой на�
   assert.ok(vb > vr + 40 && vb > vg, `акцент из картинки: ${res.json.drink.accent[0]}`);
 
   const slug = res.json.drink.slug;
+  // «Сохранится всё»: тир, отзыв и фото реально записаны вместе с банкой.
+  const mine = await request(ctx.base, "GET", "/api/cabinet/me", { cookie: userCookie });
+  const saved = mine.json.ratings.find((rating) => rating.drink === slug);
+  assert.equal(saved.tier, "A");
+  assert.equal(saved.review, "Хорошо бодрит");
+  assert.match(saved.image, /^\/uploads\//);
   const otherCookie = (await login(ctx.base, "other", "other-pass-123")).cookie;
   const forbidden = await request(ctx.base, "DELETE", `/api/cabinet/drinks/${slug}`, {
     cookie: otherCookie,
