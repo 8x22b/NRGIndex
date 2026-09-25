@@ -1,12 +1,12 @@
 name: Pipeline
 
-# Один workflow на всё: тесты на пуш/PR, пре-деплойные тесты и деплой на прод.
-# В интерфейсе Actions это один прогон: Tests → Pre-deploy tests → Deploy to LXC.
+# Тесты гоняем только там, где они реально нужны: на PR в production (гейт перед
+# мержем) и на боевом раннере перед самим деплоем. Пуш в master ничего не запускает.
 on:
   pull_request:
-    branches: [master, production]
+    branches: [production]
   push:
-    branches: [master, production]
+    branches: [production]
   workflow_dispatch:
 
 permissions:
@@ -17,8 +17,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Быстрый гейт на PR к production: без зелёных тестов мержить нельзя.
   test:
     name: Tests
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -56,10 +58,11 @@ jobs:
           kill "$server_pid"
 
   # Перепроверяем тот же коммит на боевом раннере: окружение деплоя бывает строже CI.
+  # На пуше в production джоба Tests пропущена — это нормально, тесты тут и есть гейт.
   pre-deploy:
     name: Pre-deploy tests
     needs: test
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch' }}
+    if: ${{ always() && needs.test.result != 'failure' && needs.test.result != 'cancelled' && ((github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch') }}
     runs-on: [self-hosted, nrgindex]
     steps:
       - uses: actions/checkout@v7
