@@ -83,6 +83,7 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
     throw new ApiError(503, "Ключ Gemini не настроен (админка → Настройки)", "gemini_not_configured");
   }
   const { mime, buffer } = imageFromDataUrl(imageDataUrl, { maxBytes: REDRAW_MAX_BYTES });
+  const startedAt = Date.now();
   let res;
   try {
     res = await fetchImpl("https://generativelanguage.googleapis.com/v1beta/interactions", {
@@ -120,6 +121,7 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
       completionTokens: Number(meta.candidatesTokenCount ?? meta.candidates_token_count ?? 0) || 0,
       totalTokens: Number(meta.totalTokenCount ?? meta.total_token_count ?? 0) || 0,
       costUsd: REDRAW_COST_USD,
+      ms: Date.now() - startedAt,
     },
   };
 }

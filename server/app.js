@@ -4,8 +4,24 @@ const helmet = require("helmet");
 const compression = require("compression");
 const cookieParser = require("cookie-parser");
 const { createAuth } = require("./auth");
+const { writeAudit } = require("./db");
 const { ApiError } = require("./lib/errors");
 const pkg = require("../package.json");
+
+// Ошибки сервера (5xx) — в журнал логов админки: без них видно только успешные действия.
+// Стек не пишем, только сообщение и адрес.
+function logServerError(db, req, err, status) {
+  try {
+    const message = String(err?.message || err || "внутренняя ошибка")
+      .replace(/\s+/g, " ")
+      .slice(0, 300);
+    writeAudit(db, req.user, "error", "error", String(status), String(`${req.method} ${req.originalUrl}`).slice(0, 300), {
+      summary: `Ошибка ${status}: ${message}`,
+    });
+  } catch {
+    /* журнал не должен ломать обработку ошибок */
+  }
+}
 
 function csrfGuard(req, res, next) {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
@@ -133,6 +149,8 @@ function createApp({ db, config }) {
 
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => {
+    const status = err?.status || err?.statusCode || 500;
+    if (status >= 500) logServerError(db, req, err, status);
     if (err instanceof ApiError) {
       return res.status(err.status).json({ error: err.message, code: err.code });
     }
