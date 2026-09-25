@@ -84,7 +84,13 @@
   };
 
   const cardTemplate = (drink, rating) => {
-    const value = rating.value ? rating.value.toFixed(1).replace(".0", "") : rating.tier;
+    const isAverage = activeView === "average";
+    // Средний балл показываем всегда с десятой долей: «5.0» — это среднее,
+    // а не тир S. Точное значение и число голосов — в подсказке.
+    const value = isAverage ? rating.value.toFixed(1) : rating.tier;
+    const badgeTitle = isAverage
+      ? `Средний балл ${rating.value.toFixed(2)} · ${rating.votes} ${wordForm(rating.votes, ["голос", "голоса", "голосов"])}`
+      : `Тир ${rating.tier}`;
     const accent = safeColor(drink.accent?.[0], tierColor(rating.tier));
     const voteText =
       activeView === "average"
@@ -95,7 +101,7 @@
       <button class="drink-card" type="button" data-drink="${esc(drink.id)}" style="--card-accent:${accent}" aria-label="Открыть карточку ${esc(drink.name)}">
         <span class="drink-card__visual">
           <span class="drink-card__votes">${esc(voteText)}</span>
-          <span class="drink-card__rank${activeView === "average" ? " is-num" : ""}">${esc(activeView === "average" ? value : rating.tier)}</span>
+          <span class="drink-card__rank${isAverage ? " is-num" : ""}" title="${esc(badgeTitle)}">${esc(isAverage ? value : rating.tier)}</span>
           ${drinkImg(drink, "(max-width: 720px) 45vw, 240px")}
         </span>
         <span class="drink-card__copy">
@@ -204,7 +210,7 @@
     const average = averageFor(drink);
     const votes = scoredRatings(drink).length;
     const scoreCopy = average
-      ? `${average.value.toFixed(1)} из 5<br>${votes} ${wordForm(votes, ["оценка", "оценки", "оценок"])} учтено`
+      ? `${average.value.toFixed(2)} из 5<br>${votes} ${wordForm(votes, ["оценка", "оценки", "оценок"])} учтено`
       : "оценок пока нет";
     const relatedDrinks = (drink.related || []).map(getDrink).filter(Boolean);
     const relatedMarkup = relatedDrinks.length

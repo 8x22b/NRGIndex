@@ -224,7 +224,7 @@ module.exports = (db, auth, config) => {
 
     const topDrinks = db
       .prepare(
-        `SELECT d.slug, d.name, d.brand, d.image_path, d.is_published,
+        `SELECT d.slug, d.name, d.brand, d.flavor, d.image_path, d.is_published,
                 COUNT(r.user_id) AS votes, AVG(t.score) AS avg_score
          FROM drinks d
          LEFT JOIN ratings r ON r.drink_id = d.id
@@ -239,6 +239,7 @@ module.exports = (db, auth, config) => {
         slug: row.slug,
         name: row.name,
         brand: row.brand,
+        flavor: row.flavor,
         image: row.image_path || "assets/favicon.svg",
         published: Boolean(row.is_published),
         votes: row.votes,
@@ -320,6 +321,37 @@ module.exports = (db, auth, config) => {
       )
       .all();
 
+    // ИИ-расходы: запросы/токены/цена по видам и моделям за период + всего за всё время
+    const roundCost = (value) => Math.round((Number(value) || 0) * 1e6) / 1e6;
+    const aiKinds = db
+      .prepare(
+        `SELECT kind, COUNT(*) AS requests,
+                COALESCE(SUM(prompt_tokens), 0) AS promptTokens,
+                COALESCE(SUM(completion_tokens), 0) AS completionTokens,
+                COALESCE(SUM(total_tokens), 0) AS totalTokens,
+                COALESCE(SUM(cost_usd), 0) AS costUsd
+         FROM ai_usage WHERE created_at >= datetime('now', ?) GROUP BY kind ORDER BY requests DESC`,
+      )
+      .all(since)
+      .map((row) => ({ ...row, costUsd: roundCost(row.costUsd) }));
+    const aiModels = db
+      .prepare(
+        `SELECT model, COUNT(*) AS requests,
+                COALESCE(SUM(total_tokens), 0) AS totalTokens,
+                COALESCE(SUM(cost_usd), 0) AS costUsd
+         FROM ai_usage WHERE created_at >= datetime('now', ?) AND model <> ''
+         GROUP BY model ORDER BY requests DESC LIMIT 8`,
+      )
+      .all(since)
+      .map((row) => ({ ...row, costUsd: roundCost(row.costUsd) }));
+    const aiAllTime = db
+      .prepare(
+        `SELECT COUNT(*) AS requests, COALESCE(SUM(total_tokens), 0) AS totalTokens, COALESCE(SUM(cost_usd), 0) AS costUsd
+         FROM ai_usage`,
+      )
+      .get();
+    aiAllTime.costUsd = roundCost(aiAllTime.costUsd);
+
     const sum = (key) => dayRows.reduce((total, row) => total + row[key], 0);
     const bestDay = dayRows.reduce((best, row) => (row.events > (best?.events || 0) ? row : best), null);
 
@@ -355,6 +387,7 @@ module.exports = (db, auth, config) => {
       online,
       recent,
       heatmap,
+      ai: { kinds: aiKinds, models: aiModels, allTime: aiAllTime },
     });
   });
 

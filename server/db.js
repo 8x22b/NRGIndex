@@ -134,6 +134,20 @@ const MIGRATIONS = [
   `
   ALTER TABLE users ADD COLUMN avatar_path TEXT NOT NULL DEFAULT '';
   `,
+  `
+  CREATE TABLE ai_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    prompt_tokens INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX idx_ai_usage_created ON ai_usage(created_at);
+  `,
 ];
 
 function migrate(db) {
@@ -187,4 +201,26 @@ function writeAudit(db, user, action, entity = "", entityId = "", details = "", 
     ).lastInsertRowid;
 }
 
-module.exports = { openDatabase, migrate, getSetting, setSetting, writeAudit, MIGRATIONS };
+// Учёт ИИ-запроса: вид (parse/stt/cleanup/redraw), модель, токены и цена.
+// Пишем всегда, даже если провайдер не вернул usage — счётчик запросов важен сам по себе.
+// ponytail: это телеметрия — если запись не удалась, сам запрос пользователю не валим.
+function recordAiUsage(db, userId, kind, model, usage = {}) {
+  try {
+    db.prepare(
+      `INSERT INTO ai_usage (kind, model, user_id, prompt_tokens, completion_tokens, total_tokens, cost_usd)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      String(kind || "").slice(0, 20),
+      String(model || "").slice(0, 120),
+      userId ?? null,
+      Number(usage.promptTokens) || 0,
+      Number(usage.completionTokens) || 0,
+      Number(usage.totalTokens) || 0,
+      Math.round((Number(usage.costUsd) || 0) * 1e6) / 1e6,
+    );
+  } catch (error) {
+    console.warn("[nrgindex] ai usage not recorded:", error?.message || error);
+  }
+}
+
+module.exports = { openDatabase, migrate, getSetting, setSetting, writeAudit, recordAiUsage, MIGRATIONS };

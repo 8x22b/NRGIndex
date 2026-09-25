@@ -6,6 +6,8 @@ const {
   parseRatingText,
   transcribeAudio,
   normalizeBaseUrl,
+  normalizeUsage,
+  estimateCostUsd,
   providerFailureDetail,
   audioFormat,
   decodeAudio,
@@ -16,9 +18,9 @@ const {
   SYSTEM_PROMPT,
 } = require("../../server/lib/ai");
 
-const chatReply = (payload) => ({
+const chatReply = (payload, usage) => ({
   ok: true,
-  json: async () => ({ choices: [{ message: { content: JSON.stringify(payload) } }] }),
+  json: async () => ({ choices: [{ message: { content: JSON.stringify(payload) } }], usage }),
 });
 
 test("normalizeParsed не выдумывает отзыв и вкус", () => {
@@ -437,4 +439,39 @@ test("searchCanImages: дак упал (бот-стена/нет токена) �
   const images = await searchCanImages({ brand: "Burn", name: "Burn" }, { fetchImpl });
   assert.ok(images.length > 0);
   assert.ok(images.every((item) => item.source !== "duckduckgo"));
+});
+
+test("usage: normalizeUsage приводит отчёты OpenRouter и Gemini к одному виду", () => {
+  assert.deepEqual(
+    normalizeUsage({ prompt_tokens: 100, completion_tokens: 50, total_tokens: 150, cost: 0.00123 }),
+    { promptTokens: 100, completionTokens: 50, totalTokens: 150, costUsd: 0.00123 },
+  );
+  assert.deepEqual(
+    normalizeUsage({ promptTokenCount: 7, candidatesTokenCount: 3, totalTokenCount: 10 }),
+    { promptTokens: 7, completionTokens: 3, totalTokens: 10, costUsd: 0 },
+  );
+  assert.deepEqual(normalizeUsage(undefined), { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 });
+});
+
+test("usage: цена — приоритет отчёту провайдера, иначе таблица моделей", () => {
+  assert.equal(estimateCostUsd("x/unknown", { promptTokens: 10, completionTokens: 0, totalTokens: 10, costUsd: 0.5 }), 0.5);
+  assert.ok(Math.abs(estimateCostUsd("openai/gpt-4o-mini", { promptTokens: 1e6, completionTokens: 0, totalTokens: 1e6, costUsd: 0 }) - 0.15) < 1e-9);
+  assert.ok(Math.abs(estimateCostUsd("gemini-2.5-flash", { promptTokens: 1e6, completionTokens: 1e6, totalTokens: 2e6, costUsd: 0 }) - 2.8) < 1e-9);
+  assert.equal(estimateCostUsd("x/unknown", { promptTokens: 10, completionTokens: 0, totalTokens: 10, costUsd: 0 }), 0);
+});
+
+test("parseDrinkText отчитывается: onUsage получает токены и оценочную цену", async () => {
+  const seen = [];
+  await parseDrinkText("burn норм", {
+    key: "k",
+    model: "openai/gpt-4o-mini",
+    baseUrl: "https://openrouter.example/v1",
+    fetchImpl: async () => chatReply({ brand: "Burn", name: "Burn", tier: "B", review: "" }, { prompt_tokens: 900, completion_tokens: 100, total_tokens: 1000 }),
+    onUsage: (usage, model, kind) => seen.push({ usage, model, kind }),
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].kind, "parse");
+  assert.equal(seen[0].model, "openai/gpt-4o-mini");
+  assert.equal(seen[0].usage.totalTokens, 1000);
+  assert.ok(Math.abs(seen[0].usage.costUsd - 0.000195) < 1e-9);
 });

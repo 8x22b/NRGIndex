@@ -19,7 +19,7 @@ test("refineTranscription отправляет текст через отдел�
   assert.match(STT_CLEANUP_PROMPT, /Не добавляй факты/);
 });
 
-test("transcribeAudio возвращает ошибку, если очистка STT вернула пустой текст", async () => {
+test("transcribeAudio не валит ввод, если чистка STT вернула пустой текст — отдаёт сырую расшифровку", async () => {
   let count = 0;
   const fetchImpl = async () => {
     count += 1;
@@ -27,14 +27,32 @@ test("transcribeAudio возвращает ошибку, если очистка
       ? { ok: true, json: async () => ({ text: "сомнительная фраза" }) }
       : { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ text: "" }) } }] }) };
   };
-  await assert.rejects(
-    () => transcribeAudio(Buffer.alloc(500, 1), "audio/webm", {
-      sttKey: "stt-key",
-      parseKey: "text-key",
-      sttBaseUrl: "https://openrouter.ai/api/v1",
-      parseBaseUrl: "https://text.example/v1",
-      fetchImpl,
-    }),
-    /пустой текст/,
-  );
+  const text = await transcribeAudio(Buffer.alloc(500, 1), "audio/webm", {
+    sttKey: "stt-key",
+    parseKey: "text-key",
+    sttBaseUrl: "https://openrouter.ai/api/v1",
+    parseBaseUrl: "https://text.example/v1",
+    fetchImpl,
+  });
+  assert.equal(text, "сомнительная фраза");
+});
+
+test("transcribeAudio не валит ввод, если провайдер чистки ответил ошибкой", async () => {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes("audio/transcriptions")) {
+      return { ok: true, json: async () => ({ text: "сырой текст" }) };
+    }
+    return { ok: false, status: 502, text: async () => "bad gateway" };
+  };
+  const text = await transcribeAudio(Buffer.alloc(500, 1), "audio/webm", {
+    sttKey: "stt-key",
+    parseKey: "text-key",
+    sttBaseUrl: "https://openrouter.ai/api/v1",
+    parseBaseUrl: "https://text.example/v1",
+    fetchImpl,
+  });
+  assert.equal(text, "сырой текст");
+  assert.equal(calls.length, 2, "чистку попробовали и упали в фолбэк");
 });

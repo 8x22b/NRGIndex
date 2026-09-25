@@ -194,6 +194,34 @@ const authHeaders = (key) => ({
   "X-Title": "NRG/INDEX",
 });
 
+// Ориентировочные цены, USD за 1M токенов (вход, выход). Точную стоимость шлёт
+// провайдер в usage.cost (OpenRouter) — тогда таблица не нужна.
+// ponytail: цены статичны; поправить в одном месте при смене моделей.
+const MODEL_PRICES = [
+  [/^openai\/gpt-4o-mini$/, [0.15, 0.6]],
+  [/^gemini-[\d.]+-flash-lite/, [0.1, 0.4]],
+  [/^gemini-[\d.]+-flash(?!-lite)/, [0.3, 2.5]],
+];
+
+// Приводит usage провайдера (OpenAI/OpenRouter или Gemini) к одному виду.
+function normalizeUsage(raw) {
+  const usage = raw && typeof raw === "object" ? raw : {};
+  return {
+    promptTokens: Number(usage.prompt_tokens ?? usage.promptTokenCount ?? 0) || 0,
+    completionTokens: Number(usage.completion_tokens ?? usage.candidatesTokenCount ?? 0) || 0,
+    totalTokens: Number(usage.total_tokens ?? usage.totalTokenCount ?? 0) || 0,
+    costUsd: Number(usage.cost ?? 0) || 0,
+  };
+}
+
+// Отчёт провайдера важнее таблицы; нет ни того ни другого — 0 (запрос всё равно посчитан).
+function estimateCostUsd(model, usage) {
+  if (usage.costUsd > 0) return usage.costUsd;
+  const price = MODEL_PRICES.find(([pattern]) => pattern.test(model))?.[1];
+  if (!price) return 0;
+  return (usage.promptTokens / 1e6) * price[0] + (usage.completionTokens / 1e6) * price[1];
+}
+
 async function requestParsedJson(messages, { key, model, baseUrl = DEFAULT_BASE_URL, fetchImpl = fetch }) {
   const res = await postWithTimeout(
     fetchImpl,
@@ -213,18 +241,19 @@ async function requestParsedJson(messages, { key, model, baseUrl = DEFAULT_BASE_
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
   try {
-    return JSON.parse(start >= 0 && end > start ? raw.slice(start, end + 1) : raw);
+    const parsed = JSON.parse(start >= 0 && end > start ? raw.slice(start, end + 1) : raw);
+    return { parsed, usage: normalizeUsage(json?.usage) };
   } catch {
     throw new ApiError(502, "ИИ вернул не JSON, попробуйте переформулировать", "ai_bad_response");
   }
 }
 
-async function parseDrinkText(text, { key, parseKey, model, baseUrl, parseBaseUrl, fetchImpl = fetch } = {}) {
+async function parseDrinkText(text, { key, parseKey, model, baseUrl, parseBaseUrl, fetchImpl = fetch, onUsage } = {}) {
   const requestKey = parseKey || key;
   const requestBaseUrl = parseBaseUrl || baseUrl || DEFAULT_BASE_URL;
   requireKey(requestKey);
   const userText = String(text || "").slice(0, 4000);
-  const parsed = await requestParsedJson(
+  const { parsed, usage } = await requestParsedJson(
     [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: userText },
@@ -235,19 +264,21 @@ async function parseDrinkText(text, { key, parseKey, model, baseUrl, parseBaseUr
   if (!clean.name) {
     throw new ApiError(502, "Не понял, что за напиток — назови хотя бы бренд", "ai_bad_response");
   }
+  const modelUsed = model || DEFAULT_MODEL;
+  onUsage?.({ ...usage, costUsd: estimateCostUsd(modelUsed, usage) }, modelUsed, "parse");
   return clean;
 }
 
 // Отметка существующей банки: контекст (бренд/название/вкус) добавляем сами,
 // поэтому банка заведомо «известна» и 502 «назови хотя бы бренд» тут не случится.
-async function parseRatingText(text, drink = {}, { key, parseKey, model, baseUrl, parseBaseUrl, fetchImpl = fetch } = {}) {
+async function parseRatingText(text, drink = {}, { key, parseKey, model, baseUrl, parseBaseUrl, fetchImpl = fetch, onUsage } = {}) {
   const requestKey = parseKey || key;
   const requestBaseUrl = parseBaseUrl || baseUrl || DEFAULT_BASE_URL;
   requireKey(requestKey);
   const userText = String(text || "").slice(0, 2000);
   const label = [drink.brand, drink.name].filter(Boolean).join(" ").trim() || String(drink.name || "").trim();
   if (!label) throw badRequest("Нужно название банки для разбора отметки");
-  const parsed = await requestParsedJson(
+  const { parsed, usage } = await requestParsedJson(
     [
       { role: "system", content: RATING_PROMPT },
       {
@@ -258,6 +289,8 @@ async function parseRatingText(text, drink = {}, { key, parseKey, model, baseUrl
     { key: requestKey, model, baseUrl: requestBaseUrl, fetchImpl },
   );
   const clean = normalizeParsed(parsed);
+  const modelUsed = model || DEFAULT_MODEL;
+  onUsage?.({ ...usage, costUsd: estimateCostUsd(modelUsed, usage) }, modelUsed, "parse");
   return { tier: clean.tier, tierGuessed: clean.tierGuessed, review: clean.review };
 }
 
@@ -300,23 +333,25 @@ const STT_CLEANUP_PROMPT = [
   "Если фраза неясна, оставь сомнительный фрагмент как есть. Верни только JSON без markdown: {\\\"text\\\":\\\"...\\\"}.",
 ].join("\n");
 
-async function refineTranscription(text, { parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model, fetchImpl = fetch } = {}) {
+async function refineTranscription(text, { parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model, fetchImpl = fetch, onUsage } = {}) {
   const key = parseKey || textApiKey;
   if (!key) return text;
   const baseUrl = parseBaseUrl || textBaseUrl || DEFAULT_BASE_URL;
-  const result = await requestParsedJson(
+  const modelUsed = parseModel || model || DEFAULT_MODEL;
+  const { parsed: result, usage } = await requestParsedJson(
     [
       { role: "system", content: STT_CLEANUP_PROMPT },
       { role: "user", content: String(text).slice(0, 2000) },
     ],
-    { key, model: parseModel || model || DEFAULT_MODEL, baseUrl, fetchImpl },
+    { key, model: modelUsed, baseUrl, fetchImpl },
   );
+  onUsage?.({ ...usage, costUsd: estimateCostUsd(modelUsed, usage) }, modelUsed, "cleanup");
   const cleaned = String(result?.text ?? "").trim();
   if (!cleaned) throw new ApiError(502, "Модель исправления STT вернула пустой текст", "ai_bad_response");
   return cleaned.slice(0, 2000);
 }
 
-async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model: textModel, fetchImpl = fetch } = {}) {
+async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBaseUrl, baseUrl, parseKey, textApiKey, parseBaseUrl, textBaseUrl, parseModel, model: textModel, fetchImpl = fetch, onUsage } = {}) {
   key = sttKey || key;
   const effectiveBaseUrl = sttBaseUrl || baseUrl || DEFAULT_BASE_URL;
   requireKey(key);
@@ -349,15 +384,27 @@ async function transcribeAudio(buffer, mimeType, { key, sttKey, sttModel, sttBas
   const json = await res.json();
   const text = String(json?.text || "").trim();
   if (!text) throw new ApiError(422, "В записи не удалось разобрать речь", "stt_empty");
-  return refineTranscription(text.slice(0, 2000), {
-    parseKey,
-    textApiKey,
-    parseBaseUrl,
-    textBaseUrl,
-    parseModel,
-    model: parseModel || textModel,
-    fetchImpl,
-  });
+  // Whisper не отдаёт токены — пишем запрос с нулями: счётчик запросов важен сам по себе.
+  const sttUsage = normalizeUsage(json?.usage);
+  onUsage?.({ ...sttUsage, costUsd: estimateCostUsd(sttModelEffective, sttUsage) }, sttModelEffective, "stt");
+  const rawText = text.slice(0, 2000);
+  // Чистка речи — косметика: провайдер может быть не настроен, недоступен или
+  // вернуть пустое. Тогда отдаём сырую расшифровку Whisper, а не валим ввод 502-й.
+  try {
+    return await refineTranscription(rawText, {
+      parseKey,
+      textApiKey,
+      parseBaseUrl,
+      textBaseUrl,
+      parseModel,
+      model: parseModel || textModel,
+      fetchImpl,
+      onUsage,
+    });
+  } catch (error) {
+    console.warn("[nrgindex] stt cleanup skipped:", error?.message || error);
+    return rawText;
+  }
 }
 
 const PHOTO_UA = "NRGIndex/2.0 (energy drink tier list)";
@@ -610,6 +657,8 @@ module.exports = {
   parseRatingText,
   normalizeParsed,
   normalizeBaseUrl,
+  normalizeUsage,
+  estimateCostUsd,
   providerFailureDetail,
   transcribeAudio,
   refineTranscription,
