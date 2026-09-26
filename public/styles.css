@@ -11,6 +11,7 @@
   --serif: "Cormorant Garamond", Georgia, serif;
   --sans: "Manrope", Arial, sans-serif;
   --ease: cubic-bezier(.22, 1, .36, 1);
+  --noise: url("data:image/svg+xml,%3Csvg width='256' height='256' viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.1'/%3E%3C/svg%3E");
 }
 
 * { box-sizing: border-box; }
@@ -29,16 +30,7 @@ button { font: inherit; }
 img { display: block; max-width: 100%; }
 ::selection { background: var(--pink); color: var(--paper); }
 
-.page-noise {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  pointer-events: none;
-  opacity: .12;
-  background-repeat: repeat;
-  background-size: 448px 448px;
-  background-image: url("data:image/svg+xml,%3Csvg width='256' height='256' viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.8'/%3E%3C/svg%3E");
-}
+/* Зерно лежит в фоне секций (см. конец файла), а не оверлеем поверх контента. */
 
 .cursor-aura {
   position: fixed;
@@ -841,3 +833,14 @@ a.reviewer:hover b { text-decoration: underline; }
 .avatar-zoom { width: 100%; color: var(--muted); font-size: .55rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .avatar-zoom input { width: 100%; margin-top: .35rem; accent-color: var(--orange); }
 .avatar-dialog__actions { align-items: center; width: 100%; }
+
+/* --- зерно фона: слой под контентом каждой тёмной секции --- */
+body,
+.rating-section,
+.cab-cta,
+.site-footer,
+.cabinet-section {
+  background-image: var(--noise);
+  background-repeat: repeat;
+  background-size: 384px 384px;
+}
