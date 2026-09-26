@@ -6,6 +6,7 @@ const path = require("node:path");
 const cabinetSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "cabinet.js"), "utf8");
 const cabinetHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "cabinet.html"), "utf8");
 const cabinetRoutes = fs.readFileSync(path.join(__dirname, "..", "..", "server", "routes", "cabinet.js"), "utf8");
+const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 
 test("кабинет показывает красную кнопку удаления оценки", () => {
   assert.match(cabinetSource, /<button class=\"btn btn--danger\" type=\"button\" data-m-del-rating>удалить<\/button>/);
@@ -41,6 +42,8 @@ test("перерисовка шлёт необработанный оригин�
   assert.match(cabinetSource, /finishRedrawn/);
   assert.match(cabinetSource, /НЕОБРАБОТАННЫЙ оригинал/);
   assert.match(cabinetSource, /g - Math\.max\(r, b\)/, "градиент хромакея режется по доминированию зелёного");
+  assert.match(cabinetSource, /g - Math\.max\(r, b\) > 60/, "режем только насыщенный зелёный, не белую часть банки");
+  assert.doesNotMatch(cabinetSource, /g - Math\.max\(r, b\) > 25/, "слабый порог съедал белые части банки");
   assert.match(cabinetSource, /canFill/, "заливка идёт только через не-контур — и в белом, и в зелёном резце");
 });
 
@@ -61,6 +64,21 @@ test("редактор мнения: ИИ-разбор текста и голо�
   assert.match(cabinetSource, /opinion\.drink = \{ brand: drink\.brand \|\| ""/);
   assert.match(cabinetSource, /const VOICE_UI/);
   assert.match(cabinetSource, /input: "op-ai-text"/);
+});
+
+test("редактор мнения: поля тянутся под текст, без горизонтального скролла", () => {
+  assert.match(cabinetHtml, /<textarea id="op-ai-text" rows="1"/, "ИИ-строка — переносимый textarea, а не однострочный input");
+  assert.doesNotMatch(cabinetHtml, /<input id="op-ai-text"/);
+  assert.match(cabinetSource, /const autoGrow = \(node, max = 420\)/, "есть автоподбор высоты");
+  assert.match(cabinetSource, /autoGrow\(\$\("op-ai-text"\), 160\)/, "ИИ-строка растёт после открытия");
+  assert.match(cabinetSource, /autoGrow\(\$\("op-review"\)\)/, "отзыв растёт после разбора и открытия");
+  assert.match(cabinetSource, /\$\("op-review"\)\.addEventListener\("input", \(\) => autoGrow\(\$\("op-review"\)\)\)/, "отзыв тянется при вводе");
+  assert.match(cabinetSource, /autoGrow\(area\)/, "голосовой расшифровка тоже растягивает поле");
+  assert.match(stylesSource, /\.opinion-ai__row \{ display: flex; flex-wrap: wrap/, "строка ИИ переносит кнопки, а не торчит вбок");
+  assert.match(stylesSource, /\.opinion-dialog__inner > \* \{ min-width: 0; \}/, "грид-дети не распирают диалог");
+  assert.match(stylesSource, /\.opinion-dialog__fields textarea \{ resize: none; overflow-y: hidden/, "ручной resize выключен — рулит автоподбор");
+  assert.match(stylesSource, /\.voice-player audio \{ display: block/, "аудио без inline-зазора — отступы сверху/снизу одинаковые");
+  assert.match(stylesSource, /\.voice-player__time \{[^}]*line-height: 1;/, "таймер без лишней высоты строки");
 });
 
 test("редактор мнения: действия с фото спрятаны за превью, в диалоге нет свалки кнопок", () => {

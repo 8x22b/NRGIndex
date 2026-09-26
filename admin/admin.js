@@ -929,8 +929,15 @@
   };
   const KIND_ICONS = { create: "+", delete: "−", update: "✎", undo: "↺" };
 
-  const parseUtc = (value) => new Date(`${String(value).replace(" ", "T")}Z`);
+  // SQLite хранит «YYYY-MM-DD HH:MM:SS» в UTC — доводим до ISO, но не ломаем уже ISO с Z.
+  const parseUtc = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return new Date(NaN);
+    const iso = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text.replace(" ", "T")}Z`;
+    return new Date(iso);
+  };
   const dayLabel = (date) => {
+    if (Number.isNaN(date.getTime())) return "—";
     const today = new Date();
     const yesterday = new Date(Date.now() - 86_400_000);
     const same = (a, b) => a.toDateString() === b.toDateString();
@@ -1128,7 +1135,12 @@
     return forms[2];
   };
 
-  const parseDbTime = (value) => Date.parse(String(value || "").replace(" ", "T") + "Z") || 0;
+  const parseDbTime = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return 0;
+    const iso = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(text) ? text : `${text.replace(" ", "T")}Z`;
+    return Date.parse(iso) || 0;
+  };
 
   const timeAgo = (value) => {
     const ts = parseDbTime(value);
