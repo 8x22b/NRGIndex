@@ -503,7 +503,17 @@ function listLogs(db, limit = 300) {
        WHERE a.entity IN ('ai', 'error')
        ORDER BY a.id DESC LIMIT ?`,
     )
-    .all(limit);
+    .all(limit)
+    .map((row) => ({
+      id: row.id,
+      action: row.action,
+      entity: row.entity,
+      summary: row.summary,
+      details: row.details,
+      createdAt: row.created_at,
+      username: row.username,
+      displayName: row.display_name,
+    }));
 }
 
 function readSettings(db, keys, defaults = {}) {

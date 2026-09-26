@@ -16,6 +16,14 @@
     return forms[2];
   };
 
+  // Текстареа растёт/ужимается под текст: без внутреннего скролла и пустого места.
+  const autoGrow = (node, max = 420) => {
+    if (!node) return;
+    node.style.height = "auto";
+    node.style.height = `${Math.min(node.scrollHeight, max)}px`;
+    node.style.overflowY = node.scrollHeight > max ? "auto" : "hidden";
+  };
+
   const api = async (method, path, body) => {
     const res = await fetch(path, {
       method,
@@ -541,6 +549,8 @@
     clearVoice("opinion");
     $("opinion-editor").showModal();
     document.body.classList.add("is-dialog-open");
+    autoGrow($("op-ai-text"), 160);
+    autoGrow($("op-review"));
   };
 
   $("op-close").onclick = closeOpinion;
@@ -569,7 +579,10 @@
     try {
       const { parsed } = await api("POST", "api/cabinet/ai/parse", { text, drink: opinion.drink });
       if (TIERS.includes(parsed.tier)) $("op-tier").value = parsed.tier;
-      if (parsed.review) $("op-review").value = parsed.review;
+      if (parsed.review) {
+        $("op-review").value = parsed.review;
+        autoGrow($("op-review"));
+      }
       setOpStatus(
         parsed.tierGuessed ? "разобрано ✓ тир не был назван — проверь и поправь" : "разобрано ✓ проверь и сохрани",
       );
@@ -586,6 +599,8 @@
       parseOpinionText();
     }
   });
+  $("op-ai-text").addEventListener("input", () => autoGrow($("op-ai-text"), 160));
+  $("op-review").addEventListener("input", () => autoGrow($("op-review")));
 
   $("op-photo-file").addEventListener("change", async (event) => {
     const file = event.target.files[0];
@@ -1021,7 +1036,7 @@
     const imageData = ctx.getImageData(0, 0, w, h);
     const px = imageData.data;
 
-    const isGreen = (r, g, b) => g > 100 && g - r > 50 && g - b > 50;
+    const isGreen = (r, g, b) => g > 100 && g - Math.max(r, b) > 60;
     const { border } = borderStats(px, w, h);
     const greens = [];
     for (const offset of border) {
@@ -1032,19 +1047,12 @@
       if (isGreen(r, g, b)) greens.push([r, g, b]);
     }
     if (greens.length < border.length * 0.5) return null;
-    const median = (arr) => arr.sort((a, b) => a - b)[Math.floor(arr.length / 2)];
-    const bg = [0, 1, 2].map((channel) => median(greens.map((pixel) => pixel[channel])));
 
-    const TOL = 60;
+    // Ослаблено: режем только насыщенный зелёный хромакей. Зеленовато-белые части
+    // банки (белая этикетка/блики с зелёным рефлексом) и слабые блики остаются.
     const isBgish = (offset) => {
       if (px[offset + 3] < 16) return true;
-      const r = px[offset];
-      const g = px[offset + 1];
-      const b = px[offset + 2];
-      // Градиент с JPEG-шумом уходит от медианы дальше TOL — режем по доминированию зелёного.
-      // Пороги низкие: модель затемняет хромакей к краям кадра (виньетка сверху/снизу).
-      if (g > 45 && g - Math.max(r, b) > 25) return true;
-      return isGreen(r, g, b) && Math.hypot(r - bg[0], g - bg[1], b - bg[2]) < TOL;
+      return isGreen(px[offset], px[offset + 1], px[offset + 2]);
     };
 
     // Контур банки — стена для заливки, как в cutWhiteBg: графика этикетки не страдает.
@@ -1861,6 +1869,7 @@
       const area = $(ui.input);
       area.value = (area.value.trim() ? `${area.value.trim()} ` : "") + text;
       status.textContent = ui.done;
+      autoGrow(area);
       area.focus();
     } catch (error) {
       console.error("[nrgindex] распознавание не удалось:", error);
