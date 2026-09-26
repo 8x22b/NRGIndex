@@ -64,3 +64,22 @@ test("сервер: у профиля есть статистика активн
   assert.match(admin, /router\.get\("\/stats", requireAdmin/);
   assert.match(admin, /function deviceLabel/);
 });
+
+test("статистика: ИИ-запросы и трата считаются и видны админу", () => {
+  const admin = read("server/routes/admin.js");
+  assert.match(admin, /FROM ai_usage/);
+  assert.match(admin, /ai: \{ kinds: aiKinds, models: aiModels, allTime: aiAllTime \}/);
+
+  const cabinet = read("server/routes/cabinet.js");
+  assert.match(cabinet, /recordAiUsage/);
+  assert.match(cabinet, /onUsage: trackAi/);
+
+  const js = read("admin/admin.js");
+  assert.match(js, /statCard\("ИИ-запросы"/);
+  assert.match(js, /const fmtCost/);
+  assert.match(js, /const AI_KINDS/);
+  assert.match(js, /stats-ai__row/);
+
+  const html = read("admin/index.html");
+  assert.match(html, /\.stats-ai \{/);
+});

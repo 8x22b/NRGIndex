@@ -69,12 +69,12 @@
     const color = safeColor(profile.color, "#9fb7ff");
     const max = Math.max(1, ...Object.values(stats.distribution));
     const bars = tiers
-      .map((tier) => {
+      .map((tier, index) => {
         const n = stats.distribution[tier.id] || 0;
         return `
-        <div class="dist-bar" style="--tier-color:${tierColor(tier.id)}">
+        <div class="dist-bar" style="--tier-color:${tierColor(tier.id)};--i:${index}">
           <span class="dist-bar__count">${n}</span>
-          <span class="dist-bar__fill" style="height:${Math.round((n / max) * 100)}%"></span>
+          <span class="dist-bar__fill" style="--h:${Math.round((n / max) * 100)}%"></span>
           <b>${esc(tier.id)}</b>
         </div>`;
       })
@@ -209,19 +209,27 @@
         </div>
       </div>
       <div class="profile-stats">
-        <div><b>${stats.ratings}</b><span>${wordForm(stats.ratings, ["оценка", "оценки", "оценок"])}</span></div>
-        <div><b>${stats.reviews}</b><span>${wordForm(stats.reviews, ["отзыв", "отзыва", "отзывов"])}</span></div>
-        <div><b>${stats.added}</b><span>${wordForm(stats.added, ["банку добавил", "банки добавил", "банок добавил"])}</span></div>
-        <div><b>${avgTier ? esc(avgTier.id) : "—"}</b><span>${stats.average ? `средний тир · ${String(stats.average).replace(".", ",")}` : "средний тир"}</span></div>
+        <div><b data-count="${Number(stats.ratings)}">0</b><span>${wordForm(stats.ratings, ["оценка", "оценки", "оценок"])}</span></div>
+        <div><b data-count="${Number(stats.reviews)}">0</b><span>${wordForm(stats.reviews, ["отзыв", "отзыва", "отзывов"])}</span></div>
+        <div><b data-count="${Number(stats.added)}">0</b><span>${wordForm(stats.added, ["банку добавил", "банки добавил", "банок добавил"])}</span></div>
+        <div><b>${avgTier ? esc(avgTier.id) : "—"}</b><span>${stats.average ? `средний тир · ${String(Math.round(stats.average * 100) / 100).replace(".", ",")}` : "средний тир"}</span></div>
         <div><b>${stats.agreement === null ? "—" : `${stats.agreement}%`}</b><span>${agreementCopy}</span></div>
       </div>
       <div class="profile-dist" aria-label="Распределение по тирам">${bars}</div>
       ${activityMarkup}
     `;
+    // столбики растут из нуля: целевая высота уже в --h, ставим её после отрисовки
+    $("profile-hero")
+      .querySelectorAll(".dist-bar__fill")
+      .forEach((fill) => {
+        void fill.offsetHeight;
+        fill.style.height = fill.style.getPropertyValue("--h");
+      });
+    window.nrgCountUp?.($("profile-hero"));
   };
 
-  const cardTemplate = (rating) => `
-    <a class="drink-card" href="/d/${encodeURIComponent(rating.drink)}" style="--card-accent:${safeColor(rating.accent?.[0], tierColor(rating.tier))}">
+  const cardTemplate = (rating, index = 0) => `
+    <a class="drink-card" href="/d/${encodeURIComponent(rating.drink)}" style="--card-accent:${safeColor(rating.accent?.[0], tierColor(rating.tier))};--i:${index}">
       <span class="drink-card__visual">
         ${rating.othersAvg !== null ? `<span class="drink-card__votes">стол: ${String(rating.othersAvg).replace(".", ",")}</span>` : ""}
         <span class="drink-card__rank">${esc(rating.tier)}</span>
@@ -237,16 +245,16 @@
     $("profile-board-block").hidden = false;
     $("profile-board-meta").textContent = `${ratings.length} ${wordForm(ratings.length, ["банка", "банки", "банок"])}`;
     $("profile-board").innerHTML = tiers
-      .map((tier) => {
+      .map((tier, rowIndex) => {
         const items = ratings.filter((rating) => rating.tier === tier.id);
         return `
-        <div class="tier-row" style="--tier-color:${tierColor(tier.id)}">
+        <div class="tier-row" style="--tier-color:${tierColor(tier.id)};--row:${rowIndex}">
           <div class="tier-label">
             <span class="tier-letter">${esc(tier.id)}</span>
             <span class="tier-label__copy"><b>${esc(tier.title)}</b><span>${esc(tier.note)}</span></span>
           </div>
           <div class="tier-items">
-            ${items.length ? items.map(cardTemplate).join("") : `<div class="empty-tier">пока пусто</div>`}
+            ${items.length ? items.map((rating, index) => cardTemplate(rating, index)).join("") : `<div class="empty-tier">пока пусто</div>`}
           </div>
         </div>`;
       })
@@ -259,12 +267,12 @@
     $("profile-reviews-meta").textContent = withText.length ? "свежие сверху" : "";
     $("profile-reviews").innerHTML = withText.length
       ? withText
-          .map((rating) => {
+          .map((rating, index) => {
             const diff = rating.othersAvg === null ? null : Math.round(({ S: 5, A: 4, B: 3, C: 2, D: 1 }[rating.tier] || 0) - rating.othersAvg);
             const verdict =
               diff === null ? "" : diff >= 1 ? "выше стола" : diff <= -1 ? "ниже стола" : "как у стола";
             return `
-            <article class="profile-review">
+            <article class="profile-review" style="--i:${index}">
               <img src="${esc(imgSrc(rating.image))}" alt="" loading="lazy">
               <div>
                 <b>${esc(rating.name)}</b>

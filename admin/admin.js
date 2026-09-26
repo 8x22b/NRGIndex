@@ -82,7 +82,7 @@
     document.querySelectorAll("#admin-tabs .btn").forEach((button) => {
       button.classList.toggle("is-active", button.dataset.tab === tab);
     });
-    for (const name of ["drinks", "tiers", "users", "settings", "audit", "stats"]) {
+    for (const name of ["drinks", "tiers", "users", "settings", "audit", "logs", "stats"]) {
       $(`tab-${name}`).hidden = name !== tab;
     }
     render();
@@ -95,6 +95,7 @@
     else if (state.tab === "users") renderUsers();
     else if (state.tab === "settings") renderSettings();
     else if (state.tab === "stats") renderStats();
+    else if (state.tab === "logs") renderLogs();
     else renderAudit();
   };
 
@@ -217,7 +218,7 @@
       .filter((item) => item.id !== (drink?.id || -1))
       .map(
         (item) =>
-          `<option value="${item.id}" ${drink?.related?.includes(item.id) ? "selected" : ""}>${esc(item.name)}</option>`,
+          `<option value="${item.id}" ${drink?.related?.includes(item.id) ? "selected" : ""}>${esc(item.name)}${item.flavor ? ` · ${esc(item.flavor)}` : ""}</option>`,
       )
       .join("");
     $("drink-form").hidden = false;
@@ -648,6 +649,7 @@
     $("u-password-row").hidden = Boolean(user);
     $("u-password").value = "";
     $("user-form").hidden = false;
+    $("user-form").scrollIntoView({ behavior: "smooth", block: "start" });
     status("user-status", user ? `Правка ${user.username}` : "Новый пользователь");
   };
 
@@ -1051,8 +1053,69 @@
   $("audit-search").addEventListener("input", () => renderAudit());
   $("audit-filter").addEventListener("change", () => renderAudit());
 
+  /* ---------- логи (ИИ/STT и ошибки) ---------- */
+  const LOG_ICONS = { ai: "◆", error: "!" };
+
+  const logRowHtml = (row) => {
+    const kind = row.entity === "error" ? "error" : "ai";
+    const date = parseUtc(row.createdAt);
+    const time = date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+    const details = String(row.details || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    return `
+      <li class="audit-item">
+        <span class="audit-item__time" title="${esc(date.toLocaleString("ru-RU"))} · запись #${row.id}">${esc(time)}</span>
+        <span class="audit-item__icon audit-item__icon--${kind}" aria-hidden="true">${LOG_ICONS[kind]}</span>
+        <div>
+          <div class="audit-item__summary"><span class="audit-item__who">${esc(row.displayName || row.username || "система")}</span> ${esc(row.summary || row.action)}</div>
+          ${details.length ? `<ul class="audit-item__details">${details.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>` : ""}
+        </div>
+        <div></div>
+      </li>`;
+  };
+
+  const renderLogs = () => {
+    const all = state.data.logs || [];
+    const query = $("logs-search").value.trim().toLowerCase();
+    const kind = $("logs-filter").value;
+    const rows = all.filter((row) => {
+      if (kind && row.entity !== kind) return false;
+      if (!query) return true;
+      return [row.summary, row.details, row.displayName, row.username]
+        .join(" ")
+        .toLowerCase()
+        .includes(query);
+    });
+    if (!rows.length) {
+      $("logs-table").innerHTML = `<p class="admin-hint">Пока пусто.</p>`;
+      return;
+    }
+    const groups = [];
+    for (const row of rows) {
+      const label = dayLabel(parseUtc(row.createdAt));
+      if (groups.at(-1)?.label !== label) groups.push({ label, rows: [] });
+      groups.at(-1).rows.push(row);
+    }
+    $("logs-table").innerHTML = groups
+      .map(
+        (group) => `
+        <h3 class="audit-day">${esc(group.label)}</h3>
+        <ul class="audit-list">${group.rows.map(logRowHtml).join("")}</ul>`,
+      )
+      .join("");
+  };
+
+  $("logs-search").addEventListener("input", () => renderLogs());
+  $("logs-filter").addEventListener("change", () => renderLogs());
+
   /* ---------- статистика ---------- */
   const TIER_COLORS = { S: "#ff5f5a", A: "#f1a653", B: "#e7d471", C: "#8ebd93", D: "#8093b7" };
+  const AI_KINDS = { parse: "Разбор текста", stt: "Распознавание речи", cleanup: "Чистка речи ИИ", redraw: "Перерисовка фото" };
+  // Точной цены у Whisper нет (тариф по длительности, не по токенам) — не показываем «$0.0000».
+  const aiCostLabel = (row) =>
+    row.costUsd > 0 ? fmtCost(row.costUsd) : row.kind === "stt" ? "по длит." : "—";
 
   const safeColor = (value, fallback) => (/^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? value : fallback);
 
@@ -1080,6 +1143,11 @@
   };
 
   const fmtNumber = (value) => new Intl.NumberFormat("ru-RU").format(value || 0);
+
+  const fmtCost = (usd) => {
+    const value = Number(usd) || 0;
+    return "$" + (value >= 100 ? value.toFixed(2) : value >= 1 ? value.toFixed(3) : value.toFixed(4));
+  };
 
   // Столбики по дням: оценки — жёлтая часть, новые банки — оранжевая сверху.
   const barsChart = (days) => {
@@ -1190,8 +1258,8 @@
     return `<svg viewBox="0 0 140 140" class="stats-donut__svg" role="img" aria-label="Распределение тиров">
       <circle cx="70" cy="70" r="${radius}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="14"/>
       ${segments}
-      <text x="70" y="72" text-anchor="middle" class="stats-donut__total">${total}</text>
-      <text x="70" y="88" text-anchor="middle" fill="rgba(255,255,255,.45)">ОЦЕНОК</text>
+      <text x="70" y="70" text-anchor="middle" class="stats-donut__total">${total}</text>
+      <text x="70" y="86" text-anchor="middle" class="stats-donut__caption">ОЦЕНОК</text>
     </svg>`;
   };
 
@@ -1225,9 +1293,9 @@
         <div class="stats-top__row">
           <span class="stats-top__rank">${index + 1}</span>
           <img src="${esc(drink.image)}" alt="" loading="lazy">
-          <div class="stats-top__main"><b>${esc(drink.name)}</b><small>${esc(drink.brand)}${drink.published ? "" : " · скрыт"}</small></div>
+          <div class="stats-top__main"><b title="${esc(drink.name)}">${esc(drink.name)}</b><small>${esc([drink.brand, drink.flavor].filter(Boolean).join(" · "))}${drink.published ? "" : " · скрыт"}</small></div>
           <span class="stats-top__bar"><i style="width:${Number(((drink.votes / max) * 100).toFixed(1))}%"></i></span>
-          <span class="stats-top__value">${drink.votes} ${wordForm(drink.votes, ["оценка", "оценки", "оценок"])}${drink.avgScore ? ` · ${String(drink.avgScore).replace(".", ",")}` : ""}</span>
+          <span class="stats-top__value">${drink.votes} ${wordForm(drink.votes, ["оценка", "оценки", "оценок"])}${drink.avgScore ? ` · ${Number(drink.avgScore).toFixed(1).replace(".", ",")}` : ""}</span>
         </div>`,
       )
       .join("")}</div>`;
@@ -1295,7 +1363,7 @@
   const statCard = (label, value, note, extra = "") => `
     <div class="stats-card${extra}">
       <span>${label}</span>
-      <b>${value}</b>
+      ${typeof value === "number" ? `<b data-count="${Number(value)}">0</b>` : `<b>${value}</b>`}
       <small>${note}</small>
     </div>`;
 
@@ -1306,16 +1374,20 @@
       return;
     }
     const { totals, period, days, tiers, topDrinks, topUsers, online, recent } = data;
+    const ai = data.ai || { kinds: [], models: [], allTime: { requests: 0, totalTokens: 0, costUsd: 0 } };
+    const aiRequests = ai.kinds.reduce((sum, row) => sum + row.requests, 0);
+    const aiCost = ai.kinds.reduce((sum, row) => sum + row.costUsd, 0);
     const totalRatings = tiers.reduce((sum, tier) => sum + tier.count, 0);
     $("stats-updated").textContent = `обновлено в ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} · онлайн считается за 15 минут`;
     $("stats-body").innerHTML = `
       <div class="stats-cards">
-        ${statCard("Банки", fmtNumber(totals.drinks), `${totals.published} опубликовано · ${totals.hidden} скрыто`)}
-        ${statCard("Участники", fmtNumber(totals.activeUsers), `${totals.sharedUsers} публичных профиля`)}
-        ${statCard("Оценки", fmtNumber(totals.ratings), `${totals.reviews} ${wordForm(totals.reviews, ["отзыв", "отзыва", "отзывов"])} с текстом`)}
+        ${statCard("Банки", totals.drinks, `${totals.published} опубликовано · ${totals.hidden} скрыто`)}
+        ${statCard("Участники", totals.activeUsers, `${totals.sharedUsers} публичных профиля`)}
+        ${statCard("Оценки", totals.ratings, `${totals.reviews} ${wordForm(totals.reviews, ["отзыв", "отзыва", "отзывов"])} с текстом`)}
         ${statCard("Средний балл", totals.avgScore === null ? "—" : String(totals.avgScore).replace(".", ","), `${String(totals.ratingsPerDrink).replace(".", ",")} оценки на банку`)}
-        ${statCard("Онлайн", fmtNumber(online.length), "за последние 15 минут", " stats-card--online")}
+        ${statCard("Онлайн", online.length, "за последние 15 минут", " stats-card--online")}
         ${statCard(`За ${data.period.days} дней`, `+${fmtNumber(period.ratings)}`, `оценок · ${period.drinks} банок · ${period.logins} заходов`)}
+        ${statCard("ИИ-запросы", aiRequests, `${fmtCost(aiCost)} за период · всего ${fmtCost(ai.allTime.costUsd)}`)}
       </div>
       <div class="stats-grid">
         <div class="stats-panel stats-panel--wide">
@@ -1361,6 +1433,36 @@
           ${topUsers.length ? topUsersList(topUsers) : `<p class="stats-empty">Пока пусто.</p>`}
         </div>
         <div class="stats-panel stats-panel--wide">
+          <div class="stats-panel__head"><h3>ИИ: запросы и трата</h3><span class="admin-hint">за ${data.period.days} дней · цены оценочные, кроме отчёта провайдера</span></div>
+          ${
+            ai.kinds.length
+              ? `<div class="stats-ai">
+            ${ai.kinds
+              .map(
+                (row) => `
+              <div class="stats-ai__row">
+                <b>${esc(AI_KINDS[row.kind] || row.kind)}</b>
+                <span>${fmtNumber(row.requests)} ${wordForm(row.requests, ["запрос", "запроса", "запросов"])}</span>
+                <span>${row.totalTokens ? `${fmtNumber(row.totalTokens)} ток.` : "без счётчика"}</span>
+                <b>${aiCostLabel(row)}</b>
+              </div>`,
+              )
+              .join("")}
+            ${
+              ai.models.length
+                ? `<div class="stats-ai__models">${ai.models
+                    .map(
+                      (model) =>
+                        `<span>${esc(model.model)}: ${fmtNumber(model.requests)} · ${fmtNumber(model.totalTokens)} ток. · ${fmtCost(model.costUsd)}</span>`,
+                    )
+                    .join("")}</div>`
+                : ""
+            }
+          </div>`
+              : `<p class="stats-empty">ИИ пока не звали.</p>`
+          }
+        </div>
+        <div class="stats-panel stats-panel--wide">
           <div class="stats-panel__head"><h3>Когда что-то происходит</h3><span class="admin-hint">журнал за 90 дней · будни × часы</span></div>
           ${heatmapGrid(data.heatmap)}
         </div>
@@ -1369,6 +1471,7 @@
           ${recentMarkup(recent)}
         </div>
       </div>`;
+    window.nrgCountUp?.($("stats-body"));
   };
 
   const loadStats = async ({ refresh = false } = {}) => {

@@ -12,6 +12,7 @@ const {
 } = require("../lib/ai");
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
 const { redrawCanOnWhite } = require("../lib/gemini");
+const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
 const {
   ACCENTS,
@@ -262,6 +263,8 @@ module.exports = (db, auth, config) => {
   router.post("/ai/parse", async (req, res) => {
     checkAiLimit(req.user.id);
     const text = str(req.body?.text, "Текст", { min: 2, max: 2000 });
+    // Учёт ИИ-расходов: onUsage приходит из библиотеки с готовой ценой
+    const trackAi = (usage, model, kind) => recordAiUsage(db, req.user.id, kind, model, usage);
     // Отметка существующей банки: название приходит с клиента, у модели просим
     // только тир и отзыв. Без этого разбор падал 502 «назови хотя бы бренд».
     if (req.body?.drink) {
@@ -272,11 +275,11 @@ module.exports = (db, auth, config) => {
           name: str(req.body.drink.name ?? "", "Название", { max: 120 }),
           flavor: str(req.body.drink.flavor ?? "", "Вкус", { required: false, max: 160 }),
         },
-        aiSettings(db),
+        { ...aiSettings(db), onUsage: trackAi },
       );
       return res.json({ parsed, similar: [] });
     }
-    const parsed = await parseDrinkText(text, aiSettings(db));
+    const parsed = await parseDrinkText(text, { ...aiSettings(db), onUsage: trackAi });
     const similar = findSimilarDrinks(db, parsed).map((drink) => ({
       ...drink,
       myTier: db
@@ -292,7 +295,17 @@ module.exports = (db, auth, config) => {
     checkAiLimit(req.user.id);
     const mimeType = str(req.body?.mimeType, "Тип аудио", { max: 100 });
     const buffer = decodeAudio(req.body?.audio);
-    const text = await transcribeAudio(buffer, mimeType, aiSettings(db));
+    const text = await transcribeAudio(buffer, mimeType, {
+      ...aiSettings(db),
+      onUsage: (usage, model, kind) => recordAiUsage(db, req.user.id, kind, model, usage),
+      // Чистка расшифровки падает молча (отдаём сырой текст) — ошибку всё равно пишем в логи.
+      onError: (error, kind) => {
+        const message = String(error?.message || error).replace(/\s+/g, " ").slice(0, 300);
+        writeAudit(db, req.user, `ai.${kind}`, "ai", "", message, {
+          summary: `Ошибка чистки расшифровки: ${message}`,
+        });
+      },
+    });
     res.json({ text });
   });
 
@@ -392,11 +405,12 @@ module.exports = (db, auth, config) => {
     checkRedrawLimit(req.user.id);
     const imageDataUrl = str(req.body?.imageDataUrl ?? "", "Картинка", { max: 12 * 1024 * 1024 });
     const ai = aiSettings(db);
-    const { imageDataUrl: redrawn } = await redrawCanOnWhite(imageDataUrl, {
+    const { imageDataUrl: redrawn, usage } = await redrawCanOnWhite(imageDataUrl, {
       key: ai.geminiKey,
       model: ai.geminiImageModel,
       fetchImpl: ai.fetchImpl,
     });
+    recordAiUsage(db, req.user.id, "redraw", ai.geminiImageModel, usage);
     res.json({ imageDataUrl: redrawn });
   });
 
