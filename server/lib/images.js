@@ -345,6 +345,34 @@ async function writeResponsive(uploadsDir, pngBuffer) {
   return { path: `/uploads/${name}.webp`, width, height, srcset: parts.join(", ") };
 }
 
+// Достраивает адаптивные варианты для уже лежащего в uploads файла: сами пиксели
+// не трогаем, только добавляем -320/-640 рядом и считаем srcset. Идемпотентно.
+async function ensureUploadResponsive(uploadsDir, imagePath) {
+  const name = path.basename(String(imagePath || ""));
+  if (!/^[a-z0-9-]+\.webp$/i.test(name) || /-(320|640)\.webp$/i.test(name)) return null;
+  const source = path.join(uploadsDir, name);
+  if (!fs.existsSync(source)) return null;
+  const meta = await sharp(source).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  if (!width || !height) return null;
+  const base = name.replace(/\.webp$/i, "");
+  const parts = [];
+  for (const vw of RESPONSIVE_WIDTHS) {
+    if (width <= vw) continue;
+    const variant = path.join(uploadsDir, `${base}-${vw}.webp`);
+    if (!fs.existsSync(variant)) {
+      await sharp(source)
+        .resize({ width: vw, withoutEnlargement: true })
+        .webp({ quality: WEBP_QUALITY, effort: 6 })
+        .toFile(variant);
+    }
+    parts.push(`/uploads/${base}-${vw}.webp ${vw}w`);
+  }
+  parts.push(`/uploads/${name} ${width}w`);
+  return { path: `/uploads/${name}`, width, height, srcset: parts.join(", ") };
+}
+
 function unlinkQuiet(file) {
   try {
     fs.unlinkSync(file);
@@ -402,6 +430,7 @@ async function reprocessStoredImage(uploadsDir, imagePath) {
 module.exports = {
   saveProcessedImage,
   reprocessStoredImage,
+  ensureUploadResponsive,
   saveAvatarImage,
   deleteUpload,
   processImageBuffer,

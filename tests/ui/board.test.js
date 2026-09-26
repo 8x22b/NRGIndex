@@ -57,6 +57,21 @@ test("главная: ссылка на профиль одна — в чипе 
   assert.doesNotMatch(appSource, /viewDescription\.insertAdjacentHTML/);
 });
 
+test("главная: критичные шрифты предзагружаются", () => {
+  for (const hash of [
+    "xn7gYHE41ni1AdIRggOxSuXd",
+    "xn7gYHE41ni1AdIRggexSg",
+    "co3bmX5slCNuHLi8bLeY9MK7whWMhyjYrXtKgS4",
+    "co3bmX5slCNuHLi8bLeY9MK7whWMhyjYqXtK",
+  ]) {
+    assert.match(
+      indexHtml,
+      new RegExp(`rel="preload"[^>]*${hash}\\.woff2`),
+      `${hash} должен предзагружаться`,
+    );
+  }
+});
+
 test("витрина: главный энергос — только S-тир, без номера и хардкода", () => {
   assert.doesNotMatch(indexHtml, /adrenaline-yuzu-strawberry-calamansi/);
   assert.match(indexHtml, /id="hero-specimen"/);

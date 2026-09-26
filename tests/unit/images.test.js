@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const sharp = require("sharp");
-const { saveProcessedImage, removeBorderBackground } = require("../../server/lib/images");
+const { saveProcessedImage, ensureUploadResponsive, removeBorderBackground } = require("../../server/lib/images");
 const { imageFromDataUrl } = require("../../server/lib/validate");
 
 const PNG_1X1 =
@@ -198,4 +198,35 @@ test("кромка после вырезания сглажена: есть по
     if (a > 0 && a < 255) partial += 1;
   }
   assert.ok(partial > 0, "на кромке должны быть полупрозрачные пиксели после сглаживания");
+});
+
+test("ensureUploadResponsive достраивает варианты у старой загрузки, не трогая пиксели", async () => {
+  sharp.cache(false);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrg-resp-"));
+  try {
+    const source = await sharp({
+      create: { width: 900, height: 1200, channels: 4, background: { r: 200, g: 30, b: 60, alpha: 1 } },
+    })
+      .webp()
+      .toBuffer();
+    fs.writeFileSync(path.join(dir, "old-can.webp"), source);
+
+    const first = await ensureUploadResponsive(dir, "/uploads/old-can.webp");
+    assert.equal(first.width, 900);
+    assert.equal(first.height, 1200);
+    assert.match(first.srcset, /\/uploads\/old-can-320\.webp 320w/);
+    assert.match(first.srcset, /\/uploads\/old-can-640\.webp 640w/);
+    assert.match(first.srcset, /\/uploads\/old-can\.webp 900w/);
+    assert.ok(fs.existsSync(path.join(dir, "old-can-320.webp")));
+    assert.ok(fs.existsSync(path.join(dir, "old-can-640.webp")));
+
+    const again = await ensureUploadResponsive(dir, "/uploads/old-can.webp");
+    assert.deepEqual(again, first, "повторный вызов идемпотентен");
+
+    assert.equal(await ensureUploadResponsive(dir, "assets/burn.webp"), null);
+    assert.equal(await ensureUploadResponsive(dir, "/uploads/missing.webp"), null);
+    assert.equal(await ensureUploadResponsive(dir, "/uploads/old-can-320.webp"), null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
