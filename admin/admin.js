@@ -649,6 +649,7 @@
     $("u-password-row").hidden = Boolean(user);
     $("u-password").value = "";
     $("user-form").hidden = false;
+    $("user-form").scrollIntoView({ behavior: "smooth", block: "start" });
     status("user-status", user ? `Правка ${user.username}` : "Новый пользователь");
   };
 
