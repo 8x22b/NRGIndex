@@ -99,3 +99,23 @@ test("диплинк с тирлиста: admin?drink=<slug> открывает 
   assert.match(adminJs, /new URLSearchParams\(location\.search\)\.get\("drink"\)/);
   assert.match(adminJs, /openDrinkForm\(drink\.id\)/);
 });
+
+test("Кто оценил: кнопка в таблице напитков и модалка со списком", () => {
+  assert.match(adminHtml, /id="raters-modal"/);
+  assert.match(adminHtml, /id="raters-list"/);
+  assert.match(adminHtml, /id="raters-title"/);
+  assert.match(adminHtml, /data-raters-close/);
+  assert.match(adminJs, /data-raters="\$\{drink\.id\}"/);
+  assert.match(adminJs, /openRaters\(drink\)/);
+  assert.match(adminJs, /raters-row__avatar/);
+  assert.match(adminJs, /TIER_COLORS\[tier\]/);
+  assert.match(adminJs, /raters-modal"\)\.hidden = false/);
+});
+
+test("Фантомные дубли: гард точного дубля при добавлении", () => {
+  const cabinetRoutes = fs.readFileSync(path.join(root, "server", "routes", "cabinet.js"), "utf8");
+  assert.match(cabinetRoutes, /findExactDuplicate\(db, fields\)/);
+  assert.match(cabinetRoutes, /existing: true/);
+  assert.match(adminRoutes, /findExactDuplicate\(db, fields\)/);
+  assert.match(adminRoutes, /Точный дубликат уже есть в индексе/);
+});

@@ -21,6 +21,7 @@ const {
   ratingsForDrink,
   relationsForDrink,
   findSimilarDrinks,
+  findExactDuplicate,
 } = require("../lib/content");
 const { drinkToAdmin, userToApi } = require("../lib/serialize");
 
@@ -136,6 +137,10 @@ module.exports = (db, auth, config) => {
     const slug = uniqueSlug(db, `${fields.brand}-${fields.flavor || fields.name}`);
 
     const create = db.transaction(() => {
+      // Повторная отправка/двойной клик не должен заводить «ту же» банку второй раз:
+      // slug уникален, поэтому без проверки дубль появлялся как «...-2».
+      const dup = findExactDuplicate(db, fields);
+      if (dup) return { id: Number(dup.id), existing: true };
       const info = db
         .prepare(
           `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by, image_width, image_height, image_srcset)
@@ -165,7 +170,15 @@ module.exports = (db, auth, config) => {
       return info.lastInsertRowid;
     });
 
-    const id = create();
+    const created = create();
+    if (created.existing) {
+      const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(created.id);
+      return res.json({
+        drink: drinkToAdmin(row, ratingsForDrink(db, created.id), relationsForDrink(db, created.id)),
+        existing: true,
+      });
+    }
+    const id = created;
     history.recordDrink(db, req.user, "drink.create", null, history.snapDrink(db, id));
     touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
