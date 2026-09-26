@@ -67,7 +67,15 @@ function element() {
 
 async function runApp({ summary, pathname = "/", search = "" }) {
   const handlers = {};
-  const byId = { "board-search": element(), "board-filters": element() };
+  const byId = {
+    "board-search": element(),
+    "board-filters": element(),
+    "hero-specimen": element(),
+    "specimen-index": element(),
+    "specimen-image": element(),
+    "specimen-stamp": element(),
+    "specimen-caption": element(),
+  };
   byId["board-search"].addEventListener = (type, fn) => {
     handlers[type] = fn;
   };
@@ -124,7 +132,21 @@ async function runApp({ summary, pathname = "/", search = "" }) {
   vm.runInContext(APP, sandbox, { filename: "app.js" });
   // ждём fetch + debounce renderBoard (170мс)
   await new Promise((resolve) => setTimeout(resolve, 400));
-  return { board, handlers, urls, modalOpened, searchEl: byId["board-search"], dialogContent };
+  return {
+    board,
+    handlers,
+    urls,
+    modalOpened,
+    searchEl: byId["board-search"],
+    dialogContent,
+    specimen: {
+      card: byId["hero-specimen"],
+      index: byId["specimen-index"],
+      image: byId["specimen-image"],
+      stamp: byId["specimen-stamp"],
+      caption: byId["specimen-caption"],
+    },
+  };
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -190,4 +212,22 @@ test("карточка: если оценили все, заголовка «е�
   ];
   const { dialogContent } = await runApp({ summary, pathname: "/d/burn-original" });
   assert.doesNotMatch(dialogContent.innerHTML, /Ещё не пробовали/);
+});
+
+test("витрина: показывает топ-1 общего стола, а не первую банку из списка", async () => {
+  const { specimen } = await runApp({ summary: makeSummary() });
+  assert.equal(specimen.index.textContent, "№ 001");
+  assert.equal(specimen.stamp.textContent, "S");
+  assert.match(specimen.caption.innerHTML, /BURN ORIGINAL/);
+  assert.equal(specimen.image.src, "assets/burn-original.png");
+});
+
+test("витрина: лучший по столу вытесняет первую банку списка", async () => {
+  const summary = makeSummary();
+  summary.drinks[0].ratings = { sanya: { tier: "B", review: "" } };
+  summary.drinks[1].ratings = { sanya: { tier: "S", review: "" } };
+  const { specimen } = await runApp({ summary });
+  assert.equal(specimen.index.textContent, "№ 002");
+  assert.equal(specimen.stamp.textContent, "S");
+  assert.match(specimen.caption.innerHTML, /VOLT MANGO/);
 });

@@ -198,6 +198,94 @@
     });
   };
 
+  /* ---------- витрина: топ-1 по общему столу ---------- */
+  // Раньше карточка в шапке была захардкожена. Теперь это живой топ-1:
+  // считается по тем же оценкам, что и сводный стол, и мягко листает топ-3.
+  const SPECIMEN_ROTATE_MS = 7000;
+  const specimen = { items: [], index: 0, timer: null };
+
+  const specimenCandidates = () =>
+    data.drinks
+      .map((drink) => ({ drink, average: averageFor(drink) }))
+      .filter((item) => item.average)
+      .sort(
+        (a, b) =>
+          b.average.value - a.average.value ||
+          b.average.votes - a.average.votes ||
+          a.drink.id.localeCompare(b.drink.id),
+      )
+      .slice(0, 3);
+
+  const applySpecimen = () => {
+    const card = document.getElementById("hero-specimen");
+    if (!card) return;
+    const item = specimen.items[specimen.index];
+    card.classList.toggle("is-empty", !item);
+    if (!item) {
+      const caption = document.getElementById("specimen-caption");
+      if (caption) caption.innerHTML = `ПОКА ПУСТО<br><span>оценок ещё нет</span>`;
+      return;
+    }
+    const { drink, average } = item;
+
+    card.style.setProperty("--hero-a", safeColor(drink.accent?.[0], "#ff4f79"));
+    card.style.setProperty("--hero-b", safeColor(drink.accent?.[1], "#ff7448"));
+
+    const index = document.getElementById("specimen-index");
+    if (index) index.textContent = `№ ${specimenNumber(drink)}`;
+
+    const image = document.getElementById("specimen-image");
+    if (image) {
+      image.fetchPriority = "high";
+      image.srcset = drink.imageSrcSet || "";
+      image.sizes = "(max-width: 720px) 70vw, 25rem";
+      if (drink.imageWidth) {
+        image.width = drink.imageWidth;
+        image.height = drink.imageHeight;
+      }
+      image.src = drink.image;
+      image.alt = `Банка ${drink.name}, ${drink.flavor}`;
+      image.hidden = false;
+    }
+
+    const stamp = document.getElementById("specimen-stamp");
+    if (stamp) {
+      stamp.textContent = average.tier;
+      stamp.style.background = tierColor(average.tier);
+    }
+
+    const caption = document.getElementById("specimen-caption");
+    if (caption) {
+      caption.innerHTML = `${esc(String(drink.name || "").toUpperCase())}<br><span>${esc(
+        String(drink.flavor || "").toUpperCase(),
+      )}</span>`;
+    }
+  };
+
+  const rotateSpecimen = () => {
+    if (specimen.items.length < 2 || document.visibilityState !== "visible") return;
+    const card = document.getElementById("hero-specimen");
+    if (!card) return;
+    card.classList.add("is-swapping");
+    window.setTimeout(() => {
+      specimen.index = (specimen.index + 1) % specimen.items.length;
+      applySpecimen();
+      card.classList.remove("is-swapping");
+    }, 280);
+  };
+
+  const setupSpecimen = () => {
+    specimen.items = specimenCandidates();
+    specimen.index = 0;
+    applySpecimen();
+    if (specimen.timer) window.clearInterval(specimen.timer);
+    specimen.timer = null;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    if (specimen.items.length > 1 && !reduceMotion) {
+      specimen.timer = window.setInterval(rotateSpecimen, SPECIMEN_ROTATE_MS);
+    }
+  };
+
   const openDrink = (drinkId) => {
     const drink = getDrink(drinkId);
     if (!drink) return;
@@ -434,6 +522,7 @@
     const view = params.get("view");
     if (view && getParticipant(view)) activeView = view;
     renderBoard();
+    setupSpecimen();
     const pathDrink = location.pathname.match(/^\/d\/([^/]+?)\/?$/)?.[1];
     const drinkParam = (pathDrink ? decodeURIComponent(pathDrink) : params.get("drink")) || "";
     if (drinkParam && getDrink(drinkParam)) {

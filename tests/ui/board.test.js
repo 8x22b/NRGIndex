@@ -56,3 +56,15 @@ test("главная: ссылка на профиль одна — в чипе 
   assert.doesNotMatch(appSource, /Профиль и отзывы/);
   assert.doesNotMatch(appSource, /viewDescription\.insertAdjacentHTML/);
 });
+
+test("витрина: топ-1 динамический, без захардкоженной банки", () => {
+  assert.doesNotMatch(indexHtml, /adrenaline-yuzu-strawberry-calamansi/);
+  assert.match(indexHtml, /id="hero-specimen"/);
+  assert.match(indexHtml, /id="specimen-image"/);
+  assert.match(indexHtml, /id="specimen-stamp"/);
+  assert.match(indexHtml, /id="specimen-caption"/);
+  assert.match(appSource, /const specimenCandidates/);
+  assert.match(appSource, /SPECIMEN_ROTATE_MS/);
+  assert.match(appSource, /prefers-reduced-motion/);
+  assert.match(appSource, /setupSpecimen\(\)/);
+});
