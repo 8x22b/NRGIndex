@@ -174,7 +174,6 @@ img { display: block; max-width: 100%; }
 .view-chip:hover { color: var(--paper); background: rgba(255,255,255,.04); }
 .view-chip.is-active { color: var(--ink); background: var(--paper); }
 .view-chip__number { flex: 0 0 auto; display: grid; place-items: center; width: 2.3rem; aspect-ratio: 1; border: 1px solid currentColor; border-radius: 50%; font: 600 italic 1.15rem var(--serif); line-height: 1; overflow: hidden; padding: 0 .15rem; text-transform: uppercase; }
-.view-switcher .view-chip__number { padding-bottom: .14em; }
 .view-chip b, .view-chip small { overflow: hidden; display: block; white-space: nowrap; text-overflow: ellipsis; }
 .view-chip b { font-size: .69rem; letter-spacing: .04em; }
 .view-chip small { margin-top: .15rem; font-size: .48rem; letter-spacing: .12em; opacity: .6; text-transform: uppercase; }
@@ -388,7 +387,8 @@ img { display: block; max-width: 100%; }
 .cabinet-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 0; }
 .cabinet-form { padding: 1.6rem 1.4rem; border-right: 1px solid var(--line); }
 .cabinet-form h3, .cabinet-mine h3, .cabinet-sync h3 { margin: 0 0 1rem; font: 500 1.7rem var(--serif); }
-.cabinet-form label, .cabinet-ai label { display: block; margin-bottom: .7rem; color: var(--muted); font-size: .55rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+/* :not(.btn) — иначе правила формы перебивают кнопки-обёртки вокруг input[type=file] */
+.cabinet-form label:not(.btn), .cabinet-ai label:not(.btn) { display: block; margin-bottom: .7rem; color: var(--muted); font-size: .55rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .cabinet-form input[type="text"], .cabinet-form input[type="url"], .cabinet-form input[type="password"],
 .cabinet-form input[type="number"], .cabinet-form select, .cabinet-form textarea,
 .cabinet-ai input, .cab-profile__fields input, .mine-row textarea {
@@ -791,6 +791,10 @@ a.reviewer:hover b { text-decoration: underline; }
 .view-chip__number img,
 .profile-avatar img,
 .reviewer__avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
+/* Паддинги кружков центрировали инициалы; картинке они обрезают квадрат и приподнимают аватар */
+.view-chip__number:has(img),
+.reviewer__avatar:has(img),
+.cab-profile__avatar:has(img) { padding: 0; }
 .avatar-editor { display: flex; align-items: center; gap: .75rem; margin: .7rem 0 .3rem; }
 .avatar-editor__preview {
   display: grid; place-items: center; flex: 0 0 auto; width: 4rem; aspect-ratio: 1;
