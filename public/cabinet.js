@@ -17,11 +17,18 @@
   };
 
   // Текстареа растёт/ужимается под текст: без внутреннего скролла и пустого места.
+  // Обнуляем высоту перед замером — иначе scrollHeight упирается в текущую высоту.
   const autoGrow = (node, max = 420) => {
     if (!node) return;
-    node.style.height = "auto";
-    node.style.height = `${Math.min(node.scrollHeight, max)}px`;
-    node.style.overflowY = node.scrollHeight > max ? "auto" : "hidden";
+    const cs = getComputedStyle(node);
+    const line = parseFloat(cs.lineHeight) || 20;
+    const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom) + 2;
+    node.style.minHeight = "0px";
+    node.style.height = "0px";
+    const h = Math.max(node.scrollHeight, line + pad);
+    node.style.minHeight = "";
+    node.style.height = Math.min(h, max) + "px";
+    node.style.overflowY = h > max ? "auto" : "hidden";
   };
 
   const api = async (method, path, body) => {

@@ -70,15 +70,20 @@ test("редактор мнения: поля тянутся под текст, 
   assert.match(cabinetHtml, /<textarea id="op-ai-text" rows="1"/, "ИИ-строка — переносимый textarea, а не однострочный input");
   assert.doesNotMatch(cabinetHtml, /<input id="op-ai-text"/);
   assert.match(cabinetSource, /const autoGrow = \(node, max = 420\)/, "есть автоподбор высоты");
+  assert.match(cabinetSource, /node\.style\.minHeight = "0px"/, "высота мерится от нуля — поле ужимается");
   assert.match(cabinetSource, /autoGrow\(\$\("op-ai-text"\), 160\)/, "ИИ-строка растёт после открытия");
   assert.match(cabinetSource, /autoGrow\(\$\("op-review"\)\)/, "отзыв растёт после разбора и открытия");
   assert.match(cabinetSource, /\$\("op-review"\)\.addEventListener\("input", \(\) => autoGrow\(\$\("op-review"\)\)\)/, "отзыв тянется при вводе");
-  assert.match(cabinetSource, /autoGrow\(area\)/, "голосовой расшифровка тоже растягивает поле");
+  assert.match(cabinetSource, /autoGrow\(area\)/, "голосовая расшифровка тоже растягивает поле");
   assert.match(stylesSource, /\.opinion-ai__row \{ display: flex; flex-wrap: wrap/, "строка ИИ переносит кнопки, а не торчит вбок");
   assert.match(stylesSource, /\.opinion-dialog__inner > \* \{ min-width: 0; \}/, "грид-дети не распирают диалог");
+  assert.match(stylesSource, /\.opinion-ai > \* \{ min-width: 0; \}/, "дети блока ИИ не вылазят в сторону");
   assert.match(stylesSource, /\.opinion-dialog__fields textarea \{ resize: none; overflow-y: hidden/, "ручной resize выключен — рулит автоподбор");
-  assert.match(stylesSource, /\.voice-player audio \{ display: block/, "аудио без inline-зазора — отступы сверху/снизу одинаковые");
-  assert.match(stylesSource, /\.voice-player__time \{[^}]*line-height: 1;/, "таймер без лишней высоты строки");
+  assert.doesNotMatch(stylesSource, /\.opinion-dialog__fields textarea \{[^}]*min-height/, "отзыв не зафиксирован — сжимается");
+  assert.match(stylesSource, /\.voice-player \{[^}]*min-width: 0;/, "плеер сжимается, а не вылезает вбок");
+  assert.match(stylesSource, /\.voice-player \.btn \{[^}]*height: 2\.2rem/, "кнопки плеера одной высоты с аудио — отступы ровные");
+  assert.match(stylesSource, /\.voice-player audio \{ display: block/, "аудио без inline-зазора");
+  assert.match(stylesSource, /\.voice-player__time \{[^}]*height: 2\.2rem/, "таймер на одной линии с кнопками");
 });
 
 test("редактор мнения: действия с фото спрятаны за превью, в диалоге нет свалки кнопок", () => {
