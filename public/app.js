@@ -204,16 +204,16 @@
     });
   };
 
-  /* ---------- витрина: топ-1 по общему столу ---------- */
-  // Раньше карточка в шапке была захардкожена. Теперь это живой топ-1:
-  // считается по тем же оценкам, что и сводный стол, и мягко листает топ-3.
+  /* ---------- витрина: главный энергос ---------- */
+  // В витрину попадают только банки S-тира по общему столу: это «главные».
+  // Топ-3 из них мягко листаются, чтобы шапка не застывала.
   const SPECIMEN_ROTATE_MS = 7000;
   const specimen = { items: [], index: 0, timer: null };
 
   const specimenCandidates = () =>
     data.drinks
       .map((drink) => ({ drink, average: averageFor(drink) }))
-      .filter((item) => item.average)
+      .filter((item) => item.average && item.average.tier === "S")
       .sort(
         (a, b) =>
           b.average.value - a.average.value ||
@@ -229,16 +229,13 @@
     card.classList.toggle("is-empty", !item);
     if (!item) {
       const caption = document.getElementById("specimen-caption");
-      if (caption) caption.innerHTML = `ПОКА ПУСТО<br><span>оценок ещё нет</span>`;
+      if (caption) caption.innerHTML = `ПОКА НЕТ S<br><span>оцени банку на S — попадёт сюда</span>`;
       return;
     }
     const { drink, average } = item;
 
     card.style.setProperty("--hero-a", safeColor(drink.accent?.[0], "#ff4f79"));
     card.style.setProperty("--hero-b", safeColor(drink.accent?.[1], "#ff7448"));
-
-    const index = document.getElementById("specimen-index");
-    if (index) index.textContent = `№ ${specimenNumber(drink)}`;
 
     const image = document.getElementById("specimen-image");
     if (image) {

@@ -71,7 +71,6 @@ async function runApp({ summary, pathname = "/", search = "" }) {
     "board-search": element(),
     "board-filters": element(),
     "hero-specimen": element(),
-    "specimen-index": element(),
     "specimen-image": element(),
     "specimen-stamp": element(),
     "specimen-caption": element(),
@@ -141,7 +140,6 @@ async function runApp({ summary, pathname = "/", search = "" }) {
     dialogContent,
     specimen: {
       card: byId["hero-specimen"],
-      index: byId["specimen-index"],
       image: byId["specimen-image"],
       stamp: byId["specimen-stamp"],
       caption: byId["specimen-caption"],
@@ -214,20 +212,26 @@ test("карточка: если оценили все, заголовка «е�
   assert.doesNotMatch(dialogContent.innerHTML, /Ещё не пробовали/);
 });
 
-test("витрина: показывает топ-1 общего стола, а не первую банку из списка", async () => {
+test("витрина: показывает S-тир из общего стола, а не первую банку списка", async () => {
   const { specimen } = await runApp({ summary: makeSummary() });
-  assert.equal(specimen.index.textContent, "№ 001");
   assert.equal(specimen.stamp.textContent, "S");
   assert.match(specimen.caption.innerHTML, /BURN ORIGINAL/);
   assert.equal(specimen.image.src, "assets/burn-original.png");
 });
 
-test("витрина: лучший по столу вытесняет первую банку списка", async () => {
+test("витрина: S-тир на втором месте вытесняет первую банку списка", async () => {
   const summary = makeSummary();
   summary.drinks[0].ratings = { sanya: { tier: "B", review: "" } };
   summary.drinks[1].ratings = { sanya: { tier: "S", review: "" } };
   const { specimen } = await runApp({ summary });
-  assert.equal(specimen.index.textContent, "№ 002");
   assert.equal(specimen.stamp.textContent, "S");
   assert.match(specimen.caption.innerHTML, /VOLT MANGO/);
+});
+
+test("витрина: без S-тира ничего не выдумывает", async () => {
+  const summary = makeSummary();
+  summary.drinks[0].ratings = { sanya: { tier: "A", review: "" } };
+  summary.drinks[1].ratings = { sanya: { tier: "B", review: "" } };
+  const { specimen } = await runApp({ summary });
+  assert.match(specimen.caption.innerHTML, /ПОКА НЕТ S/);
 });
