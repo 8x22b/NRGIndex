@@ -218,7 +218,7 @@
       .filter((item) => item.id !== (drink?.id || -1))
       .map(
         (item) =>
-          `<option value="${item.id}" ${drink?.related?.includes(item.id) ? "selected" : ""}>${esc(item.name)}</option>`,
+          `<option value="${item.id}" ${drink?.related?.includes(item.id) ? "selected" : ""}>${esc(item.name)}${item.flavor ? ` · ${esc(item.flavor)}` : ""}</option>`,
       )
       .join("");
     $("drink-form").hidden = false;
@@ -1363,7 +1363,7 @@
   const statCard = (label, value, note, extra = "") => `
     <div class="stats-card${extra}">
       <span>${label}</span>
-      <b>${value}</b>
+      ${typeof value === "number" ? `<b data-count="${Number(value)}">0</b>` : `<b>${value}</b>`}
       <small>${note}</small>
     </div>`;
 
@@ -1381,13 +1381,13 @@
     $("stats-updated").textContent = `обновлено в ${new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })} · онлайн считается за 15 минут`;
     $("stats-body").innerHTML = `
       <div class="stats-cards">
-        ${statCard("Банки", fmtNumber(totals.drinks), `${totals.published} опубликовано · ${totals.hidden} скрыто`)}
-        ${statCard("Участники", fmtNumber(totals.activeUsers), `${totals.sharedUsers} публичных профиля`)}
-        ${statCard("Оценки", fmtNumber(totals.ratings), `${totals.reviews} ${wordForm(totals.reviews, ["отзыв", "отзыва", "отзывов"])} с текстом`)}
+        ${statCard("Банки", totals.drinks, `${totals.published} опубликовано · ${totals.hidden} скрыто`)}
+        ${statCard("Участники", totals.activeUsers, `${totals.sharedUsers} публичных профиля`)}
+        ${statCard("Оценки", totals.ratings, `${totals.reviews} ${wordForm(totals.reviews, ["отзыв", "отзыва", "отзывов"])} с текстом`)}
         ${statCard("Средний балл", totals.avgScore === null ? "—" : String(totals.avgScore).replace(".", ","), `${String(totals.ratingsPerDrink).replace(".", ",")} оценки на банку`)}
-        ${statCard("Онлайн", fmtNumber(online.length), "за последние 15 минут", " stats-card--online")}
+        ${statCard("Онлайн", online.length, "за последние 15 минут", " stats-card--online")}
         ${statCard(`За ${data.period.days} дней`, `+${fmtNumber(period.ratings)}`, `оценок · ${period.drinks} банок · ${period.logins} заходов`)}
-        ${statCard("ИИ-запросы", fmtNumber(aiRequests), `${fmtCost(aiCost)} за период · всего ${fmtCost(ai.allTime.costUsd)}`)}
+        ${statCard("ИИ-запросы", aiRequests, `${fmtCost(aiCost)} за период · всего ${fmtCost(ai.allTime.costUsd)}`)}
       </div>
       <div class="stats-grid">
         <div class="stats-panel stats-panel--wide">
@@ -1471,6 +1471,7 @@
           ${recentMarkup(recent)}
         </div>
       </div>`;
+    window.nrgCountUp?.($("stats-body"));
   };
 
   const loadStats = async ({ refresh = false } = {}) => {

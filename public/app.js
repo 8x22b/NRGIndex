@@ -83,7 +83,7 @@
       .join("");
   };
 
-  const cardTemplate = (drink, rating) => {
+  const cardTemplate = (drink, rating, index = 0) => {
     const isAverage = activeView === "average";
     // Средний балл показываем всегда с десятой долей: «5.0» — это среднее,
     // а не тир S. Точное значение и число голосов — в подсказке.
@@ -98,7 +98,7 @@
         : getParticipant(activeView)?.name || "оценка";
 
     return `
-      <button class="drink-card" type="button" data-drink="${esc(drink.id)}" style="--card-accent:${accent}" aria-label="Открыть карточку ${esc(drink.name)}">
+      <button class="drink-card" type="button" data-drink="${esc(drink.id)}" style="--card-accent:${accent};--i:${index}" aria-label="Открыть карточку ${esc(drink.name)}">
         <span class="drink-card__visual">
           <span class="drink-card__votes">${esc(voteText)}</span>
           <span class="drink-card__rank${isAverage ? " is-num" : ""}" title="${esc(badgeTitle)}">${esc(isAverage ? value : rating.tier)}</span>
@@ -132,7 +132,7 @@
 
     renderTimer = window.setTimeout(() => {
       const rows = data.tiers
-        .map((tier) => {
+        .map((tier, rowIndex) => {
           const drinks = data.drinks
             .map((drink) => ({ drink, rating: ratingForView(drink, activeView) }))
             .filter((entry) => entry.rating?.tier === tier.id)
@@ -147,13 +147,13 @@
             });
 
           return `
-          <div class="tier-row" style="--tier-color:${tierColor(tier.id)}">
+          <div class="tier-row" style="--tier-color:${tierColor(tier.id)};--row:${rowIndex}">
             <div class="tier-label">
               <span class="tier-letter">${esc(tier.id)}</span>
               <span class="tier-label__copy"><b>${esc(tier.title)}</b><span>${esc(tier.note)}</span></span>
             </div>
             <div class="tier-items">
-              ${drinks.length ? drinks.map(({ drink, rating }) => cardTemplate(drink, rating)).join("") : `<div class="empty-tier">${isFiltering() ? "ничего не найдено — ослабьте фильтры" : "пока пусто"}</div>`}
+              ${drinks.length ? drinks.map(({ drink, rating }, index) => cardTemplate(drink, rating, index)).join("") : `<div class="empty-tier">${isFiltering() ? "ничего не найдено — ослабьте фильтры" : "пока пусто"}</div>`}
             </div>
           </div>
         `;
@@ -325,14 +325,15 @@
 
   const refreshChrome = () => {
     createTabs();
-    headerCount.textContent = `${data.drinks.length} ${wordForm(data.drinks.length, ["образец", "образца", "образцов"])}`;
-    headerPeople.textContent = `${data.participants.length} ${participantWord(data.participants.length)}`;
+    headerCount.innerHTML = `<span data-count="${Number(data.drinks.length)}">0</span> ${wordForm(data.drinks.length, ["образец", "образца", "образцов"])}`;
+    headerPeople.innerHTML = `<span data-count="${Number(data.participants.length)}">0</span> ${participantWord(data.participants.length)}`;
     const heroPeople = document.querySelector("#hero-people");
     if (heroPeople && data.participants.length) {
       const n = data.participants.length;
       heroPeople.textContent = `${n} ${participantWord(n)}. Один общий рейтинг. Никакой объективности — только вкус, настроение и последствия.`;
     }
     updateNode.textContent = data.updatedAt;
+    window.nrgCountUp?.();
   };
 
   document.addEventListener("click", (event) => {
