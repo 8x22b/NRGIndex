@@ -204,6 +204,12 @@ function findSimilarDrinks(
       const variants = [rowName, rowFlavor, union(rowName, rowEdition), combined];
       nameScore = 0;
       for (const variant of variants) nameScore = Math.max(nameScore, jaccard(queryWanted, variant));
+      // опечатки и порядок слов: Dice по отсортированным словам — «ultra whit» ≈ «ultra white»
+      const queryWords = [...queryWanted].sort().join("");
+      const rowWords = [...combined].sort().join("");
+      if (queryWords.length >= 4 && rowWords.length >= 4) {
+        nameScore = Math.max(nameScore, dice(queryWords, rowWords));
+      }
       let covered = 0;
       for (const word of queryWanted) if (combined.has(word)) covered++;
       if (covered === queryWanted.size) nameScore = Math.min(1, nameScore + 0.1);
@@ -215,6 +221,9 @@ function findSimilarDrinks(
       ) {
         nameScore = Math.min(1, nameScore + 0.1);
       }
+      // Совпал только бренд, а название/вкус разошлись (один общий «generic»-слоган
+      // вроде ultra/zero не в счёт) — это разные банки, не дубль.
+      if (nameScore < 0.45) continue;
     }
 
     const score = queryBrand.size ? 0.5 * brandScore + 0.5 * nameScore : nameScore;

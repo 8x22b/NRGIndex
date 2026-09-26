@@ -296,6 +296,7 @@
     if (summary.site?.title) document.title = `${summary.site.title} — личный кабинет`;
     renderMine();
     renderUnrated();
+    renderFind();
   };
 
   /* ---------- auth ---------- */
@@ -752,6 +753,62 @@
     renderUnrated();
   };
 
+  /* ---------- search existing ---------- */
+  // Ту же банку не обязательно заводить заново: ищем по уже загруженному summary
+  // и открываем редактор мнения с выбранным тиром — как в «Ещё не оценил».
+  const FIND_PAGE = 18;
+
+  const renderFind = () => {
+    const needle = $("find-input").value.trim().toLowerCase();
+    const container = $("find-results");
+    if (!needle) {
+      container.innerHTML = "";
+      $("find-count").textContent = "";
+      return;
+    }
+    const words = needle.split(/\s+/).filter(Boolean);
+    const list = state.summary.drinks.filter((drink) =>
+      words.every((word) =>
+        [drink.brand, drink.name, drink.flavor, drink.edition]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(word),
+      ),
+    );
+    const shown = list.slice(0, FIND_PAGE);
+    $("find-count").textContent =
+      list.length > shown.length
+        ? `${shown.length} из ${list.length} — уточни запрос`
+        : `${list.length} ${wordForm(list.length, ["банка", "банки", "банок"])}`;
+    if (!list.length) {
+      container.innerHTML = `<p class="hint">Ничего не нашлось — такую банку можно добавить формой выше.</p>`;
+      return;
+    }
+    const tiers = state.summary.tiers.map((tier) => tier.id);
+    container.innerHTML = shown
+      .map((drink) => {
+        const mine = state.mine.find((item) => item.drink === drink.id);
+        return `
+        <div class="unrated-card" data-drink="${esc(drink.id)}">
+          <img src="${esc(drink.image)}" alt="" loading="lazy">
+          <b>${esc(drink.name)}</b>
+          <small>${esc(drink.flavor)}${mine ? ` · у тебя ${esc(mine.tier)}` : ""}</small>
+          <div class="unrated-card__tiers" role="group" aria-label="Тир для ${esc(drink.name)}">
+            ${tiers.map((tier) => `<button type="button" data-tier="${esc(tier)}" style="--tier-color:${TIER_COLORS[tier] || "#ff4f79"}">${esc(tier)}</button>`).join("")}
+          </div>
+        </div>`;
+      })
+      .join("");
+  };
+
+  $("find-input").addEventListener("input", renderFind);
+  $("find-results").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-tier]");
+    if (!button) return;
+    openOpinion(button.closest(".unrated-card").dataset.drink, { tier: button.dataset.tier });
+  });
+
   /* ---------- images ---------- */
   const loadImage = (src) =>
     new Promise((resolve, reject) => {
@@ -1138,7 +1195,7 @@
     $("parsed-tier").style.opacity = parsed.tierGuessed ? ".55" : "";
     fillManual(parsed);
     updatePreviewImage();
-    $("smart-preview").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    $("smart-preview").scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   /* ---------- photo strip ---------- */

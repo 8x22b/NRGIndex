@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const appSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "index.html"), "utf8");
+const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 const profileSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "profile.js"), "utf8");
 
 test("доска: строка поиска и фильтры тиров в разметке", () => {
@@ -85,4 +86,22 @@ test("витрина: главный энергос — только S-тир, �
   assert.match(appSource, /SPECIMEN_ROTATE_MS/);
   assert.match(appSource, /prefers-reduced-motion/);
   assert.match(appSource, /setupSpecimen\(\)/);
+});
+
+test("доска: залогиненным — быстрая оценка прямо в карточке банки", () => {
+  assert.match(appSource, /currentUser/);
+  assert.match(appSource, /myRatings/);
+  assert.match(appSource, /data-quick-tier/);
+  assert.match(appSource, /api\("PUT", `api\/cabinet\/ratings\/\$\{encodeURIComponent\(drink\.id\)\}`/);
+  assert.match(appSource, /id="quick-save"/);
+  assert.match(appSource, /api\("GET", "api\/auth\/me"\)/);
+});
+
+test("витрина: смена банки анимируется, а не мигает", () => {
+  assert.match(appSource, /classList\.add\("is-swapping"\)/);
+  assert.match(appSource, /classList\.add\("is-entering"\)/);
+  assert.match(stylesSource, /@keyframes specimen-can-in/);
+  assert.match(stylesSource, /@keyframes specimen-badge-in/);
+  assert.match(stylesSource, /\.specimen-card\.is-entering img/);
+  assert.match(stylesSource, /\.specimen-card__halo::after/);
 });

@@ -106,6 +106,18 @@ test("дубликаты: без явного «это не он» новую б
   assert.match(cabinetSource, /\$\("btn-confirm"\)\.disabled = similar\.length > 0/);
 });
 
+test("поиск по индексу в кабинете: находит банку и открывает редактор мнения", () => {
+  assert.match(cabinetHtml, /id="find-input"/);
+  assert.match(cabinetHtml, /id="find-results"/);
+  assert.match(cabinetSource, /const renderFind = \(\) =>/);
+  assert.match(cabinetSource, /\$\("find-input"\)\.addEventListener\("input", renderFind\)/);
+  assert.match(cabinetSource, /renderFind\(\);/);
+  assert.match(
+    cabinetSource,
+    /openOpinion\(button\.closest\("\.unrated-card"\)\.dataset\.drink, \{ tier: button\.dataset\.tier \}\)/,
+  );
+});
+
 test("перед сохранением сказано, что уйдут и текст, и фото", () => {
   assert.match(cabinetHtml, /id="parsed-save-note"/);
   assert.match(cabinetHtml, /тир, отзыв и фото/);

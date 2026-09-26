@@ -69,6 +69,19 @@ test("findSimilarDrinks: разные вкусы и чужой бренд не �
   assert.deepEqual(findSimilarDrinks(DB, { brand: "Red Bull", name: "Red Bull Apple Kiwi" }), []);
 });
 
+test("findSimilarDrinks: тот же бренд с другим вкусом — не дубль", () => {
+  assert.deepEqual(
+    findSimilarDrinks(DB, { brand: "Monster", name: "Monster Ultra Paradise", flavor: "маракуйя" }),
+    [],
+  );
+});
+
+test("findSimilarDrinks: опечатку во вкусе ловит Dice — дубль находится", () => {
+  const hits = findSimilarDrinks(DB, { brand: "Monster", name: "Monster Ultra Whit", flavor: "цитрус" });
+  assert.equal(hits[0]?.slug, "monster-white");
+  assert.equal(hits[0]?.confidence, "high");
+});
+
 test("findSimilarDrinks: скрытые банки видны только с includeHidden", () => {
   const query = { brand: "Volt", name: "Volt Hidden Mango", flavor: "манго" };
   const visible = findSimilarDrinks(DB, query);
