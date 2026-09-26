@@ -17,33 +17,6 @@
 
   const tierColors = { S: "#ff5f5a", A: "#f1a653", B: "#e7d471", C: "#8ebd93", D: "#8093b7" };
   const tierColor = (id) => tierColors[id] || "#ff4f79";
-
-  const api = async (method, path, body) => {
-    const res = await fetch(path, {
-      method,
-      headers: {
-        "x-nrg-request": "1",
-        ...(body !== undefined ? { "content-type": "application/json" } : {}),
-      },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      credentials: "same-origin",
-    });
-    let json = null;
-    try {
-      json = await res.json();
-    } catch {
-      json = null;
-    }
-    if (!res.ok) {
-      const error = new Error(
-        json?.error || `Сервер ответил HTTP ${res.status}${res.statusText ? ` ${res.statusText}` : ""}`,
-      );
-      error.status = res.status;
-      throw error;
-    }
-    return json;
-  };
-
   // Адаптивные картинки: srcset/sizes + width/height против сдвигов (CLS).
   const drinkImg = (drink, sizes, eager) => {
     const srcset = drink.imageSrcSet ? ` srcset="${esc(drink.imageSrcSet)}" sizes="${sizes}"` : "";
@@ -68,7 +41,6 @@
   let data = null;
   let activeView = "average";
   let currentUser = null;
-  const myRatings = new Map();
 
   const getParticipant = (id) => data.participants.find((person) => person.id === id);
   const getDrink = (id) => data.drinks.find((drink) => drink.id === id);
@@ -385,33 +357,19 @@
       ...untried.map(({ person, rating }) => reviewRow(person, rating)),
     ].join("");
 
-    // Шорткат для залогиненных: оценить банку прямо из карточки на тирлисте,
-    // без похода в кабинет. Тир выбирается кликом, отзыв — необязателен.
-    const myRating = myRatings.get(drink.id) || null;
-    const quickRate = currentUser
-      ? `
-      <section class="quick-rate">
-        <div class="reviews__head">
-          <h4>Твоя оценка</h4>
-          <span>${esc(currentUser.displayName)} · сохранится сразу</span>
-        </div>
-        <div class="quick-rate__tiers">
-          ${data.tiers
-            .map(
-              (tier) => `
-            <button class="quick-rate__tier${myRating?.tier === tier.id ? " is-active" : ""}" type="button" data-quick-tier="${esc(tier.id)}" style="--tier-color:${safeColor(tierColor(tier.id), "#ff4f79")}">
-              <b>${esc(tier.id)}</b><small>${esc(tier.title)}</small>
-            </button>`,
-            )
-            .join("")}
-        </div>
-        <div class="quick-rate__row">
-          <textarea id="quick-review" rows="2" maxlength="1000" placeholder="Пара слов об этой банке — необязательно">${esc(myRating?.review || "")}</textarea>
-          <button class="btn" type="button" id="quick-save">Сохранить</button>
-        </div>
-        <p class="form-status" id="quick-status" aria-live="polite"></p>
-      </section>`
-      : "";
+    // Оценка живёт в кабинете: там полноценный редактор мнения с ИИ-разбором.
+    // Кнопка просто уводит в него сразу на нужную банку (?rate=<slug>).
+    // Сотрудникам рядом — правка этой же банки в админке (?drink=<slug>).
+    const staffEdit =
+      currentUser && ["admin", "editor"].includes(currentUser.role)
+        ? `<a class="btn btn--ghost" href="/admin?drink=${encodeURIComponent(drink.id)}">✎ Править банку</a>`
+        : "";
+    const rateButton = `
+      <div class="dialog-rate">
+        <a class="btn" href="/cabinet.html?rate=${encodeURIComponent(drink.id)}">✦ Оценить банку в кабинете</a>
+        ${staffEdit}
+        <span class="hint">нейросеть разберёт твоё мнение по словам или голосу</span>
+      </div>`;
 
     dialogContent.innerHTML = `
       <section class="dialog-hero" style="--dialog-a:${safeColor(drink.accent?.[0], "#ff4f79")}">
@@ -427,50 +385,13 @@
           <button class="dialog-share" type="button" data-share-drink="${esc(drink.id)}">скопировать ссылку на банку</button>
         </div>
       </section>
-      ${quickRate}
+      ${rateButton}
       <section class="reviews">
         <div class="reviews__head"><h4>Что сказали</h4><span>${data.participants.length} ${participantWord(data.participants.length)} · личные вердикты</span></div>
         ${reviews}
       </section>
       ${relatedMarkup}
     `;
-
-    const quickButtons = [...dialogContent.querySelectorAll("[data-quick-tier]")];
-    let quickTier = myRating?.tier || "";
-    const quickStatus = dialogContent.querySelector("#quick-status");
-    quickButtons.forEach((button) =>
-      button.addEventListener("click", () => {
-        quickTier = button.dataset.quickTier;
-        quickButtons.forEach((node) => node.classList.toggle("is-active", node === button));
-      }),
-    );
-    dialogContent.querySelector("#quick-save")?.addEventListener("click", async (event) => {
-      if (!quickTier) {
-        quickStatus.textContent = "Сначала выбери тир";
-        return;
-      }
-      const button = event.currentTarget;
-      button.disabled = true;
-      quickStatus.style.color = "";
-      quickStatus.textContent = "Сохраняю…";
-      const review = dialogContent.querySelector("#quick-review").value.trim();
-      try {
-        await api("PUT", `api/cabinet/ratings/${encodeURIComponent(drink.id)}`, { tier: quickTier, review });
-        myRatings.set(drink.id, { tier: quickTier, review });
-        // публичный профиль — оценка сразу попадает в сводный стол
-        if (currentUser.isPublic && drink.ratings) {
-          drink.ratings[currentUser.username] = { tier: quickTier, review };
-        }
-        quickStatus.textContent = "Оценка сохранена ✓";
-        renderBoard();
-        setupSpecimen();
-      } catch (error) {
-        quickStatus.textContent = error.message;
-        quickStatus.style.color = "#ff8a8a";
-      } finally {
-        button.disabled = false;
-      }
-    });
 
     dialogContent.querySelectorAll("[data-related-drink]").forEach((button) => {
       button.addEventListener("click", () => openDrink(button.dataset.relatedDrink));
@@ -607,13 +528,10 @@
   setupMarquee();
 
   (async () => {
+    // Роль нужна только чтобы показать сотрудникам кнопку правки банки в админке.
     try {
-      const { user } = await api("GET", "api/auth/me");
-      currentUser = user || null;
-      if (currentUser) {
-        const mine = await api("GET", "api/cabinet/me");
-        for (const rating of mine.ratings || []) myRatings.set(rating.drink, rating);
-      }
+      const meRes = await fetch("api/auth/me", { headers: { accept: "application/json" } });
+      currentUser = (await meRes.json()).user || null;
     } catch {
       currentUser = null;
     }

@@ -294,24 +294,12 @@ img { display: block; max-width: 100%; }
 .review-link { border: 0; border-bottom: 1px solid var(--line); padding: .3rem 0; color: var(--muted); background: none; cursor: pointer; font-size: .48rem; letter-spacing: .12em; text-transform: uppercase; transition: color .2s, border-color .2s; }
 .review-link:hover { color: var(--paper); border-color: var(--paper); }
 
-/* быстрая оценка из карточки на тирлисте — только для залогиненных */
-.quick-rate { margin: 0 3.5rem 2.5rem; padding: 1.4rem 1.6rem; border: 1px solid var(--line); border-radius: 1rem; background: rgba(22,19,17,.72); }
-.quick-rate .reviews__head { margin-bottom: .9rem; }
-.quick-rate .reviews__head h4 { font-size: 1.6rem; }
-.quick-rate__tiers { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; }
-.quick-rate__tier { display: flex; flex-direction: column; align-items: center; gap: .2rem; padding: .55rem .3rem; border: 1px solid color-mix(in srgb, var(--tier-color) 55%, transparent); border-radius: .55rem; color: var(--tier-color); background: transparent; cursor: pointer; font: inherit; transition: color .2s, background .2s, border-color .2s; }
-.quick-rate__tier b { font: 600 italic 1.25rem/1 var(--serif); }
-.quick-rate__tier small { font-size: .52rem; letter-spacing: .08em; text-transform: uppercase; opacity: .75; }
-.quick-rate__tier:hover, .quick-rate__tier.is-active { color: var(--ink); background: var(--tier-color); border-color: var(--tier-color); }
-.quick-rate__row { display: flex; gap: .7rem; align-items: stretch; margin-top: .9rem; }
-.quick-rate__row textarea { flex: 1; min-width: 0; padding: .7rem .8rem; border: 1px solid var(--line); border-radius: .6rem; color: var(--paper); background: #0f0d0c; font: 500 .75rem/1.5 var(--sans); resize: vertical; }
-.quick-rate__row textarea:focus { outline: 1px solid var(--orange); border-color: var(--orange); }
-.quick-rate .form-status { margin: .5rem 0 0; }
-
+/* оценка из карточки на тирлисте: уводит в кабинет к полноценному редактору мнения */
+.dialog-rate { display: flex; align-items: center; flex-wrap: wrap; gap: .6rem 1rem; padding: 1.4rem 3.5rem 0; }
+.dialog-rate .btn { text-decoration: none; }
+.dialog-rate .hint { margin: 0; }
 @media (max-width: 720px) {
-  .quick-rate { margin: 0 1rem 1.6rem; padding: 1rem; }
-  .quick-rate__tier small { display: none; }
-  .quick-rate__row { flex-direction: column; }
+  .dialog-rate { padding: 1.2rem 1.25rem 0; }
 }
 .related-drinks { padding: 0 3.5rem 3.5rem; }
 .related-drinks__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; padding-top: 1.2rem; border-top: 1px solid var(--line); }

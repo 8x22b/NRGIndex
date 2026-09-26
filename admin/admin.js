@@ -1608,5 +1608,12 @@
     }
     document.title = `${state.data.settings.siteTitle || "NRG / INDEX"} — админка`;
     switchTab("drinks");
+    // Диплинк с тирлиста: admin?drink=<slug> — сразу открываем форму правки.
+    const slug = new URLSearchParams(location.search).get("drink");
+    if (slug) {
+      const drink = state.data.drinks.find((item) => item.slug === slug);
+      history.replaceState(null, "", location.pathname);
+      if (drink) openDrinkForm(drink.id);
+    }
   })();
 })();

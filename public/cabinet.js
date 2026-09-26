@@ -80,6 +80,12 @@
     $("profile-link").href = `profile.html?u=${encodeURIComponent(state.me.username)}`;
     $("profile-link").hidden = !state.me.isPublic;
     await refreshAll();
+    // Диплинк с тирлиста: cabinet.html?rate=<slug> — сразу открываем редактор мнения.
+    const rateSlug = new URLSearchParams(location.search).get("rate");
+    if (rateSlug) {
+      history.replaceState(null, "", location.pathname);
+      openOpinion(decodeURIComponent(rateSlug));
+    }
   };
 
   // Аватар в кабинете: кроп с зумом и сдвигом делаем на клиенте, сервер всё равно
@@ -414,7 +420,7 @@
             <select data-m-tier>${state.summary.tiers
               .map((tier) => `<option ${tier.id === rating.tier ? "selected" : ""}>${esc(tier.id)}</option>`)
               .join("")}</select>
-            <button class="btn btn--ghost" type="button" data-m-edit>мнение</button>
+            <button class="btn btn--ghost" type="button" data-m-edit>изменить</button>
             <button class="btn btn--danger" type="button" data-m-del-rating>удалить</button>
             ${own ? `<button class="btn btn--danger" type="button" data-m-del-drink>× банка</button>` : ""}
           </div>

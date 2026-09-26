@@ -94,3 +94,8 @@ test("форма напитка: все способы замены фото в 
   assert.doesNotMatch(formActions, /btn-drink-image-clear|btn-drink-redraw/, "фото-кнопки не должны торчать в нижнем ряду");
   assert.match(adminJs, /d-image-tools"\)\.hidden = true/);
 });
+
+test("диплинк с тирлиста: admin?drink=<slug> открывает форму правки", () => {
+  assert.match(adminJs, /new URLSearchParams\(location\.search\)\.get\("drink"\)/);
+  assert.match(adminJs, /openDrinkForm\(drink\.id\)/);
+});

@@ -118,6 +118,16 @@ test("поиск по индексу в кабинете: находит бан�
   );
 });
 
+test("диплинк с тирлиста: cabinet.html?rate=<slug> открывает редактор мнения", () => {
+  assert.match(cabinetSource, /new URLSearchParams\(location\.search\)\.get\("rate"\)/);
+  assert.match(cabinetSource, /openOpinion\(decodeURIComponent\(rateSlug\)\)/);
+});
+
+test("мои оценки: кнопка редактора подписана «изменить»", () => {
+  assert.match(cabinetSource, /data-m-edit>изменить<\/button>/);
+  assert.doesNotMatch(cabinetSource, /data-m-edit>мнение<\/button>/);
+});
+
 test("перед сохранением сказано, что уйдут и текст, и фото", () => {
   assert.match(cabinetHtml, /id="parsed-save-note"/);
   assert.match(cabinetHtml, /тир, отзыв и фото/);

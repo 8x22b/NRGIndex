@@ -88,13 +88,17 @@ test("витрина: главный энергос — только S-тир, �
   assert.match(appSource, /setupSpecimen\(\)/);
 });
 
-test("доска: залогиненным — быстрая оценка прямо в карточке банки", () => {
-  assert.match(appSource, /currentUser/);
-  assert.match(appSource, /myRatings/);
-  assert.match(appSource, /data-quick-tier/);
-  assert.match(appSource, /api\("PUT", `api\/cabinet\/ratings\/\$\{encodeURIComponent\(drink\.id\)\}`/);
-  assert.match(appSource, /id="quick-save"/);
-  assert.match(appSource, /api\("GET", "api\/auth\/me"\)/);
+test("доска: оценка уводит в кабинет на нужную банку, без инлайн-формы", () => {
+  assert.match(appSource, /cabinet\.html\?rate=\$\{encodeURIComponent\(drink\.id\)\}/);
+  assert.match(appSource, /class="dialog-rate"/);
+  assert.doesNotMatch(appSource, /data-quick-tier/);
+  assert.doesNotMatch(appSource, /quick-save/);
+  assert.match(stylesSource, /\.dialog-rate/);
+});
+
+test("доска: сотрудникам рядом кнопка правки банки в админке", () => {
+  assert.match(appSource, /\["admin", "editor"\]\.includes\(currentUser\.role\)/);
+  assert.match(appSource, /admin\?drink=\$\{encodeURIComponent\(drink\.id\)\}/);
 });
 
 test("витрина: смена банки анимируется, а не мигает", () => {
