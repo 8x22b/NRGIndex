@@ -193,21 +193,26 @@ img { display: block; max-width: 100%; }
 .dialog-share:hover { color: var(--paper); border-color: var(--paper); }
 .tier-board { transition: opacity .2s, transform .35s var(--ease); }
 .tier-board.is-changing { opacity: 0; transform: translateY(.8rem); }
-.tier-row { position: relative; min-height: 12.5rem; display: grid; grid-template-columns: 8.3rem minmax(0, 1fr); border-bottom: 1px solid var(--line); overflow: hidden; }
+.tier-row { position: relative; min-height: 12.5rem; display: grid; grid-template-columns: 8.3rem minmax(0, 1fr); border-bottom: 1px solid var(--line); overflow: hidden; transition: background .35s; animation: row-in .55s var(--ease) both; animation-delay: calc(var(--row, 0) * 60ms); }
 .tier-row:last-child { border-bottom: 0; }
-.tier-row::after { content: ""; position: absolute; inset: 0; opacity: .035; pointer-events: none; background: linear-gradient(90deg, var(--tier-color), transparent 42%); }
-.tier-label { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.25rem; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--tier-color) 13%, #151311); }
+@keyframes row-in { from { opacity: 0; transform: translateY(.5rem); } }
+.tier-row::after { content: ""; position: absolute; inset: 0; opacity: .035; pointer-events: none; background: linear-gradient(90deg, var(--tier-color), transparent 42%); transition: opacity .35s; }
+.tier-row:hover { background: color-mix(in srgb, var(--tier-color) 6%, transparent); }
+.tier-row:hover::after { opacity: .1; }
+.tier-row:hover .tier-label { background: color-mix(in srgb, var(--tier-color) 20%, #151311); }
+.tier-label { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: space-between; padding: 1.25rem; border-right: 1px solid var(--line); background: color-mix(in srgb, var(--tier-color) 13%, #151311); transition: background .35s; }
 .tier-letter { color: var(--tier-color); font: 600 italic 5.2rem/.75 var(--serif); letter-spacing: -.08em; }
 .tier-label__copy b { display: block; margin-bottom: .25rem; font-size: .58rem; letter-spacing: .12em; text-transform: uppercase; }
 .tier-label__copy span { color: var(--muted); font-size: .48rem; letter-spacing: .07em; text-transform: uppercase; }
-.tier-items { position: relative; z-index: 2; display: flex; flex-wrap: nowrap; align-items: stretch; gap: .85rem; padding: .85rem; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: rgba(242,237,228,.22) transparent; }
+.tier-items { position: relative; z-index: 2; display: flex; flex-wrap: nowrap; align-items: stretch; gap: .85rem; padding: .85rem; scroll-padding: .85rem; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: thin; scrollbar-color: rgba(242,237,228,.22) transparent; }
 .tier-items::-webkit-scrollbar { height: 8px; }
 .tier-items::-webkit-scrollbar-thumb { border-radius: 4px; background: rgba(242,237,228,.2); }
 .tier-items::-webkit-scrollbar-track { background: transparent; }
 .drink-card { scroll-snap-align: start; }
 .empty-tier { min-width: 15rem; flex: 1; display: grid; place-items: center; border: 1px dashed rgba(255,255,255,.08); border-radius: .75rem; color: rgba(255,255,255,.2); font: 500 italic 1.1rem var(--serif); }
 
-.drink-card { position: relative; width: clamp(12rem, 17vw, 15rem); min-height: 10.8rem; flex: 0 0 auto; display: grid; grid-template-rows: 1fr auto; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: .75rem; color: var(--paper); background: #201b18; cursor: pointer; text-align: left; transition: border-color .3s, box-shadow .35s var(--ease); }
+.drink-card { position: relative; width: clamp(12rem, 17vw, 15rem); min-height: 10.8rem; flex: 0 0 auto; display: grid; grid-template-rows: 1fr auto; padding: 0; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: .75rem; color: var(--paper); background: #201b18; cursor: pointer; text-align: left; transition: border-color .3s, box-shadow .35s var(--ease); animation: card-in .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms); }
+@keyframes card-in { from { opacity: 0; transform: translateY(1rem) scale(.97); } }
 .drink-card:hover { border-color: color-mix(in srgb, var(--card-accent) 65%, white); box-shadow: 0 1.5rem 3rem rgba(0,0,0,.35), 0 0 2.2rem color-mix(in srgb, var(--card-accent) 18%, transparent); }
 .drink-card__visual { position: relative; min-height: 7.2rem; display: grid; place-items: center; overflow: hidden; background: radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--card-accent) 32%, #f6f1e7), color-mix(in srgb, var(--card-accent) 62%, #ffffff) 20%, color-mix(in srgb, var(--card-accent) 62%, #2b1d19) 48%, #251b1b 74%); }
 .drink-card__visual::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8.6rem; height: 8.6rem; border-radius: 50%; transform: translate(-50%, -50%); background: radial-gradient(circle, rgba(255,255,255,.55) 0%, rgba(255,255,255,.22) 45%, rgba(255,255,255,0) 70%); pointer-events: none; }
@@ -340,7 +345,7 @@ img { display: block; max-width: 100%; }
   .tier-letter { font-size: 3.1rem; letter-spacing: 0; }
   .tier-label__copy b { font-size: .43rem; }
   .tier-label__copy span { font-size: .38rem; }
-  .tier-items { padding: .6rem; gap: .6rem; }
+  .tier-items { padding: .6rem; gap: .6rem; scroll-padding: .6rem; }
   .drink-card { width: 11.5rem; }
   .empty-tier { min-width: 12rem; }
   .manifesto { grid-template-columns: 1fr; gap: 1.5rem; padding: 6rem 1rem; }
@@ -639,7 +644,8 @@ a.drink-card { text-decoration: none; }
 .profile-review b { display: block; font-size: .78rem; }
 .profile-review small { display: block; margin-top: .2rem; color: var(--muted); font-size: .52rem; letter-spacing: .08em; text-transform: uppercase; }
 .profile-review p { margin: .5rem 0 0; font: 500 italic 1.15rem/1.45 var(--serif); }
-.profile-review__tier { text-align: center; }
+/* min-width — чтобы буква не уезжала к краю, когда подписи «выше/ниже стола» нет */
+.profile-review__tier { min-width: 5.5rem; text-align: center; }
 .profile-review__tier b { color: var(--tier-color); font: 600 italic 2.4rem/1 var(--serif); }
 .profile-review__tier small { margin-top: .3rem; white-space: nowrap; }
 
