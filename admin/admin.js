@@ -115,9 +115,10 @@
               <td>${esc(drink.brand)}</td>
               <td>${Object.keys(drink.ratings || {}).length}</td>
               <td><span class="admin-badge ${drink.published ? "admin-badge--on" : "admin-badge--off"}">${drink.published ? "опубликован" : "скрыт"}</span></td>
-              <td class="admin-actions">
-                <button class="btn btn--ghost" type="button" data-edit="${drink.id}">Править</button>
-                <button class="btn btn--ghost" type="button" data-toggle="${drink.id}">${drink.published ? "Скрыть" : "Опубликовать"}</button>
+                <td class="admin-actions">
+                  <button class="btn btn--ghost" type="button" data-edit="${drink.id}">Править</button>
+                  <button class="btn btn--ghost" type="button" data-raters="${drink.id}">Кто оценил</button>
+                  <button class="btn btn--ghost" type="button" data-toggle="${drink.id}">${drink.published ? "Скрыть" : "Опубликовать"}</button>
                 ${String(drink.image || "").startsWith("/uploads/") ? `<button class="btn btn--ghost" type="button" data-reprocess="${drink.id}">Переобработать</button>` : ""}
                 <button class="btn btn--danger" type="button" data-delete="${drink.id}">Удалить</button>
               </td>
@@ -130,6 +131,10 @@
     const container = $("drinks-table");
     container.querySelectorAll("[data-edit]").forEach((button) => {
       button.onclick = () => openDrinkForm(Number(button.dataset.edit));
+    });
+    container.querySelectorAll("[data-raters]").forEach((button) => {
+      const drink = state.data.drinks.find((item) => item.id === Number(button.dataset.raters));
+      button.onclick = () => openRaters(drink);
     });
     container.querySelectorAll("[data-toggle]").forEach((button) => {
       button.onclick = async () => {
@@ -1125,6 +1130,40 @@
     row.costUsd > 0 ? fmtCost(row.costUsd) : row.kind === "stt" ? "по длит." : "—";
 
   const safeColor = (value, fallback) => (/^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? value : fallback);
+
+  const openRaters = (drink) => {
+    const users = new Map(state.data.users.map((u) => [String(u.username), u]));
+    const rows = Object.entries(drink.ratings || {})
+      .map(([username, r]) => ({ user: users.get(String(username)), rating: r }))
+      .sort((a, b) => (a.rating.order || 0) - (b.rating.order || 0));
+    $("raters-title").textContent = `Кто оценил — ${drink.name || ""}`;
+    $("raters-list").innerHTML = rows.length
+      ? rows
+          .map(({ user, rating }) => {
+            const u = user || { display_name: "?", username: "?", initials: "?", color: "#8093b7" };
+            const tier = String(rating.tier || "").toUpperCase();
+            const tierColor = TIER_COLORS[tier] || "#8093b7";
+            return `
+          <div class="raters-row">
+            <span class="raters-row__avatar" style="background:${safeColor(u.color, "#8093b7")}">${esc(u.initials || "?")}</span>
+            <span class="raters-row__tier" style="background:${tierColor};color:#0b0d12">${esc(tier || "—")}</span>
+            <span class="raters-row__who raters-row__name">${esc(u.display_name || u.username)}<small>@${esc(u.username)}</small></span>
+            ${rating.review ? `<span class="raters-row__review">${esc(rating.review)}</span>` : ""}
+          </div>`;
+          })
+          .join("")
+      : `<p class="raters-list__empty">Пока никто не оценил</p>`;
+    $("raters-modal").hidden = false;
+  };
+
+  document.querySelectorAll("[data-raters-close]").forEach((el) => {
+    el.addEventListener("click", () => {
+      $("raters-modal").hidden = true;
+    });
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("raters-modal").hidden) $("raters-modal").hidden = true;
+  });
 
   const wordForm = (value, forms) => {
     const n = Math.abs(value) % 100;
