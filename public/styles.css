@@ -300,8 +300,8 @@ img { display: block; max-width: 100%; }
    all: unset — чтобы чужие правила вроде «.stats-card span { font-size: 11px }» не ломали барабан */
 .count-number { display: inline-flex; align-items: baseline; letter-spacing: normal; text-transform: none; font-variant-numeric: tabular-nums; }
 .count-number .count-digit { all: unset; display: inline-block; width: 1ch; height: 1em; overflow: hidden; text-align: center; letter-spacing: normal; text-transform: none; }
-.count-number .count-digit__strip { all: unset; display: block; transform: translateY(calc(var(--digit, 0) * -1em)); transition: transform .9s var(--ease); transition-delay: var(--delay, 0ms); }
-.count-number .count-digit__strip span { all: unset; display: block; height: 1em; line-height: 1; }
+.count-number .count-digit__strip { all: unset; display: block; transform: translateY(calc(-.1em - var(--digit, 0) * 1.2em)); transition: transform .9s var(--ease); transition-delay: var(--delay, 0ms); }
+.count-number .count-digit__strip span { all: unset; display: block; height: 1.2em; line-height: 1.2em; }
 .count-number .count-sep { all: unset; display: inline-block; }
 
 @media (max-width: 980px) {
