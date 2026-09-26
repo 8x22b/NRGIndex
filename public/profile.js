@@ -69,12 +69,12 @@
     const color = safeColor(profile.color, "#9fb7ff");
     const max = Math.max(1, ...Object.values(stats.distribution));
     const bars = tiers
-      .map((tier) => {
+      .map((tier, index) => {
         const n = stats.distribution[tier.id] || 0;
         return `
-        <div class="dist-bar" style="--tier-color:${tierColor(tier.id)}">
+        <div class="dist-bar" style="--tier-color:${tierColor(tier.id)};--i:${index}">
           <span class="dist-bar__count">${n}</span>
-          <span class="dist-bar__fill" style="height:${Math.round((n / max) * 100)}%"></span>
+          <span class="dist-bar__fill" style="--h:${Math.round((n / max) * 100)}%"></span>
           <b>${esc(tier.id)}</b>
         </div>`;
       })
@@ -218,6 +218,13 @@
       <div class="profile-dist" aria-label="Распределение по тирам">${bars}</div>
       ${activityMarkup}
     `;
+    // столбики растут из нуля: целевая высота уже в --h, ставим её после отрисовки
+    $("profile-hero")
+      .querySelectorAll(".dist-bar__fill")
+      .forEach((fill) => {
+        void fill.offsetHeight;
+        fill.style.height = fill.style.getPropertyValue("--h");
+      });
     window.nrgCountUp?.($("profile-hero"));
   };
 
@@ -260,12 +267,12 @@
     $("profile-reviews-meta").textContent = withText.length ? "свежие сверху" : "";
     $("profile-reviews").innerHTML = withText.length
       ? withText
-          .map((rating) => {
+          .map((rating, index) => {
             const diff = rating.othersAvg === null ? null : Math.round(({ S: 5, A: 4, B: 3, C: 2, D: 1 }[rating.tier] || 0) - rating.othersAvg);
             const verdict =
               diff === null ? "" : diff >= 1 ? "выше стола" : diff <= -1 ? "ниже стола" : "как у стола";
             return `
-            <article class="profile-review">
+            <article class="profile-review" style="--i:${index}">
               <img src="${esc(imgSrc(rating.image))}" alt="" loading="lazy">
               <div>
                 <b>${esc(rating.name)}</b>

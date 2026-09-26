@@ -295,6 +295,7 @@ img { display: block; max-width: 100%; }
 
 .reveal { opacity: 0; transform: translateY(2.2rem); transition: opacity .8s var(--ease), transform 1s var(--ease); }
 .reveal.is-visible { opacity: 1; transform: translateY(0); }
+@keyframes fade-up { from { opacity: 0; transform: translateY(.8rem); } }
 /* числа-счётчик: цифры прокручиваются, как барабан.
    all: unset — чтобы чужие правила вроде «.stats-card span { font-size: 11px }» не ломали барабан */
 .count-number { display: inline-flex; align-items: baseline; letter-spacing: normal; text-transform: none; font-variant-numeric: tabular-nums; }
@@ -605,7 +606,7 @@ a.review-link { text-decoration: none; }
 .profile-people .view-chip > span:last-child { min-width: 0; }
 .profile-people .view-chip__number { color: var(--person-color); border-color: color-mix(in srgb, var(--person-color) 70%, white); font: 600 .68rem var(--sans); }
 .profile-people .view-chip.is-active .view-chip__number { color: var(--ink); border-color: var(--ink); }
-.profile-hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 2rem 3rem; align-items: end; padding: 2.5rem; margin-bottom: 1.5rem; border: 1px solid var(--line); border-radius: 1.1rem; background: radial-gradient(60% 120% at 0% 0%, rgba(255,79,121,.08), transparent 60%), #151311; }
+.profile-hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 2rem 3rem; align-items: end; padding: 2.5rem; margin-bottom: 1.5rem; border: 1px solid var(--line); border-radius: 1.1rem; background: radial-gradient(60% 120% at 0% 0%, rgba(255,79,121,.08), transparent 60%), #151311; animation: fade-up .7s var(--ease) both; }
 .profile-hero > .hint, .profile-hero > .eyebrow { grid-column: 1 / -1; margin: 0; }
 .profile-id { display: flex; align-items: center; gap: 1.4rem; }
 .profile-id .eyebrow { margin-bottom: .6rem; }
@@ -618,15 +619,15 @@ a.review-link { text-decoration: none; }
 .profile-stats b { display: block; font: 600 italic 2.6rem/1 var(--serif); }
 .profile-stats span { display: block; margin-top: .4rem; color: var(--muted); font-size: .52rem; line-height: 1.5; letter-spacing: .1em; text-transform: uppercase; }
 .profile-dist { grid-column: 2; grid-row: 1; display: grid; grid-template-columns: repeat(5, 1fr); gap: .6rem; align-items: end; height: 9rem; }
-.dist-bar { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: .35rem; }
-.dist-bar__fill { width: 100%; min-height: 3px; border-radius: .4rem .4rem .15rem .15rem; background: linear-gradient(180deg, var(--tier-color), color-mix(in srgb, var(--tier-color) 35%, #151311)); transition: height .8s var(--ease); }
+.dist-bar { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: .35rem; animation: fade-up .55s var(--ease) both; animation-delay: calc(var(--i, 0) * 60ms); }
+.dist-bar__fill { width: 100%; height: 0; min-height: 3px; border-radius: .4rem .4rem .15rem .15rem; background: linear-gradient(180deg, var(--tier-color), color-mix(in srgb, var(--tier-color) 35%, #151311)); transition: height .8s var(--ease); transition-delay: calc(var(--i, 0) * 70ms); }
 .dist-bar__count { color: var(--muted); font-size: .6rem; font-variant-numeric: tabular-nums; }
 .dist-bar b { color: var(--tier-color); font: 600 italic 1.5rem/1 var(--serif); }
 .profile-activity { grid-column: 1 / -1; display: grid; gap: .9rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
 .profile-activity__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
 .profile-activity__head .eyebrow { margin: 0; }
 .profile-activity__meta { color: var(--muted); font-size: .52rem; letter-spacing: .14em; text-transform: uppercase; }
-.activity-heat { display: grid; gap: .3rem; overflow-x: auto; padding-bottom: .25rem; }
+.activity-heat { display: grid; gap: .3rem; overflow-x: auto; padding-bottom: .25rem; animation: fade-up .7s var(--ease) both .1s; }
 .activity-heat__months { display: flex; gap: .22rem; padding-left: 1.35rem; }
 .activity-heat__months span { width: .7rem; color: var(--muted); font-size: .46rem; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
 .activity-heat__row { display: flex; gap: .45rem; align-items: flex-start; }
@@ -638,6 +639,9 @@ a.review-link { text-decoration: none; }
 .activity-heat .heat-cell.is-empty { background: rgba(255,255,255,.05); }
 .activity-heat .heat-cell.is-future { background: transparent; }
 .activity-insights { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .6rem; }
+.activity-insights .activity-chip { animation: fade-up .5s var(--ease) both; }
+.activity-insights .activity-chip:nth-child(2) { animation-delay: .08s; }
+.activity-insights .activity-chip:nth-child(3) { animation-delay: .16s; }
 .activity-chip { padding: .32rem .6rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .55rem; letter-spacing: .05em; white-space: nowrap; }
 .activity-chip b { color: var(--paper); font-weight: 600; }
 .activity-legend { display: inline-flex; align-items: center; gap: .25rem; margin-left: auto; color: var(--muted); font-size: .46rem; letter-spacing: .12em; text-transform: uppercase; }
@@ -647,7 +651,7 @@ a.review-link { text-decoration: none; }
 .profile-block__head h2 { margin: 0; font: 500 clamp(2.2rem, 4vw, 3.4rem)/.9 var(--serif); letter-spacing: -.04em; }
 .profile-block__head span { color: var(--muted); font-size: .55rem; letter-spacing: .14em; text-transform: uppercase; }
 a.drink-card { text-decoration: none; }
-.profile-review { display: grid; grid-template-columns: 4rem minmax(0, 1fr) auto; gap: 1.2rem; align-items: center; padding: 1.1rem 0; border-top: 1px solid var(--line); }
+.profile-review { display: grid; grid-template-columns: 4rem minmax(0, 1fr) auto; gap: 1.2rem; align-items: center; padding: 1.1rem 0; border-top: 1px solid var(--line); animation: fade-up .55s var(--ease) both; animation-delay: calc(var(--i, 0) * 60ms); }
 .profile-review img { width: 4rem; height: 5rem; object-fit: contain; border-radius: .5rem; background: radial-gradient(circle, #2c2320, #151311); }
 .profile-review b { display: block; font-size: .78rem; }
 .profile-review small { display: block; margin-top: .2rem; color: var(--muted); font-size: .52rem; letter-spacing: .08em; text-transform: uppercase; }
