@@ -15,7 +15,7 @@
     .admin-tabs .btn.is-active { background: var(--accent, #ff4f79); color: #100e0d; }
     .admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }
     .admin-table th, .admin-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,.08); vertical-align: middle; }
-    .admin-table img { width: 34px; height: 34px; object-fit: contain; }
+    .admin-table img { width: auto; max-width: 64px; height: 48px; object-fit: contain; }
     .admin-table .muted { opacity: .55; }
     .admin-form { display: grid; gap: 12px; margin: 16px 0; padding: 16px; border: 1px solid rgba(255,255,255,.12); border-radius: 14px; }
     .admin-form label { display: grid; gap: 4px; font-size: 13px; }
@@ -178,6 +178,7 @@
       .admin-tabs .btn { padding: .5rem .7rem; font-size: .62rem; }
       #drinks-table, #tiers-table, #users-table, #audit-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       .admin-table { min-width: 620px; }
+      .admin-table img { height: 72px; max-width: 96px; }
       .drinks-toolbar { align-items: stretch; flex-direction: column; }
       .admin-sort { justify-content: space-between; }
       .admin-sort select { flex: 1; }
