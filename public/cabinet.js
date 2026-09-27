@@ -1498,20 +1498,7 @@
       review: parsed.review || "",
     };
     if (pending.image && pending.image.startsWith("data:")) body.imageDataUrl = pending.image;
-    const saved = await api("POST", "api/cabinet/drinks", body);
-    if (saved && saved.existing) {
-      // Повторная отправка/таймаут — банка уже в индексе, вторую не заводим,
-      // а открываем её редактор мнения.
-      resetSmart();
-      await refreshAll();
-      const row = state.summary.drinks.find((x) => x.id === saved.drink.slug);
-      if (row) {
-        openOpinion(saved.drink.slug, { tier: body.tier, review: body.review });
-      } else {
-        $("smart-status").textContent = "Такая банка уже есть в индексе";
-      }
-      return;
-    }
+    await api("POST", "api/cabinet/drinks", body);
     resetSmart();
     $("smart-status").textContent = "В индексе ✓";
     await refreshAll();

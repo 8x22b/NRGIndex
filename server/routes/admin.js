@@ -4,7 +4,7 @@ const { hashPassword } = require("../auth");
 const { notFound, badRequest, conflict, forbidden } = require("../lib/errors");
 const { str, username, password, oneOf, int, color, idArray } = require("../lib/validate");
 const { writeAudit, getSetting, setSetting } = require("../db");
-const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink, findExactDuplicate } = require("../lib/content");
+const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
 const { userToApi, drinkToAdmin } = require("../lib/serialize");
 const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl, providerFailureDetail, searchGoogleCse } = require("../lib/ai");
@@ -416,9 +416,6 @@ module.exports = (db, auth, config) => {
     const slug = uniqueSlug(db, `${fields.brand}-${fields.flavor || fields.name}`);
 
     const create = db.transaction(() => {
-      // Точный дубликат не заводим второй раз — правим существующий.
-      const dup = findExactDuplicate(db, fields);
-      if (dup) throw conflict("Точный дубликат уже есть в индексе — открой его и правь");
       const info = db
         .prepare(
           `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by, image_width, image_height, image_srcset)

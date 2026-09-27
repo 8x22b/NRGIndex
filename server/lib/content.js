@@ -25,28 +25,6 @@ function uniqueSlug(db, base) {
   return `${root}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// Точный дубликат: совпали все четыре поля после нормализации (регистр, транслит, пробелы).
-// Ловит повторную отправку формы, двойной клик и гонку с таймаутом — (slug уникален, поэтому
-// без этой проверки вторая копия заводилась как «...-2»).
-function findExactDuplicate(db, { brand = "", name = "", flavor = "", edition = "" } = {}) {
-  const b = normalizeTerm(brand);
-  const n = normalizeTerm(name);
-  const f = normalizeTerm(flavor);
-  const e = normalizeTerm(edition);
-  if (!b && !n) return null;
-  for (const row of db.prepare("SELECT * FROM drinks").all()) {
-    if (
-      normalizeTerm(row.brand) === b &&
-      normalizeTerm(row.name) === n &&
-      normalizeTerm(row.flavor) === f &&
-      normalizeTerm(row.edition) === e
-    ) {
-      return row;
-    }
-  }
-  return null;
-}
-
 function ratingsForDrink(db, drinkId) {
   const rows = db
     .prepare(
@@ -275,6 +253,5 @@ module.exports = {
   ratingsForDrink,
   relationsForDrink,
   findSimilarDrinks,
-  findExactDuplicate,
   matchWords,
 };

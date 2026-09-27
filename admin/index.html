@@ -141,26 +141,6 @@
       .admin-form { padding: 12px; }
       .grid-2 { grid-template-columns: 1fr !important; }
     }
-
-    .raters-modal { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
-    .raters-modal[hidden] { display: none; }
-    .raters-modal__backdrop { position: absolute; inset: 0; background: rgba(6, 8, 12, .72); backdrop-filter: blur(3px); }
-    .raters-modal__card { position: relative; width: min(34rem, 100%); max-height: min(80vh, 44rem); display: flex; flex-direction: column; gap: .8rem; padding: 1.1rem 1.2rem; border: 1px solid var(--line, rgba(255, 255, 255, .1)); border-radius: 18px; background: var(--panel, #10131a); box-shadow: 0 24px 70px rgba(0, 0, 0, .55); }
-    .raters-modal__head { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
-    .raters-modal__head h3 { margin: 0; font-size: 1.05rem; }
-    .raters-list { overflow-y: auto; display: flex; flex-direction: column; gap: .55rem; min-width: 0; }
-    .raters-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: .6rem; padding: .5rem .65rem; border: 1px solid var(--line, rgba(255, 255, 255, .08)); border-radius: 12px; background: rgba(255, 255, 255, .025); }
-    .raters-row__avatar { display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 50%; font-size: .78rem; font-weight: 800; color: #0b0d12; }
-    .raters-row__tier { display: grid; place-items: center; min-width: 1.9rem; height: 1.9rem; padding: 0 .3rem; border-radius: 9px; font-weight: 900; font-size: .85rem; }
-    .raters-row__who { min-width: 0; }
-    .raters-row__name { font-weight: 700; font-size: .88rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .raters-row__name small { display: block; color: var(--muted, #8b93a7); font-weight: 500; }
-    .raters-row__review { grid-column: 1 / -1; color: var(--ink, #c6cbdc); font-size: .82rem; line-height: 1.45; opacity: .85; }
-    .raters-list__empty { color: var(--muted, #8b93a7); font-size: .9rem; text-align: center; padding: 1rem 0; }
-    @media (max-width: 720px) {
-      .raters-modal { padding: .6rem; }
-      .raters-modal__card { max-height: 88vh; padding: .9rem; }
-    }
   </style>
 </head>
 <body>
@@ -396,17 +376,6 @@
       <div id="logs-table"></div>
     </section>
   </main>
-
-  <div id="raters-modal" class="raters-modal" hidden>
-    <div class="raters-modal__backdrop" data-raters-close></div>
-    <div class="raters-modal__card" role="dialog" aria-modal="true" aria-labelledby="raters-title">
-      <div class="raters-modal__head">
-        <h3 id="raters-title">Кто оценил</h3>
-        <button class="btn btn--ghost" type="button" data-raters-close>Закрыть ✕</button>
-      </div>
-      <div id="raters-list" class="raters-list"></div>
-    </div>
-  </div>
 
   <script src="/confirm.js"></script>
   <script src="/countup.js"></script>

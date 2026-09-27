@@ -1,16 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { findSimilarDrinks, findExactDuplicate, matchWords } = require("../../server/lib/content");
+const { findSimilarDrinks, matchWords } = require("../../server/lib/content");
 
 // Лёгкий фейковый db: findSimilarDrinks зовёт только prepare(...).all(includeHidden).
 // Флаг приходит параметром (? = 1), а не склейкой SQL — повторяем это в моке.
-// findExactDuplicate сканирует ВСЕ напитки (включая скрытые) — дубль мог быть спрятан.
 const makeDb = (rows) => ({
   prepare: (sql) => ({
-    all: (includeHidden = 0) => {
-      if (sql.includes("SELECT * FROM drinks")) return rows;
-      return sql.includes("? = 1") && includeHidden ? rows : rows.filter((item) => item.is_published);
-    },
+    all: (includeHidden = 0) =>
+      sql.includes("? = 1") && includeHidden ? rows : rows.filter((item) => item.is_published),
   }),
 });
 
@@ -92,23 +89,4 @@ test("findSimilarDrinks: скрытые банки видны только с in
   const hidden = findSimilarDrinks(DB, query, { includeHidden: true }).find((hit) => hit.slug === "hidden-volt");
   assert.ok(hidden);
   assert.equal(hidden.hidden, true);
-});
-
-test("findExactDuplicate: регистр, транслит и пробелы не мешают совпадению", () => {
-  assert.equal(findExactDuplicate(DB, { brand: "RED BULL", name: "Ред Булл Original", flavor: "ЧЕРНИКА" })?.slug, "red-bull-blueberry");
-  assert.equal(findExactDuplicate(DB, { brand: "Gorilla", name: "Gorilla Mango", flavor: "манго" })?.slug, "gorilla-mango");
-});
-
-test("findExactDuplicate: другой вкус или бренд — не дубль", () => {
-  assert.equal(findExactDuplicate(DB, { brand: "Monster", name: "Monster Ultra White", flavor: "манго" }), null);
-  assert.equal(findExactDuplicate(DB, { brand: "Volt", name: "Volt Original", flavor: "цитрус" }), null);
-});
-
-test("findExactDuplicate: пустые бренд и название не ищут дубль", () => {
-  assert.equal(findExactDuplicate(DB, { brand: "", name: "", flavor: "" }), null);
-  assert.equal(findExactDuplicate(DB), null);
-});
-
-test("findExactDuplicate: видит и скрытые напитки", () => {
-  assert.equal(findExactDuplicate(DB, { brand: "Volt", name: "Volt Hidden", flavor: "манго" })?.slug, "hidden-volt");
 });
