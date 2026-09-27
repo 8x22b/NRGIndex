@@ -95,6 +95,15 @@ test("форма напитка: все способы замены фото в 
   assert.match(adminJs, /d-image-tools"\)\.hidden = true/);
 });
 
+test("превью банки в таблице напитков сохраняет пропорции, а не квадрат", () => {
+  const rule = adminHtml.match(/\.admin-table img \{[^}]*\}/)[0];
+  assert.match(rule, /height: 48px/);
+  assert.match(rule, /width: auto/);
+  assert.doesNotMatch(rule, /width: 34px/);
+  const mobile = adminHtml.match(/@media \(max-width: 720px\)[\s\S]*?\.admin-table img \{[^}]*\}/)[0];
+  assert.match(mobile, /height: 72px/);
+});
+
 test("диплинк с тирлиста: admin?drink=<slug> открывает форму правки", () => {
   assert.match(adminJs, /new URLSearchParams\(location\.search\)\.get\("drink"\)/);
   assert.match(adminJs, /openDrinkForm\(drink\.id\)/);
