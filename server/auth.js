@@ -66,6 +66,8 @@ function createAuth(db, config) {
       "UPDATE sessions SET last_seen_at = datetime('now'), expires_at = datetime('now', ?) WHERE token_hash = ?",
     ),
     cleanup: db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')"),
+    // Журнал попыток входа нужен только для окна rate-limit (15 минут) — старьё чистим.
+    cleanupAttempts: db.prepare("DELETE FROM login_attempts WHERE created_at < datetime('now', '-30 days')"),
     recordAttempt: db.prepare(
       "INSERT INTO login_attempts (username, ip, success) VALUES (?, ?, ?)",
     ),
@@ -171,6 +173,7 @@ function createAuth(db, config) {
   const cleanupTimer = setInterval(() => {
     try {
       stmt.cleanup.run();
+      stmt.cleanupAttempts.run();
     } catch {
       /* база может быть закрыта при остановке */
     }

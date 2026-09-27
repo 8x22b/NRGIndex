@@ -41,6 +41,19 @@ test("диплинк: /d/:slug открывает карточку, закрыт
   assert.match(appSource, /if \(location\.pathname\.startsWith\("\/d\/"\)\) history\.replaceState\(null, "", "\/"\)/);
 });
 
+test("диалог: повторное открытие и закрытие с клавиатуры не ломают карточку", () => {
+  assert.match(appSource, /if \(!dialog\.open\) dialog\.showModal\(\)/);
+  assert.match(appSource, /if \(event\.target === dialog\) closeDialog\(\)/);
+  assert.doesNotMatch(appSource, /event\.clientX < rect\.left/);
+});
+
+test("рулетка: под тирлистом, фильтры по тирам и «не пробовал»", () => {
+  assert.ok(indexHtml.indexOf('id="roulette"') > indexHtml.indexOf('id="tier-board"'));
+  for (const tier of ["S", "A", "B", "C", "D"]) assert.match(indexHtml, new RegExp(`data-roll-tier="${tier}"`));
+  assert.match(appSource, /!untriedOnly \|\| !drink\.ratings\?\.\[currentUser\?\.username\]/);
+  assert.match(appSource, /setupRoulette\(\);/);
+});
+
 test("диалог: кнопка копирования ссылки на банку", () => {
   assert.match(appSource, /data-share-drink/);
   assert.match(appSource, /navigator\.clipboard\.writeText\(url\)/);

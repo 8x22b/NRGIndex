@@ -151,6 +151,12 @@ test("мои оценки: кнопка редактора подписана «
   assert.doesNotMatch(cabinetSource, /data-m-edit>мнение<\/button>/);
 });
 
+test("мои оценки: перерисовка не теряет текст, двойное сохранение не проходит", () => {
+  assert.match(cabinetSource, /if \(item && review !== undefined\) item\.review = review/);
+  assert.match(cabinetSource, /if \(savingRatings\.has\(slug\)\) return;/);
+  assert.match(cabinetSource, /if \(!slug \|\| savingOpinion\) return;/);
+});
+
 test("перед сохранением сказано, что уйдут и текст, и фото", () => {
   assert.match(cabinetHtml, /id="parsed-save-note"/);
   assert.match(cabinetHtml, /тир, отзыв и фото/);

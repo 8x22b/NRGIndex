@@ -2,7 +2,7 @@ const express = require("express");
 const crypto = require("node:crypto");
 const { hashPassword } = require("../auth");
 const { notFound, badRequest, conflict, forbidden } = require("../lib/errors");
-const { str, username, password, oneOf, int, color, idArray } = require("../lib/validate");
+const { str, username, password, oneOf, int, color, idArray, bool } = require("../lib/validate");
 const { writeAudit, getSetting, setSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
@@ -58,8 +58,7 @@ module.exports = (db, auth, config) => {
       }),
       accentA: color(body?.accentA ?? drink.accent_a, "Акцент A", null),
       accentB: color(body?.accentB ?? drink.accent_b, "Акцент B", null),
-      published:
-        body?.published === undefined ? Boolean(drink.is_published ?? true) : Boolean(body.published),
+      published: bool(body?.published, Boolean(drink.is_published ?? true)),
     };
   }
 
@@ -80,10 +79,28 @@ module.exports = (db, auth, config) => {
   }
 
   router.get("/data", (req, res) => {
+    // Батч вместо N+1: оценки и связи тянем двумя запросами на весь список.
+    const ratingsByDrink = new Map();
+    for (const row of db
+      .prepare(
+        `SELECT r.drink_id, r.tier_id AS tier, r.review, r.order_index AS "order", u.username
+         FROM ratings r JOIN users u ON u.id = r.user_id`,
+      )
+      .all()) {
+      if (!ratingsByDrink.has(row.drink_id)) ratingsByDrink.set(row.drink_id, {});
+      ratingsByDrink.get(row.drink_id)[row.username] = { tier: row.tier, review: row.review, order: row.order };
+    }
+    const relationsByDrink = new Map();
+    for (const row of db.prepare("SELECT drink_id, related_id FROM drink_relations").all()) {
+      if (!relationsByDrink.has(row.drink_id)) relationsByDrink.set(row.drink_id, []);
+      relationsByDrink.get(row.drink_id).push(row.related_id);
+    }
     const drinks = db
       .prepare("SELECT * FROM drinks ORDER BY id")
       .all()
-      .map((drink) => drinkToAdmin(drink, ratingsForDrink(db, drink.id), relationsForDrink(db, drink.id)));
+      .map((drink) =>
+        drinkToAdmin(drink, ratingsByDrink.get(drink.id) || {}, relationsByDrink.get(drink.id) || []),
+      );
     const tiers = db
       .prepare("SELECT id, title, note, score, position FROM tiers ORDER BY position, id")
       .all();
@@ -437,13 +454,15 @@ module.exports = (db, auth, config) => {
           image?.height || 0,
           image?.srcset || "",
         );
-      setRelations(info.lastInsertRowid, relatedIds);
-      return info.lastInsertRowid;
+      const id = info.lastInsertRowid;
+      setRelations(id, relatedIds);
+      // Запись и аудит — одной транзакцией: сбой журнала не оставит «полу-созданный» напиток.
+      history.recordDrink(db, req.user, "admin.drink.create", null, history.snapDrink(db, id));
+      touchContent(db);
+      return id;
     });
 
     const id = create();
-    history.recordDrink(db, req.user, "admin.drink.create", null, history.snapDrink(db, id));
-    touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     res.status(201).json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
   });
@@ -630,7 +649,7 @@ module.exports = (db, auth, config) => {
     const title = str(req.body?.title ?? "", "Должность", { required: false, max: 80 });
     const initials = str(req.body?.initials ?? "", "Инициалы", { required: false, max: 4 });
     const userColor = color(req.body?.color, "Цвет", "#9fb7ff");
-    const isPublic = req.body?.isPublic === undefined ? true : Boolean(req.body.isPublic);
+    const isPublic = bool(req.body?.isPublic, true);
     const given = typeof req.body?.password === "string" && req.body.password ? password(req.body.password) : "";
     const generated = given ? "" : tempPassword();
     const hash = await hashPassword(given || generated);
@@ -657,7 +676,7 @@ module.exports = (db, auth, config) => {
     const id = int(req.params.id, "id", { min: 1 });
     const target = getUser(id);
     const role = oneOf(String(req.body?.role ?? target.role), ROLES, "Роль");
-    const isActive = req.body?.isActive === undefined ? Boolean(target.is_active) : Boolean(req.body.isActive);
+    const isActive = bool(req.body?.isActive, Boolean(target.is_active));
     const losesAdmin = target.role === "admin" && (role !== "admin" || !isActive);
     if (losesAdmin && activeAdmins() <= 1) throw conflict("Нельзя убрать последнего админа");
     if (id === req.user.id && !isActive) throw conflict("Нельзя отключить себя");
@@ -671,8 +690,7 @@ module.exports = (db, auth, config) => {
     const title = str(req.body?.title ?? target.title, "Должность", { required: false, max: 80 });
     const initials = str(req.body?.initials ?? target.initials, "Инициалы", { required: false, max: 4 });
     const userColor = color(req.body?.color ?? target.color, "Цвет", target.color || "#9fb7ff");
-    const isPublic =
-      req.body?.isPublic === undefined ? Boolean(target.is_public) : Boolean(req.body.isPublic);
+    const isPublic = bool(req.body?.isPublic, Boolean(target.is_public));
 
     try {
       db.prepare(

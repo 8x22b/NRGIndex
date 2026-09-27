@@ -148,6 +148,12 @@ const MIGRATIONS = [
   );
   CREATE INDEX idx_ai_usage_created ON ai_usage(created_at);
   `,
+  `
+  CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+  CREATE INDEX IF NOT EXISTS idx_relations_related ON drink_relations(related_id);
+  CREATE INDEX IF NOT EXISTS idx_ratings_updated ON ratings(updated_at);
+  CREATE INDEX IF NOT EXISTS idx_drinks_created ON drinks(created_at);
+  `,
 ];
 
 function migrate(db) {

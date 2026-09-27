@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { username, oneOf, int, color, slugify } = require("../../server/lib/validate");
+const { username, oneOf, int, color, slugify, bool } = require("../../server/lib/validate");
 
 test("валидация логина", () => {
   assert.equal(username("Sanya"), "sanya");
@@ -19,4 +19,12 @@ test("валидация значений", () => {
   assert.throws(() => color("red", "цвет", null), /#RRGGBB/);
   assert.equal(slugify("Burn Tropical Mix!"), "burn-tropical-mix");
   assert.equal(slugify(""), "drink");
+});
+
+test("строгий bool: строка «false» не превращается в true", () => {
+  assert.equal(bool(true), true);
+  assert.equal(bool(false), false);
+  assert.equal(bool(undefined, true), true);
+  assert.throws(() => bool("false"), /true или false/);
+  assert.throws(() => bool(0), /true или false/);
 });

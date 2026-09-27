@@ -24,17 +24,25 @@ function truncate(value, max) {
 function resolveCanFile(imagePath, { publicDir, uploadsDir }) {
   if (!imagePath) return null;
   const clean = String(imagePath).split("?")[0];
+  let root = null;
   let file = null;
   if (clean.startsWith("/uploads/")) {
+    root = uploadsDir;
     file = path.join(uploadsDir, path.basename(clean));
   } else if (clean.startsWith("assets/")) {
+    root = publicDir;
     file = path.join(publicDir, clean);
   } else if (!clean.includes("://")) {
+    root = publicDir;
     file = path.join(publicDir, clean.replace(/^\//, ""));
   }
-  if (!file || !fs.existsSync(file)) return null;
-  if (!/\.(png|jpe?g|webp)$/i.test(file)) return null;
-  return file;
+  if (!file || !root) return null;
+  // Только внутри своей папки: «../../etc/foo.png» не должен утечь в публичный /og.
+  const resolved = path.resolve(file);
+  if (!resolved.startsWith(path.resolve(root) + path.sep)) return null;
+  if (!fs.existsSync(resolved)) return null;
+  if (!/\.(png|jpe?g|webp)$/i.test(resolved)) return null;
+  return resolved;
 }
 
 // Карточка 1200x630: тёмный фон, акцентные круги, банка справа, текст слева.
@@ -150,4 +158,4 @@ function splitLines(text, maxPerLine) {
   return lines.slice(0, 2);
 }
 
-module.exports = { renderOgCard, OG_W, OG_H, TIER_COLORS };
+module.exports = { renderOgCard, resolveCanFile, OG_W, OG_H, TIER_COLORS };
