@@ -52,6 +52,10 @@ test("рулетка: под тирлистом, фильтры по тирам 
   for (const tier of ["S", "A", "B", "C", "D"]) assert.match(indexHtml, new RegExp(`data-roll-tier="${tier}"`));
   assert.match(appSource, /!untriedOnly \|\| !drink\.ratings\?\.\[currentUser\?\.username\]/);
   assert.match(appSource, /setupRoulette\(\);/);
+  // лента из нескольких копий пула, победитель не у края, длительность и торможение случайные
+  assert.match(appSource, /while \(items\.length < 80\)/);
+  assert.match(appSource, /strip\.length - 1 - randInt\(10, 18\)/);
+  assert.match(appSource, /randInt\(6500, 9000\)/);
 });
 
 test("диалог: кнопка копирования ссылки на банку", () => {

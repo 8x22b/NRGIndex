@@ -546,34 +546,73 @@
       <b style="color:${tierColor(tier)}">${esc(tier)}</b>${drinkImg(drink, "8rem")}<small>${esc(drink.name)}</small>
     </span>`;
   };
+  const randInt = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+  // Несколько перемешанных копий пула: конца ленты не видно, прокрутка как бесконечная.
+  const buildStrip = (pool) => {
+    const items = [];
+    while (items.length < 80) items.push(...[...pool].sort(() => Math.random() - 0.5));
+    return items;
+  };
   const resetReel = () => {
     const pool = rollPool();
     reel.style.transform = "";
-    reel.innerHTML = pool.slice(0, 12).map(reelItem).join("");
-    rollResult.textContent = pool.length ? `в барабане: ${pool.length}` : "под такие фильтры банок нет — ослабьте их";
-    spinButton.disabled = !pool.length;
+    if (!pool.length) {
+      reel.innerHTML = "";
+      rollResult.textContent = "под такие фильтры банок нет — ослабьте их";
+      spinButton.disabled = true;
+      return;
+    }
+    reel.innerHTML = buildStrip(pool).slice(0, 24).map(reelItem).join("");
+    rollResult.textContent = `в барабане: ${pool.length}`;
+    spinButton.disabled = false;
   };
   const spin = async () => {
     const pool = rollPool();
     if (spinning || !pool.length) return;
     spinning = true;
     spinButton.disabled = true;
-    const pick = () => pool[Math.floor(Math.random() * pool.length)];
-    const strip = Array.from({ length: 40 }, pick);
-    const winner = strip[34];
+    const strip = buildStrip(pool);
     reel.style.transform = "";
     reel.innerHTML = strip.map(reelItem).join("");
     rollResult.textContent = "крутим…";
-    const target = reel.children[34];
-    const offset = target.offsetLeft + target.offsetWidth / 2 - reel.parentElement.clientWidth / 2;
+    // Победитель не у края: справа остаётся запас банок, конец ленты не видно.
+    const winnerIndex = strip.length - 1 - randInt(10, 18);
+    const winner = strip[winnerIndex];
+    const target = reel.children[winnerIndex];
+    const distance = target.offsetLeft + target.offsetWidth / 2 - reel.parentElement.clientWidth / 2;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Слот-машина: сначала ровная скорость (линейно), потом резкое торможение.
+    const decelAt = randInt(64, 76) / 100;
+    const momentum = decelAt * (1 + Math.random() * 0.25);
+    const overshoot = reduce ? 0 : randInt(6, 30);
     const spinAnim = reel.animate(
-      [{ transform: "translateX(0)" }, { transform: `translateX(${-offset}px)` }],
-      { duration: reduce ? 1 : 4200, easing: "cubic-bezier(.12,.8,.18,1)", fill: "forwards" },
+      [
+        { transform: "translateX(0)", offset: 0, easing: "linear" },
+        {
+          transform: `translateX(${-distance * momentum}px)`,
+          offset: decelAt,
+          easing: "cubic-bezier(.1,.82,.16,1)",
+        },
+        { transform: `translateX(${-(distance + overshoot)}px)`, offset: 1 },
+      ],
+      { duration: reduce ? 1 : randInt(6500, 9000), fill: "forwards" },
     );
     await spinAnim.finished;
-    reel.style.transform = `translateX(${-offset}px)`;
     spinAnim.cancel();
+    reel.style.transform = `translateX(${-(distance + overshoot)}px)`;
+    if (!reduce) {
+      // Короткая осадка назад, как у настоящего барабана.
+      const settle = reel.animate(
+        [
+          { transform: `translateX(${-(distance + overshoot)}px)` },
+          { transform: `translateX(${-distance}px)` },
+        ],
+        { duration: 280, easing: "cubic-bezier(.2,.9,.3,1)", fill: "forwards" },
+      );
+      await settle.finished;
+      settle.cancel();
+    }
+    reel.style.transform = `translateX(${-distance}px)`;
     target.classList.add("is-winner");
     rollResult.innerHTML = `сегодня: <button type="button" class="roulette__open" data-drink="${esc(winner.id)}">${esc(winner.brand)} ${esc(winner.name)}${winner.flavor ? ` — ${esc(winner.flavor)}` : ""} →</button>`;
     spinning = false;
