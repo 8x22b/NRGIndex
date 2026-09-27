@@ -1481,7 +1481,11 @@
       ?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   };
 
+  // Повторный клик (или ретрай) не должен завести вторую банку: пока запрос летит,
+  // второй вызов saveDrink молча выходим.
+  let savingDrink = false;
   const saveDrink = async (parsed) => {
+    if (savingDrink) return;
     // Защита от дублей: если ИИ нашёл похожую банку, без явного «это не он»
     // новую не заводим — иначе предупреждение проскакивают и плодятся копии.
     if (pending.similarCount && !pending.duplicateAck) {
@@ -1498,7 +1502,12 @@
       review: parsed.review || "",
     };
     if (pending.image && pending.image.startsWith("data:")) body.imageDataUrl = pending.image;
-    await api("POST", "api/cabinet/drinks", body);
+    savingDrink = true;
+    try {
+      await api("POST", "api/cabinet/drinks", body);
+    } finally {
+      savingDrink = false;
+    }
     resetSmart();
     $("smart-status").textContent = "В индексе ✓";
     await refreshAll();

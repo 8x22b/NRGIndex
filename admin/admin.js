@@ -108,12 +108,14 @@
         <tbody>
           ${drinks
             .map(
-              (drink) => `
+              (drink) => {
+                const votes = Object.keys(drink.ratings || {}).length;
+                return `
             <tr>
               <td>${drink.image ? `<img src="${esc(drink.image)}" alt="">` : "—"}</td>
               <td><b>${esc(drink.name)}</b><br><span class="muted">${esc(drink.flavor)}</span></td>
               <td>${esc(drink.brand)}</td>
-              <td>${Object.keys(drink.ratings || {}).length}</td>
+              <td class="admin-ratings"><b>${votes}</b><button class="btn btn--ghost" type="button" data-raters="${drink.id}"${votes ? "" : " disabled"}>Кто оценил</button></td>
               <td><span class="admin-badge ${drink.published ? "admin-badge--on" : "admin-badge--off"}">${drink.published ? "опубликован" : "скрыт"}</span></td>
               <td class="admin-actions">
                 <button class="btn btn--ghost" type="button" data-edit="${drink.id}">Править</button>
@@ -121,7 +123,8 @@
                 ${String(drink.image || "").startsWith("/uploads/") ? `<button class="btn btn--ghost" type="button" data-reprocess="${drink.id}">Переобработать</button>` : ""}
                 <button class="btn btn--danger" type="button" data-delete="${drink.id}">Удалить</button>
               </td>
-            </tr>`,
+            </tr>`;
+              },
             )
             .join("")}
         </tbody>
@@ -185,6 +188,51 @@
         }
       };
     });
+    container.querySelectorAll("[data-raters]").forEach((button) => {
+      button.onclick = () => openRaters(state.data.drinks.find((item) => item.id === Number(button.dataset.raters)));
+    });
+  };
+
+  // Кто именно оценил банку: имя, логин, тир и отзыв. Помогает ловить «фантомные»
+  // оценки и понять, откуда у напитка дубликаты.
+  let ratersDialog = null;
+  const openRaters = (drink) => {
+    if (!drink) return;
+    if (!ratersDialog) {
+      ratersDialog = document.createElement("dialog");
+      ratersDialog.className = "confirm-dialog admin-raters";
+      ratersDialog.innerHTML = `
+        <div class="confirm-dialog__body">
+          <h2 id="raters-title"></h2>
+          <ul class="admin-raters__list"></ul>
+          <div class="confirm-dialog__actions"><button class="btn" type="button" data-close>Закрыть</button></div>
+        </div>`;
+      ratersDialog.addEventListener("click", (event) => {
+        if (event.target === ratersDialog) ratersDialog.close();
+      });
+      ratersDialog.querySelector("[data-close]").onclick = () => ratersDialog.close();
+      document.body.append(ratersDialog);
+    }
+    const entries = Object.entries(drink.ratings || {});
+    ratersDialog.querySelector("#raters-title").textContent = `Кто оценил «${drink.name}» — ${entries.length}`;
+    ratersDialog.querySelector(".admin-raters__list").innerHTML = entries.length
+      ? entries
+          .map(([username, rating]) => {
+            const user = state.data.users.find((item) => item.username === username);
+            return `
+          <li class="admin-raters__row">
+            <span class="stats-avatar" style="--person-color:${safeColor(user?.color, "#9fb7ff")}">${esc(user?.initials || username.slice(0, 2))}</span>
+            <div class="admin-raters__who">
+              <b>${esc(user?.displayName || username)}</b>
+              <span class="muted">@${esc(username)}${user ? (user.isPublic ? "" : " · скрыт с сайта") : " · пользователь удалён"}</span>
+            </div>
+            <span class="admin-badge">${esc(rating.tier || "—")}</span>
+            ${rating.review ? `<p class="admin-raters__review muted">${esc(rating.review)}</p>` : ""}
+          </li>`;
+          })
+          .join("")
+      : `<li class="admin-hint">Пока никто не оценил.</li>`;
+    ratersDialog.showModal();
   };
 
   const openDrinkForm = (id) => {
@@ -434,8 +482,15 @@
     }
   };
 
+  // Повторный клик по «Сохранить», пока первый запрос ещё летит, создавал вторую
+  // банку — глушим повтор и блокируем кнопку до ответа сервера.
+  let drinkSaving = false;
   $("drink-form").addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (drinkSaving) return;
+    drinkSaving = true;
+    const submitButton = event.submitter || $("drink-form").querySelector('[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
     const payload = {
       brand: $("d-brand").value,
       name: $("d-name").value,
@@ -460,6 +515,9 @@
       status("global-status", "Напиток сохранён ✓");
     } catch (error) {
       status("drink-status", error.message, true);
+    } finally {
+      drinkSaving = false;
+      if (submitButton) submitButton.disabled = false;
     }
   });
 
