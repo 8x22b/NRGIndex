@@ -26,7 +26,7 @@
     return json;
   };
 
-  const state = { me: null, data: null, tab: "drinks", removeImage: false, stats: null, statsDays: 30 };
+  const state = { me: null, data: null, tab: "drinks", drinksSort: "id-desc", removeImage: false, stats: null, statsDays: 30 };
   // Исходник фото ДО вырезания фона (строго JPEG) — для отправки в Nano Banana.
   // Заполняется при выборе файла/ссылки/ленты; для уже сохранённого фото оригинала
   // нет — тогда шлём текущее с пометкой.
@@ -100,22 +100,36 @@
   };
 
   /* ---------- drinks ---------- */
+  const drinkCollator = new Intl.Collator("ru-RU", { numeric: true, sensitivity: "base" });
+  const drinkVotes = (drink) => Object.keys(drink.ratings || {}).length;
+  const sortDrinks = () => {
+    const drinks = [...state.data.drinks];
+    const sort = state.drinksSort;
+    return drinks.sort((a, b) => {
+      if (sort === "name-asc") return drinkCollator.compare(a.name, b.name) || b.id - a.id;
+      if (sort === "brand-asc") return drinkCollator.compare(a.brand, b.brand) || drinkCollator.compare(a.name, b.name) || b.id - a.id;
+      if (sort === "ratings-desc") return drinkVotes(b) - drinkVotes(a) || b.id - a.id;
+      if (sort === "ratings-asc") return drinkVotes(a) - drinkVotes(b) || b.id - a.id;
+      return sort === "id-asc" ? a.id - b.id : b.id - a.id;
+    });
+  };
+
   const renderDrinks = () => {
-    const drinks = state.data.drinks;
+    const drinks = sortDrinks();
+    $("drinks-count").textContent = `${drinks.length} ${wordForm(drinks.length, ["напиток", "напитка", "напитков"])}`;
     $("drinks-table").innerHTML = `
       <table class="admin-table">
         <thead><tr><th></th><th>Название</th><th>Бренд</th><th>Оценки</th><th>Статус</th><th></th></tr></thead>
         <tbody>
           ${drinks
-            .map(
-              (drink) => {
-                const votes = Object.keys(drink.ratings || {}).length;
-                return `
+            .map((drink) => {
+              const votes = drinkVotes(drink);
+              return `
             <tr>
               <td>${drink.image ? `<img src="${esc(drink.image)}" alt="">` : "—"}</td>
               <td><b>${esc(drink.name)}</b><br><span class="muted">${esc(drink.flavor)}</span></td>
               <td>${esc(drink.brand)}</td>
-              <td class="admin-ratings"><b>${votes}</b><button class="btn btn--ghost" type="button" data-raters="${drink.id}"${votes ? "" : " disabled"}>Кто оценил</button></td>
+              <td class="admin-ratings"><b>${votes}</b><button class="btn btn--ghost" type="button" data-raters="${drink.id}">Кто оценил</button></td>
               <td><span class="admin-badge ${drink.published ? "admin-badge--on" : "admin-badge--off"}">${drink.published ? "опубликован" : "скрыт"}</span></td>
               <td class="admin-actions">
                 <button class="btn btn--ghost" type="button" data-edit="${drink.id}">Править</button>
@@ -124,8 +138,7 @@
                 <button class="btn btn--danger" type="button" data-delete="${drink.id}">Удалить</button>
               </td>
             </tr>`;
-              },
-            )
+            })
             .join("")}
         </tbody>
       </table>`;
@@ -193,46 +206,67 @@
     });
   };
 
-  // Кто именно оценил банку: имя, логин, тир и отзыв. Помогает ловить «фантомные»
-  // оценки и понять, откуда у напитка дубликаты.
   let ratersDialog = null;
   const openRaters = (drink) => {
     if (!drink) return;
     if (!ratersDialog) {
       ratersDialog = document.createElement("dialog");
-      ratersDialog.className = "confirm-dialog admin-raters";
+      ratersDialog.className = "admin-raters";
+      ratersDialog.setAttribute("aria-labelledby", "raters-title");
       ratersDialog.innerHTML = `
-        <div class="confirm-dialog__body">
-          <h2 id="raters-title"></h2>
+        <div class="admin-raters__body">
+          <header class="admin-raters__head">
+            <div>
+              <p class="eyebrow">Личные вердикты</p>
+              <h2 id="raters-title">Кто оценил</h2>
+            </div>
+            <button class="admin-raters__close" type="button" data-close aria-label="Закрыть">×</button>
+          </header>
+          <div class="admin-raters__drink"></div>
+          <p class="admin-raters__summary" id="raters-summary"></p>
           <ul class="admin-raters__list"></ul>
-          <div class="confirm-dialog__actions"><button class="btn" type="button" data-close>Закрыть</button></div>
+          <footer class="admin-raters__foot">
+            <span>Включая скрытых участников</span>
+            <button class="btn btn--ghost" type="button" data-close>Закрыть</button>
+          </footer>
         </div>`;
       ratersDialog.addEventListener("click", (event) => {
         if (event.target === ratersDialog) ratersDialog.close();
       });
-      ratersDialog.querySelector("[data-close]").onclick = () => ratersDialog.close();
+      ratersDialog.querySelectorAll("[data-close]").forEach((button) => {
+        button.onclick = () => ratersDialog.close();
+      });
       document.body.append(ratersDialog);
     }
     const entries = Object.entries(drink.ratings || {});
-    ratersDialog.querySelector("#raters-title").textContent = `Кто оценил «${drink.name}» — ${entries.length}`;
+    ratersDialog.querySelector(".admin-raters__drink").innerHTML = `
+      ${drink.image ? `<img src="${esc(drink.image)}" alt="">` : ""}
+      <div><span>${esc(drink.brand)}</span><h3>${esc(drink.name)}</h3><p>${esc([drink.flavor, drink.edition].filter(Boolean).join(" · "))}</p></div>`;
+    ratersDialog.querySelector("#raters-summary").textContent = `${entries.length} ${wordForm(entries.length, ["оценка", "оценки", "оценок"])}`;
     ratersDialog.querySelector(".admin-raters__list").innerHTML = entries.length
       ? entries
           .map(([username, rating]) => {
             const user = state.data.users.find((item) => item.username === username);
+            const tier = String(rating.tier || "—").toUpperCase();
+            const name = user?.displayName || username;
+            const initials = user?.initials || [...name].slice(0, 2).join("").toUpperCase();
+            const note = user ? (user.isPublic ? "" : " · скрыт с сайта") : " · пользователь удалён";
             return `
           <li class="admin-raters__row">
-            <span class="stats-avatar" style="--person-color:${safeColor(user?.color, "#9fb7ff")}">${esc(user?.initials || username.slice(0, 2))}</span>
+            <span class="admin-raters__avatar" style="--person-color:${safeColor(user?.color, "#ff7448")}">${user?.avatar ? `<img src="${esc(user.avatar)}" alt="">` : esc(initials)}</span>
             <div class="admin-raters__who">
-              <b>${esc(user?.displayName || username)}</b>
-              <span class="muted">@${esc(username)}${user ? (user.isPublic ? "" : " · скрыт с сайта") : " · пользователь удалён"}</span>
+              <b>${esc(name)}</b>
+              <span>@${esc(username)}${esc(note)}</span>
             </div>
-            <span class="admin-badge">${esc(rating.tier || "—")}</span>
-            ${rating.review ? `<p class="admin-raters__review muted">${esc(rating.review)}</p>` : ""}
+            <span class="admin-raters__tier" style="--tier-color:${safeColor(TIER_COLORS[tier], "#e7ded1")}" aria-label="Тир ${esc(tier)}">${esc(tier)}</span>
+            ${rating.review?.trim() ? `<blockquote class="admin-raters__review">${esc(rating.review)}</blockquote>` : `<span class="admin-raters__no-review">Без текстового отзыва</span>`}
           </li>`;
           })
           .join("")
-      : `<li class="admin-hint">Пока никто не оценил.</li>`;
+      : `<li class="admin-raters__empty"><span>∅</span><b>Пока никто не оценил</b><small>Когда появится первая оценка, здесь будет видно кто её оставил.</small></li>`;
     ratersDialog.showModal();
+    ratersDialog.querySelector(".admin-raters__list").scrollTop = 0;
+    ratersDialog.querySelector("[data-close]").focus();
   };
 
   const openDrinkForm = (id) => {
@@ -1648,6 +1682,11 @@
     }
     location.href = "/cabinet.html";
   };
+
+  $("drinks-sort").addEventListener("change", (event) => {
+    state.drinksSort = event.target.value;
+    renderDrinks();
+  });
 
   document.querySelectorAll("#admin-tabs .btn").forEach((button) => {
     button.onclick = () => switchTab(button.dataset.tab);

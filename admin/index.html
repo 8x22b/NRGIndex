@@ -109,13 +109,44 @@
     .admin-temp { font-family: ui-monospace, monospace; background: rgba(255,255,255,.08); padding: 4px 8px; border-radius: 6px; user-select: all; }
     .admin-ratings { white-space: nowrap; }
     .admin-ratings .btn { margin-left: 6px; padding: 4px 8px; font-size: 12px; }
-    .admin-raters { border-color: rgba(255,255,255,.2); }
-    .admin-raters__list { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; max-height: 55vh; overflow: auto; }
-    .admin-raters__row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+    .drinks-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 10px; }
+    .drinks-toolbar__count { margin: 0; }
+    .admin-sort { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+    .admin-sort select { min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--paper); background: var(--ink-soft); font: inherit; color-scheme: dark; }
+    .admin-sort select:focus-visible, .admin-raters button:focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+    body:has(.admin-raters[open]) { overflow: hidden; }
+    .admin-raters { width: min(40rem, calc(100% - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 1.1rem; color: var(--paper); background: #151311; box-shadow: 0 2rem 7rem rgba(0,0,0,.65); }
+    .admin-raters[open] { display: flex; }
+    .admin-raters::backdrop { background: rgba(6,5,4,.78); backdrop-filter: blur(8px); }
+    .admin-raters__body { display: flex; flex-direction: column; width: 100%; min-height: 0; padding: 1.6rem; }
+    .admin-raters__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .admin-raters .eyebrow { margin: 0 0 .4rem; }
+    .admin-raters h2 { margin: 0; font: 500 2.5rem/1 var(--serif); letter-spacing: -.03em; }
+    .admin-raters__summary { margin: 1rem 0 .75rem; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+    .admin-raters__close { flex: 0 0 auto; width: 2.75rem; height: 2.75rem; padding: 0; border: 1px solid var(--line); border-radius: 50%; color: var(--muted); background: transparent; cursor: pointer; font-size: 1.5rem; line-height: 1; }
+    .admin-raters__close:hover { color: var(--paper); border-color: var(--paper); }
+    .admin-raters__drink { display: flex; flex: 0 0 auto; align-items: center; gap: 1rem; margin-top: 1.25rem; padding: 1rem 0; border-block: 1px solid var(--line); }
+    .admin-raters__drink img { width: 3.5rem; height: 5rem; flex: 0 0 auto; object-fit: contain; }
+    .admin-raters__drink div { min-width: 0; overflow-wrap: anywhere; }
+    .admin-raters__drink span { color: var(--orange); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+    .admin-raters__drink h3 { margin: .2rem 0; font: 500 1.8rem/1.1 var(--serif); }
+    .admin-raters__drink p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .admin-raters__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; min-height: 0; max-height: 28rem; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+    .admin-raters__row { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) auto; gap: 10px 12px; align-items: center; padding: 11px 12px; border: 1px solid rgba(242,237,228,.12); border-radius: .8rem; background: rgba(255,255,255,.035); }
+    .admin-raters__avatar { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; overflow: hidden; border: 1px solid color-mix(in srgb, var(--person-color) 70%, white); border-radius: 50%; color: var(--person-color); font-size: 11px; font-weight: 700; text-transform: uppercase; }
+    .admin-raters__avatar img { width: 100%; height: 100%; object-fit: cover; }
     .admin-raters__who { min-width: 0; }
-    .admin-raters__who b { display: block; font-size: 13px; }
-    .admin-raters__who span { font-size: 11.5px; }
-    .admin-raters__review { grid-column: 2 / -1; margin: 0; font-size: 12px; }
+    .admin-raters__who b { display: block; font-size: 14px; overflow-wrap: anywhere; }
+    .admin-raters__who span { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+    .admin-raters__tier { display: grid; place-items: center; min-width: 2.5rem; height: 2.5rem; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--tier-color) 45%, transparent); border-radius: .6rem; color: var(--tier-color); background: color-mix(in srgb, var(--tier-color) 8%, transparent); font: 600 italic 1.9rem/1 var(--serif); }
+    .admin-raters__review { grid-column: 2 / -1; margin: 0; padding: 0 0 0 12px; border-left: 1px solid var(--line); color: var(--paper-2); font: 500 italic 1.2rem/1.5 var(--serif); white-space: pre-wrap; overflow-wrap: anywhere; }
+    .admin-raters__no-review { grid-column: 2 / -1; color: var(--muted); font-size: 11px; }
+    .admin-raters__empty { display: grid; justify-items: center; gap: 5px; padding: 2.5rem 1rem; color: var(--muted); text-align: center; }
+    .admin-raters__empty span { color: var(--orange); font: 500 2.2rem var(--serif); }
+    .admin-raters__empty b { color: var(--paper); font-size: 14px; }
+    .admin-raters__empty small { max-width: 18rem; font-size: 11px; line-height: 1.5; }
+    .admin-raters__foot { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; gap: 10px; margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+    .admin-raters__foot .btn { min-height: 2.75rem; }
     .audit-toolbar { display: flex; gap: 8px; margin: 0 0 10px; flex-wrap: wrap; }
     .audit-toolbar input, .audit-toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; }
     .audit-toolbar input { flex: 1; min-width: 200px; }
@@ -147,8 +178,15 @@
       .admin-tabs .btn { padding: .5rem .7rem; font-size: .62rem; }
       #drinks-table, #tiers-table, #users-table, #audit-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
       .admin-table { min-width: 620px; }
+      .drinks-toolbar { align-items: stretch; flex-direction: column; }
+      .admin-sort { justify-content: space-between; }
+      .admin-sort select { flex: 1; }
       .admin-form { padding: 12px; }
       .grid-2 { grid-template-columns: 1fr !important; }
+      .admin-raters__body { padding: 1.2rem 1rem .9rem; }
+      .admin-raters__row { grid-template-columns: 2.2rem minmax(0, 1fr) auto; padding: 9px; }
+      .admin-raters__avatar { width: 2.2rem; height: 2.2rem; }
+      .admin-raters__review { grid-column: 1 / -1; }
     }
   </style>
 </head>
@@ -184,6 +222,19 @@
     <section id="tab-drinks" hidden>
       <div class="admin-actions">
         <button class="btn" type="button" id="btn-drink-new">+ Новый напиток</button>
+      </div>
+      <div class="drinks-toolbar">
+        <p class="admin-hint drinks-toolbar__count" id="drinks-count"></p>
+        <label class="admin-sort">Сортировать
+          <select id="drinks-sort">
+            <option value="id-desc" selected>сначала новые</option>
+            <option value="id-asc">сначала старые</option>
+            <option value="ratings-desc">больше оценок</option>
+            <option value="ratings-asc">меньше оценок</option>
+            <option value="name-asc">название А–Я</option>
+            <option value="brand-asc">бренд А–Я</option>
+          </select>
+        </label>
       </div>
       <form class="admin-form" id="drink-form" hidden autocomplete="off">
         <input type="hidden" id="d-id">
