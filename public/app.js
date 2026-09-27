@@ -421,7 +421,9 @@
       }
     });
 
-    dialog.showModal();
+    // Повторное showModal() на открытом диалоге бросает InvalidStateError —
+    // переход по «похожей» банке просто перерисовывает содержимое.
+    if (!dialog.open) dialog.showModal();
     document.body.classList.add("is-dialog-open");
     // диплинк: открытая карточка живёт на /d/<slug> — можно кидать в чат
     history.replaceState(null, "", `/d/${encodeURIComponent(drink.id)}`);
@@ -469,14 +471,10 @@
       .forEach((chip) => chip.classList.toggle("is-active", chip === button));
     renderBoard();
   });
+  // Закрытие только по клику в backdrop: у клавиатурного Enter/Space clientX/Y = 0,
+  // и проверка координат ошибочно закрывала карточку.
   dialog.addEventListener("click", (event) => {
-    const rect = dialog.getBoundingClientRect();
-    const outside =
-      event.clientX < rect.left ||
-      event.clientX > rect.right ||
-      event.clientY < rect.top ||
-      event.clientY > rect.bottom;
-    if (outside) closeDialog();
+    if (event.target === dialog) closeDialog();
   });
   dialog.addEventListener("close", () => {
     document.body.classList.remove("is-dialog-open");

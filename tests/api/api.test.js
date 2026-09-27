@@ -251,6 +251,26 @@ test("кабинет: пользователь добавляет свой на�
   assert.equal(patched.status, 200);
   assert.equal(patched.json.drink.flavor, "Манго-маракуйя");
 
+  // Частичный патч: только отзыв — тир, бренд и название не сбрасываются.
+  const onlyReview = await request(ctx.base, "PATCH", `/api/cabinet/drinks/${slug}`, {
+    cookie: userCookie,
+    body: { review: "Манго-маракуйя — топ" },
+  });
+  assert.equal(onlyReview.status, 200);
+  assert.equal(onlyReview.json.drink.brand, "Volt");
+  assert.equal(onlyReview.json.drink.flavor, "Манго-маракуйя");
+
+  const onlyTier = await request(ctx.base, "PATCH", `/api/cabinet/drinks/${slug}`, {
+    cookie: userCookie,
+    body: { tier: "S" },
+  });
+  assert.equal(onlyTier.status, 200);
+  const kept = (await request(ctx.base, "GET", "/api/cabinet/me", { cookie: userCookie })).json.ratings.find(
+    (rating) => rating.drink === slug,
+  );
+  assert.equal(kept.tier, "S", "тир обновился");
+  assert.equal(kept.review, "Манго-маракуйя — топ", "отзыв не сбросился дефолтом");
+
   const removed = await request(ctx.base, "DELETE", `/api/cabinet/drinks/${slug}`, {
     cookie: userCookie,
   });
@@ -273,6 +293,14 @@ test("снятие с публикации скрывает напиток", asy
   assert.equal(on.status, 200);
   summary = await request(ctx.base, "GET", "/api/public/summary");
   assert.equal(summary.json.drinks.some((d) => d.id === createdDrink.slug), true);
+});
+
+test("published: строка «false» — 400, а не молчаливое true", async () => {
+  const res = await request(ctx.base, "PATCH", `/api/admin/drinks/${createdDrink.id}`, {
+    cookie: adminCookie,
+    body: { published: "false" },
+  });
+  assert.equal(res.status, 400);
 });
 
 test("переобработка картинки: редактор может, акцент остаётся по банке", async () => {

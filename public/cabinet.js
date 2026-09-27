@@ -389,7 +389,10 @@
   };
 
   /* ---------- my ratings ---------- */
+  const savingRatings = new Set();
   const saveRating = async (slug, tier, review) => {
+    if (savingRatings.has(slug)) return;
+    savingRatings.add(slug);
     const current = state.mine.find((item) => item.drink === slug) || {};
     try {
       await api("PUT", `api/cabinet/ratings/${encodeURIComponent(slug)}`, {
@@ -399,11 +402,20 @@
       await refreshAll();
     } catch (error) {
       alert(error.message);
+    } finally {
+      savingRatings.delete(slug);
     }
   };
 
   const renderMine = () => {
     const container = $("cabinet-my-ratings");
+    // Перерисовка (фильтр, refresh после сохранения) не должна терять несохранённый
+    // текст отзыва — переносим то, что уже набрано в DOM, обратно в состояние.
+    container.querySelectorAll(".mine-row").forEach((row) => {
+      const item = state.mine.find((rating) => rating.drink === row.dataset.drink);
+      const review = row.querySelector("[data-m-review]")?.value;
+      if (item && review !== undefined) item.review = review;
+    });
     const all = state.mine;
     $("me-count").textContent = all.length;
     $("me-count-label").textContent = wordForm(all.length, ["оценка", "оценки", "оценок"]);
@@ -712,9 +724,11 @@
       say: setOpPhotoStatus,
     });
 
+  let savingOpinion = false;
   $("op-save").onclick = async () => {
     const slug = opinion.slug;
-    if (!slug) return;
+    if (!slug || savingOpinion) return;
+    savingOpinion = true;
     try {
       setOpStatus("сохраняю…");
       await api("PUT", `api/cabinet/ratings/${encodeURIComponent(slug)}`, {
@@ -736,6 +750,8 @@
       await refreshAll();
     } catch (error) {
       setOpStatus(error.message, true);
+    } finally {
+      savingOpinion = false;
     }
   };
 

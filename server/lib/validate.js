@@ -47,9 +47,11 @@ function int(value, field, { min = 0, max = Number.MAX_SAFE_INTEGER, required = 
   return n;
 }
 
+// Строгий bool: строка «false» — это ошибка, а не true.
 function bool(value, fallback = false) {
   if (value === undefined || value === null) return fallback;
-  return Boolean(value);
+  if (typeof value !== "boolean") throw badRequest("Ожидается true или false");
+  return value;
 }
 
 function color(value, field, fallback) {

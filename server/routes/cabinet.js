@@ -24,14 +24,14 @@ const {
 } = require("../lib/content");
 const { drinkToAdmin, userToApi } = require("../lib/serialize");
 
-function drinkFields(body) {
+// base нужен для PATCH: неуказанные поля не сбрасываются в дефолт, а остаются как были.
+// Тир и отзыв сюда не входят: их частичная правка живёт рядом с рейтингом.
+function drinkFields(body, base = {}) {
   return {
-    brand: str(body?.brand, "Бренд", { max: 80 }),
-    name: str(body?.name, "Название", { max: 120 }),
-    flavor: str(body?.flavor ?? "", "Вкус", { required: false, max: 160 }),
-    edition: str(body?.edition ?? "", "Издание", { required: false, max: 160 }),
-    tier: oneOf(String(body?.tier || "B"), TIERS, "Тир"),
-    review: str(body?.review ?? "", "Отзыв", { required: false, max: 1000 }),
+    brand: str(body?.brand ?? base.brand, "Бренд", { max: 80 }),
+    name: str(body?.name ?? base.name, "Название", { max: 120 }),
+    flavor: str(body?.flavor ?? base.flavor ?? "", "Вкус", { required: false, max: 160 }),
+    edition: str(body?.edition ?? base.edition ?? "", "Издание", { required: false, max: 160 }),
   };
 }
 
@@ -99,19 +99,23 @@ module.exports = (db, auth, config) => {
     const drink = findDrink(req.params.slug);
     const tier = oneOf(String(req.body?.tier || ""), TIERS, "Тир");
     const review = str(req.body?.review ?? "", "Отзыв", { required: false, max: 1000 });
-    const before = history.snapRating(db, drink.id, req.user.id);
-    db.prepare(
-      `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)
-       ON CONFLICT(drink_id, user_id)
-       DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review, updated_at = datetime('now')`,
-    ).run(drink.id, req.user.id, tier, review);
-    history.recordRating(db, req.user, "rating.set", {
-      drink,
-      user: userRow(req.user),
-      before,
-      after: history.snapRating(db, drink.id, req.user.id),
-    });
-    touchContent(db);
+    // Оценка и запись в журнал — одной транзакцией: сбой аудита не оставит
+    // оценку без следа или 500 при уже изменённой базе.
+    db.transaction(() => {
+      const before = history.snapRating(db, drink.id, req.user.id);
+      db.prepare(
+        `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)
+         ON CONFLICT(drink_id, user_id)
+         DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review, updated_at = datetime('now')`,
+      ).run(drink.id, req.user.id, tier, review);
+      history.recordRating(db, req.user, "rating.set", {
+        drink,
+        user: userRow(req.user),
+        before,
+        after: history.snapRating(db, drink.id, req.user.id),
+      });
+      touchContent(db);
+    })();
     res.json({ ok: true });
   });
 
@@ -119,14 +123,18 @@ module.exports = (db, auth, config) => {
     const drink = findDrink(req.params.slug);
     const before = history.snapRating(db, drink.id, req.user.id);
     if (!before) throw notFound("Оценки нет");
-    db.prepare("DELETE FROM ratings WHERE drink_id = ? AND user_id = ?").run(drink.id, req.user.id);
-    history.recordRating(db, req.user, "rating.delete", { drink, user: userRow(req.user), before, after: null });
-    touchContent(db);
+    db.transaction(() => {
+      db.prepare("DELETE FROM ratings WHERE drink_id = ? AND user_id = ?").run(drink.id, req.user.id);
+      history.recordRating(db, req.user, "rating.delete", { drink, user: userRow(req.user), before, after: null });
+      touchContent(db);
+    })();
     res.json({ ok: true });
   });
 
   router.post("/drinks", async (req, res) => {
     const fields = drinkFields(req.body);
+    const tier = oneOf(String(req.body?.tier || "B"), TIERS, "Тир");
+    const review = str(req.body?.review ?? "", "Отзыв", { required: false, max: 1000 });
     const image = req.body?.imageDataUrl
       ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
       : null;
@@ -156,18 +164,20 @@ module.exports = (db, auth, config) => {
           image?.height || 0,
           image?.srcset || "",
         );
+      const id = info.lastInsertRowid;
       db.prepare("INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)").run(
-        info.lastInsertRowid,
+        id,
         req.user.id,
-        fields.tier,
-        fields.review,
+        tier,
+        review,
       );
-      return info.lastInsertRowid;
+      // Запись и аудит — одной транзакцией.
+      history.recordDrink(db, req.user, "drink.create", null, history.snapDrink(db, id));
+      touchContent(db);
+      return id;
     });
 
     const id = create();
-    history.recordDrink(db, req.user, "drink.create", null, history.snapDrink(db, id));
-    touchContent(db);
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(id);
     res.status(201).json({ drink: drinkToAdmin(row, ratingsForDrink(db, id), relationsForDrink(db, id)) });
   });
@@ -178,7 +188,7 @@ module.exports = (db, auth, config) => {
     const canEditAny = req.user.role === "admin" || req.user.role === "editor";
     if (!isOwner && !canEditAny) throw notFound("Напиток не найден");
 
-    const fields = drinkFields(req.body);
+    const fields = drinkFields(req.body, drink);
     const image = req.body?.imageDataUrl
       ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
       : null;
@@ -188,30 +198,41 @@ module.exports = (db, auth, config) => {
     const imageWidth = image ? image.width : drink.image_width || 0;
     const imageHeight = image ? image.height : drink.image_height || 0;
     const imageSrcset = image ? image.srcset : drink.image_srcset || "";
-    const before = history.snapDrink(db, drink.id);
-    const ratingBefore = history.snapRating(db, drink.id, req.user.id);
-    db.prepare(
-      `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
-         accent_a = ?, accent_b = ?, image_width = ?, image_height = ?, image_srcset = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, imageWidth, imageHeight, imageSrcset, drink.id);
-    if (req.body?.tier !== undefined || req.body?.review !== undefined) {
+
+    db.transaction(() => {
+      const before = history.snapDrink(db, drink.id);
       db.prepare(
-        `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)
-         ON CONFLICT(drink_id, user_id)
-         DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review, updated_at = datetime('now')`,
-      ).run(drink.id, req.user.id, fields.tier, fields.review);
-      const ratingAfter = history.snapRating(db, drink.id, req.user.id);
-      if (JSON.stringify(ratingBefore) !== JSON.stringify(ratingAfter)) {
-        history.recordRating(db, req.user, "rating.set", {
-          drink: { ...drink, name: fields.name },
-          user: userRow(req.user),
-          before: ratingBefore,
-          after: ratingAfter,
-        });
+        `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
+           accent_a = ?, accent_b = ?, image_width = ?, image_height = ?, image_srcset = ?, updated_at = datetime('now') WHERE id = ?`,
+      ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, imageWidth, imageHeight, imageSrcset, drink.id);
+      // Частичный патч: неуказанный тир/отзыв сохраняем, а не сбрасываем в «B»/«».
+      if (req.body?.tier !== undefined || req.body?.review !== undefined) {
+        const current = history.snapRating(db, drink.id, req.user.id);
+        const tier =
+          req.body?.tier === undefined ? current?.tier_id || "B" : oneOf(String(req.body.tier), TIERS, "Тир");
+        const review =
+          req.body?.review === undefined
+            ? current?.review || ""
+            : str(req.body.review, "Отзыв", { required: false, max: 1000 });
+        const ratingBefore = current;
+        db.prepare(
+          `INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)
+           ON CONFLICT(drink_id, user_id)
+           DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review, updated_at = datetime('now')`,
+        ).run(drink.id, req.user.id, tier, review);
+        const ratingAfter = history.snapRating(db, drink.id, req.user.id);
+        if (JSON.stringify(ratingBefore) !== JSON.stringify(ratingAfter)) {
+          history.recordRating(db, req.user, "rating.set", {
+            drink: { ...drink, name: fields.name },
+            user: userRow(req.user),
+            before: ratingBefore,
+            after: ratingAfter,
+          });
+        }
       }
-    }
-    history.recordDrink(db, req.user, "drink.update", before, history.snapDrink(db, drink.id));
-    touchContent(db);
+      history.recordDrink(db, req.user, "drink.update", before, history.snapDrink(db, drink.id));
+      touchContent(db);
+    })();
     const row = db.prepare("SELECT * FROM drinks WHERE id = ?").get(drink.id);
     res.json({ drink: drinkToAdmin(row, ratingsForDrink(db, drink.id), relationsForDrink(db, drink.id)) });
   });
@@ -236,21 +257,23 @@ module.exports = (db, auth, config) => {
       throw badRequest("Нужна картинка (imageDataUrl) или removeImage: true");
     }
     const image = remove ? null : await saveProcessedImage(config.uploadsDir, dataUrl, config.maxUploadBytes);
-    const before = history.snapDrink(db, drink.id);
-    db.prepare(
-      `UPDATE drinks SET image_path = ?, accent_a = ?, accent_b = ?, image_width = ?, image_height = ?,
-         image_srcset = ?, updated_at = datetime('now') WHERE id = ?`,
-    ).run(
-      image ? image.path : "",
-      image ? image.accent[0] : drink.accent_a,
-      image ? image.accent[1] : drink.accent_b,
-      image ? image.width : 0,
-      image ? image.height : 0,
-      image ? image.srcset : "",
-      drink.id,
-    );
-    history.recordDrink(db, req.user, "drink.update", before, history.snapDrink(db, drink.id));
-    touchContent(db);
+    db.transaction(() => {
+      const before = history.snapDrink(db, drink.id);
+      db.prepare(
+        `UPDATE drinks SET image_path = ?, accent_a = ?, accent_b = ?, image_width = ?, image_height = ?,
+           image_srcset = ?, updated_at = datetime('now') WHERE id = ?`,
+      ).run(
+        image ? image.path : "",
+        image ? image.accent[0] : drink.accent_a,
+        image ? image.accent[1] : drink.accent_b,
+        image ? image.width : 0,
+        image ? image.height : 0,
+        image ? image.srcset : "",
+        drink.id,
+      );
+      history.recordDrink(db, req.user, "drink.update", before, history.snapDrink(db, drink.id));
+      touchContent(db);
+    })();
     res.json({
       ok: true,
       image: image ? image.path : "",
