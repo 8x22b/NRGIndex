@@ -134,6 +134,32 @@
       </div>
     </section>
 
+    <section class="roulette" id="roulette" aria-labelledby="roulette-title">
+      <div class="section-head reveal">
+        <div>
+          <p class="eyebrow">Daily pick</p>
+          <h2 id="roulette-title">Что выпить сегодня?</h2>
+        </div>
+        <p>Выбери тиры — рулетка сама решит. Средний тир считается по всем оценкам, как на общем столе.</p>
+      </div>
+      <div class="roulette__filters board-filters reveal" role="group" aria-label="Фильтры рулетки">
+        <button type="button" data-roll-tier="S" aria-pressed="true" class="is-active">S</button>
+        <button type="button" data-roll-tier="A" aria-pressed="true" class="is-active">A</button>
+        <button type="button" data-roll-tier="B" aria-pressed="false">B</button>
+        <button type="button" data-roll-tier="C" aria-pressed="false">C</button>
+        <button type="button" data-roll-tier="D" aria-pressed="false">D</button>
+        <button type="button" id="roll-untried" aria-pressed="false" hidden>я не пробовал</button>
+      </div>
+      <div class="roulette__window reveal">
+        <div class="roulette__reel" id="roulette-reel"></div>
+        <span class="roulette__pointer" aria-hidden="true"></span>
+      </div>
+      <div class="roulette__bottom">
+        <div class="roulette__result" id="roulette-result" aria-live="polite"></div>
+        <button class="btn roulette__spin" id="roulette-spin" type="button">Крутить</button>
+      </div>
+    </section>
+
     <section class="cab-cta reveal">
       <p class="eyebrow">Personal cabinets</p>
       <h2>Кабинеты — вход по ключу</h2>

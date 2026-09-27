@@ -525,6 +525,90 @@
   });
   setupMarquee();
 
+  // Рулетка «Что выпить сегодня?»: лента банок крутится и тормозит на случайной.
+  const reel = document.querySelector("#roulette-reel");
+  const spinButton = document.querySelector("#roulette-spin");
+  const rollResult = document.querySelector("#roulette-result");
+  const untriedButton = document.querySelector("#roll-untried");
+  const rollTiers = new Set(["S", "A"]);
+  let untriedOnly = false;
+  let spinning = false;
+
+  const rollPool = () =>
+    data.drinks.filter((drink) => {
+      const avg = averageFor(drink);
+      if (!avg || !rollTiers.has(avg.tier)) return false;
+      return !untriedOnly || !drink.ratings?.[currentUser?.username];
+    });
+  const reelItem = (drink) => {
+    const tier = averageFor(drink).tier;
+    return `<span class="roulette__item" style="--card-accent:${safeColor(drink.accent?.[0], tierColor(tier))}">
+      <b style="color:${tierColor(tier)}">${esc(tier)}</b>${drinkImg(drink, "8rem")}<small>${esc(drink.name)}</small>
+    </span>`;
+  };
+  const resetReel = () => {
+    const pool = rollPool();
+    reel.style.transform = "";
+    reel.innerHTML = pool.slice(0, 12).map(reelItem).join("");
+    rollResult.textContent = pool.length ? `в барабане: ${pool.length}` : "под такие фильтры банок нет — ослабьте их";
+    spinButton.disabled = !pool.length;
+  };
+  const spin = async () => {
+    const pool = rollPool();
+    if (spinning || !pool.length) return;
+    spinning = true;
+    spinButton.disabled = true;
+    const pick = () => pool[Math.floor(Math.random() * pool.length)];
+    const strip = Array.from({ length: 40 }, pick);
+    const winner = strip[34];
+    reel.style.transform = "";
+    reel.innerHTML = strip.map(reelItem).join("");
+    rollResult.textContent = "крутим…";
+    const target = reel.children[34];
+    const offset = target.offsetLeft + target.offsetWidth / 2 - reel.parentElement.clientWidth / 2;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const spinAnim = reel.animate(
+      [{ transform: "translateX(0)" }, { transform: `translateX(${-offset}px)` }],
+      { duration: reduce ? 1 : 4200, easing: "cubic-bezier(.12,.8,.18,1)", fill: "forwards" },
+    );
+    await spinAnim.finished;
+    reel.style.transform = `translateX(${-offset}px)`;
+    spinAnim.cancel();
+    target.classList.add("is-winner");
+    rollResult.innerHTML = `сегодня: <button type="button" class="roulette__open" data-drink="${esc(winner.id)}">${esc(winner.brand)} ${esc(winner.name)}${winner.flavor ? ` — ${esc(winner.flavor)}` : ""} →</button>`;
+    spinning = false;
+    spinButton.disabled = false;
+    spinButton.textContent = "Ещё раз";
+  };
+  const setupRoulette = () => {
+    if (!reel) return;
+    if (currentUser) untriedButton.hidden = false;
+    document.querySelectorAll("[data-roll-tier]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (spinning) return;
+        const tier = button.dataset.rollTier;
+        if (rollTiers.has(tier)) rollTiers.delete(tier);
+        else rollTiers.add(tier);
+        button.classList.toggle("is-active", rollTiers.has(tier));
+        button.setAttribute("aria-pressed", String(rollTiers.has(tier)));
+        resetReel();
+      });
+    });
+    untriedButton.addEventListener("click", () => {
+      if (spinning) return;
+      untriedOnly = !untriedOnly;
+      untriedButton.classList.toggle("is-active", untriedOnly);
+      untriedButton.setAttribute("aria-pressed", String(untriedOnly));
+      resetReel();
+    });
+    spinButton.addEventListener("click", spin);
+    rollResult.addEventListener("click", (event) => {
+      const id = event.target.closest("[data-drink]")?.dataset.drink;
+      if (id) openDrink(id);
+    });
+    resetReel();
+  };
+
   (async () => {
     // Роль нужна только чтобы показать сотрудникам кнопку правки банки в админке.
     try {
@@ -555,6 +639,7 @@
     if (view && getParticipant(view)) activeView = view;
     renderBoard();
     setupSpecimen();
+    setupRoulette();
     const pathDrink = location.pathname.match(/^\/d\/([^/]+?)\/?$/)?.[1];
     const drinkParam = (pathDrink ? decodeURIComponent(pathDrink) : params.get("drink")) || "";
     if (drinkParam && getDrink(drinkParam)) {
