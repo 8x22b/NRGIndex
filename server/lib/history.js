@@ -56,6 +56,8 @@ const SETTING_LABELS = {
   google_cse_cx: "ID поисковика Google (CX)",
   gemini_api_key: "Ключ Gemini",
   gemini_image_model: "Модель Gemini",
+  image_provider: "Провайдер перерисовки",
+  openrouter_image_model: "Модель OpenRouter (картинки)",
   ai_proxy_url: "Прокси для ИИ",
 };
 const SECRET_SETTINGS = new Set(["openrouter_key", "parse_api_key", "google_cse_key", "gemini_api_key", "ai_proxy_url"]);

@@ -1,12 +1,15 @@
 const { ApiError, badRequest } = require("./errors");
 const { getSetting } = require("../db");
 const { proxiedFetch } = require("./proxy");
+const { DEFAULT_OPENROUTER_IMAGE_MODEL } = require("./openrouter-image");
 
 const TIERS = ["S", "A", "B", "C", "D"];
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 const DEFAULT_STT_MODEL = "openai/whisper-large-v3-turbo";
 const DEFAULT_TIER = "B";
+const DEFAULT_IMAGE_PROVIDER = "gemini";
+const IMAGE_PROVIDERS = ["gemini", "openrouter"];
 const MAX_AUDIO_BYTES = 5 * 1024 * 1024;
 
 const SYSTEM_PROMPT = [
@@ -109,6 +112,8 @@ function aiSettings(db) {
     geminiImageModel:
       getSetting(db, "gemini_image_model", "") || process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-lite-image",
     geminiFromEnv: !getSetting(db, "gemini_api_key", "") && Boolean(process.env.GEMINI_API_KEY),
+    imageProvider: getSetting(db, "image_provider", "") || DEFAULT_IMAGE_PROVIDER,
+    openrouterImageModel: getSetting(db, "openrouter_image_model", "") || DEFAULT_OPENROUTER_IMAGE_MODEL,
     // все запросы к ИИ-провайдеру идут через этот fetch: прозрачно, с прокси или без
     fetchImpl: proxiedFetch(proxyUrl),
   };
@@ -678,5 +683,7 @@ module.exports = {
   DEFAULT_BASE_URL,
   DEFAULT_MODEL,
   DEFAULT_STT_MODEL,
+  DEFAULT_IMAGE_PROVIDER,
+  IMAGE_PROVIDERS,
   MAX_AUDIO_BYTES,
 };

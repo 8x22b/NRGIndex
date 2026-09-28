@@ -47,6 +47,15 @@ test("перерисовка шлёт необработанный оригин�
   assert.match(cabinetSource, /canFill/, "заливка идёт только через не-контур — и в белом, и в зелёном резце");
 });
 
+test("OpenRouter-перерисовку кабинет не режет и сохраняет прозрачность", () => {
+  assert.match(cabinetSource, /provider === "openrouter"/);
+  assert.match(cabinetSource, /shrinkPng/);
+  assert.match(cabinetSource, /toDataURL\("image\/png"\)/);
+  assert.match(cabinetSource, /прозрачный фон/);
+  assert.match(cabinetRoutes, /redrawCanOnTransparent/);
+  assert.match(cabinetRoutes, /provider: viaOpenRouter \? "openrouter" : "gemini"/);
+});
+
 test("промпт просит прямой ракурс и зелёный фон", () => {
   const geminiSource = fs.readFileSync(path.join(__dirname, "..", "..", "server", "lib", "gemini.js"), "utf8");
   assert.match(geminiSource, /straight-on front view/);

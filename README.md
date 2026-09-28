@@ -53,6 +53,7 @@ npm run create-admin -- --username admin --name "Ваше имя"
 - Разбор текста — `{base}/chat/completions`, модель по умолчанию `openai/gpt-4o-mini`. Промпт запрещает модели придумывать мнение: отзыв и тир берутся только из сообщения автора, пустое поле лучше выдуманного.
 - Голосовые — запись в браузере (MediaRecorder), распознавание на сервере через `{base}/audio/transcriptions`, модель по умолчанию `openai/whisper-large-v3-turbo`.
 - Base URL (по умолчанию `https://openrouter.ai/api/v1`), ключ и обе модели настраиваются в админке → Настройки. Для OpenRouter аудио уходит JSON-ом (`input_audio`), для других OpenAI-совместимых API — multipart.
+- Перерисовка фото — двух провайдеров, переключается в админке → Настройки. Gemini — зелёный хромакей и клиентская вырезка фона. OpenRouter — тот же ключ, что для STT (`/api/v1/images`), модель `openai/gpt-image-2.5-sunburst` (9:16, low, transparent, PNG), в запрос уходит фото-шаблон `server/assets/can-template.jpg`, фон не режется, стоимость берётся из `usage.cost` и видна на вкладке «Логи».
 
 ## Журнал
 

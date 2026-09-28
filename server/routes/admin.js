@@ -7,10 +7,11 @@ const { writeAudit, getSetting, setSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
 const { userToApi, drinkToAdmin } = require("../lib/serialize");
-const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, normalizeBaseUrl, providerFailureDetail, searchGoogleCse } = require("../lib/ai");
+const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, DEFAULT_IMAGE_PROVIDER, IMAGE_PROVIDERS, normalizeBaseUrl, providerFailureDetail, searchGoogleCse } = require("../lib/ai");
 const history = require("../lib/history");
 const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../lib/proxy");
 const { checkGeminiKey, DEFAULT_IMAGE_MODEL } = require("../lib/gemini");
+const { DEFAULT_OPENROUTER_IMAGE_MODEL } = require("../lib/openrouter-image");
 
 const ROLES = ["admin", "editor", "user"];
 
@@ -126,7 +127,9 @@ module.exports = (db, auth, config) => {
       geminiKeySet: Boolean(ai.geminiKey),
       geminiImageModel: ai.geminiImageModel,
       geminiFromEnv: ai.geminiFromEnv,
-      defaults: { aiBaseUrl: DEFAULT_BASE_URL, parseBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL },
+      imageProvider: ai.imageProvider,
+      openrouterImageModel: ai.openrouterImageModel,
+      defaults: { aiBaseUrl: DEFAULT_BASE_URL, parseBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL, imageProvider: DEFAULT_IMAGE_PROVIDER, openrouterImageModel: DEFAULT_OPENROUTER_IMAGE_MODEL },
     };
     const audit = isAdmin(req) ? history.listAudit(db) : [];
     const logs = isAdmin(req) ? history.listLogs(db) : [];
@@ -783,6 +786,12 @@ module.exports = (db, auth, config) => {
     if ("geminiImageModel" in body) {
       next.gemini_image_model = str(body.geminiImageModel || DEFAULT_IMAGE_MODEL, "Модель Gemini", { max: 100 });
     }
+    if ("imageProvider" in body) {
+      next.image_provider = oneOf(String(body.imageProvider || DEFAULT_IMAGE_PROVIDER), IMAGE_PROVIDERS, "Провайдер перерисовки");
+    }
+    if ("openrouterImageModel" in body) {
+      next.openrouter_image_model = str(body.openrouterImageModel || DEFAULT_OPENROUTER_IMAGE_MODEL, "Модель OpenRouter", { max: 120 });
+    }
     if ("aiProxyUrl" in body) {
       const raw = str(body.aiProxyUrl ?? "", "Прокси", { required: false, max: 500 });
       const stored = getSetting(db, "ai_proxy_url", "");
@@ -801,6 +810,8 @@ module.exports = (db, auth, config) => {
       google_cse_cx: getSetting(db, "google_cse_cx", ""),
       gemini_api_key: getSetting(db, "gemini_api_key", ""),
       gemini_image_model: getSetting(db, "gemini_image_model", ""),
+      image_provider: ai.imageProvider,
+      openrouter_image_model: ai.openrouterImageModel,
       ai_proxy_url: getSetting(db, "ai_proxy_url", ""),
     };
     const before = Object.fromEntries(

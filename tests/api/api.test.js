@@ -563,6 +563,25 @@ test("настройки ИИ: base URL и STT-модель, кривой URL о
   assert.match(entry.details, /Base URL: «https:\/\/openrouter.ai\/api\/v1» → «https:\/\/llm.example\/v1»/);
 });
 
+test("настройки ИИ: провайдер перерисовки валидируется и сохраняется", async () => {
+  const bad = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { imageProvider: "dalle" },
+  });
+  assert.equal(bad.status, 400);
+
+  const ok = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { imageProvider: "openrouter", openrouterImageModel: "openai/gpt-image-2.5-sunburst" },
+  });
+  assert.equal(ok.status, 200);
+  const data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.imageProvider, "openrouter");
+  assert.equal(data.json.settings.openrouterImageModel, "openai/gpt-image-2.5-sunburst");
+  assert.equal(data.json.settings.defaults.openrouterImageModel, "openai/gpt-image-2.5-sunburst");
+  await request(ctx.base, "PUT", "/api/admin/settings", { cookie: adminCookie, body: { imageProvider: "gemini" } });
+});
+
 test("настройки ИИ: прокси — пароль скрыт, маска не затирает, журнал без секрета", async () => {
   const bad = await request(ctx.base, "PUT", "/api/admin/settings", {
     cookie: adminCookie,

@@ -50,6 +50,16 @@ test("настройки Gemini: ключ, модель, проверка и о�
   assert.match(adminRoutes, /gemini_api_key/);
 });
 
+test("настройки перерисовки: провайдер Gemini/OpenRouter и модель", () => {
+  assert.match(adminHtml, /id="s-image-provider"/);
+  assert.match(adminHtml, /id="s-openrouter-image-model"/);
+  assert.match(adminJs, /imageProvider: \$\("s-image-provider"\)\.value/);
+  assert.match(adminJs, /openrouterImageModel: \$\("s-openrouter-image-model"\)\.value/);
+  assert.match(adminRoutes, /image_provider/);
+  assert.match(adminRoutes, /openrouter_image_model/);
+  assert.match(adminRoutes, /DEFAULT_OPENROUTER_IMAGE_MODEL/);
+});
+
 test("лента фото в админке дожимает через прокси при хотлинк-бане", () => {
   assert.match(adminJs, /dataset\.proxied/);
   assert.match(adminJs, /api\/cabinet\/ai\/photo-proxy\?url=/);
@@ -64,6 +74,13 @@ test("кнопка 🍌 в форме напитка шлёт исходник �
   assert.match(adminJs, /startsWith\("data:image\/jpeg"\)/);
   assert.match(adminJs, /api\("POST", "api\/cabinet\/ai\/photo-redraw", \{ imageDataUrl: source \}\)/);
   assert.match(adminJs, /оригинал не сохранился/);
+});
+
+test("кнопка перерисовки в админке не переводит OpenRouter-результат в JPEG", () => {
+  assert.match(adminJs, /toPngDataUrl/);
+  assert.match(adminJs, /provider === "openrouter"/);
+  assert.match(adminJs, /api\("POST", "api\/uploads", \{ dataUrl: png \}\)/);
+  assert.match(adminJs, /usesOpenRouter/);
 });
 
 test("форма напитка: все способы замены фото в панели за превью", () => {
