@@ -485,6 +485,7 @@
   // при заливке — removeBorderBackground режет по медиане рамки, не только белое.
   $("btn-drink-redraw").onclick = async () => {
     try {
+      const usesOpenRouter = state.data.settings.imageProvider === "openrouter";
       let source = adminOriginal;
       let note = "";
       if (!source) {
@@ -498,18 +499,32 @@
         status("drink-status", "Готовлю исходник…");
         source = await toJpegDataUrl(await pathToDataUrl(url));
       }
-      if (!source.startsWith("data:image/jpeg")) throw new Error("Исходник не JPEG — что-то пошло не так");
-      status("drink-status", "Nano Banana перерисовывает…");
-      const { imageDataUrl } = await api("POST", "api/cabinet/ai/photo-redraw", { imageDataUrl: source });
+      if (usesOpenRouter ? !source.startsWith("data:image/") : !source.startsWith("data:image/jpeg")) {
+        throw new Error(usesOpenRouter ? "Исходник не картинка — что-то пошло не так" : "Исходник не JPEG — что-то пошло не так");
+      }
+      status("drink-status", usesOpenRouter ? "OpenRouter перерисовывает на прозрачном фоне…" : "Nano Banana перерисовывает…");
+      const { imageDataUrl, provider } = await api("POST", "api/cabinet/ai/photo-redraw", { imageDataUrl: source });
+      const applyUploaded = (path, accent) => {
+        state.removeImage = false;
+        $("d-image-path").value = path;
+        $("d-accent-a").value = accent[0];
+        $("d-accent-b").value = accent[1];
+        $("d-image-preview").src = path;
+        $("d-image-preview").hidden = false;
+      };
+      if (provider === "openrouter") {
+        const png = await toPngDataUrl(imageDataUrl);
+        adminOriginal = png;
+        status("drink-status", "Заливаю результат (фон уже прозрачный)…");
+        const { path, accent } = await api("POST", "api/uploads", { dataUrl: png });
+        applyUploaded(path, accent);
+        status("drink-status", `Перерисовано 🍌${note} — прозрачный фон, цвет ${accent[0]} / ${accent[1]}`);
+        return;
+      }
       adminOriginal = await toJpegDataUrl(imageDataUrl);
       status("drink-status", "Заливаю результат (фон вырежется сам)…");
       const { path, accent } = await api("POST", "api/uploads", { dataUrl: imageDataUrl });
-      state.removeImage = false;
-      $("d-image-path").value = path;
-      $("d-accent-a").value = accent[0];
-      $("d-accent-b").value = accent[1];
-      $("d-image-preview").src = path;
-      $("d-image-preview").hidden = false;
+      applyUploaded(path, accent);
       status("drink-status", `Перерисовано 🍌${note} — фон вырезан, цвет ${accent[0]} / ${accent[1]}`);
     } catch (error) {
       status("drink-status", error.message || "Не удалось перерисовать", true);
@@ -855,6 +870,9 @@
         : "не задан";
     $("s-gemini-model").value = settings.geminiImageModel || "";
     $("s-gemini-model").placeholder = "gemini-3.1-flash-lite-image";
+    $("s-image-provider").value = settings.imageProvider === "openrouter" ? "openrouter" : "gemini";
+    $("s-openrouter-image-model").value = settings.openrouterImageModel || "";
+    $("s-openrouter-image-model").placeholder = settings.defaults?.openrouterImageModel || "openai/gpt-image-2.5-sunburst";
   };
 
   $("btn-ai-check").onclick = async () => {
@@ -882,6 +900,8 @@
       aiProxyUrl: $("s-proxy").value.trim(),
       googleCseCx: $("s-google-cx").value.trim(),
       geminiImageModel: $("s-gemini-model").value.trim(),
+      imageProvider: $("s-image-provider").value,
+      openrouterImageModel: $("s-openrouter-image-model").value.trim(),
     };
     if ($("s-key").value) payload.textApiKey = $("s-key").value;
     if ($("s-openrouter-key").value) payload.openrouterKey = $("s-openrouter-key").value;
@@ -1624,6 +1644,26 @@
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
           resolve(canvas.toDataURL("image/jpeg", 0.92));
+        } catch (error) {
+          reject(error);
+        }
+      };
+      img.onerror = () => reject(new Error("Не удалось прочитать картинку"));
+      img.src = dataUrl;
+    });
+
+  // PNG-версия для OpenRouter: прозрачность сохраняем, на белое не подкладываем.
+  const toPngDataUrl = (dataUrl, maxSide = 1200) =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+          canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL("image/png"));
         } catch (error) {
           reject(error);
         }

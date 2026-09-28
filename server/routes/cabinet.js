@@ -12,6 +12,7 @@ const {
 } = require("../lib/ai");
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
 const { redrawCanOnWhite } = require("../lib/gemini");
+const { redrawCanOnTransparent } = require("../lib/openrouter-image");
 const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
 const {
@@ -428,13 +429,22 @@ module.exports = (db, auth, config) => {
     checkRedrawLimit(req.user.id);
     const imageDataUrl = str(req.body?.imageDataUrl ?? "", "Картинка", { max: 12 * 1024 * 1024 });
     const ai = aiSettings(db);
-    const { imageDataUrl: redrawn, usage } = await redrawCanOnWhite(imageDataUrl, {
-      key: ai.geminiKey,
-      model: ai.geminiImageModel,
-      fetchImpl: ai.fetchImpl,
-    });
-    recordAiUsage(db, req.user.id, "redraw", ai.geminiImageModel, usage);
-    res.json({ imageDataUrl: redrawn });
+    const viaOpenRouter = ai.imageProvider === "openrouter";
+    const model = viaOpenRouter ? ai.openrouterImageModel : ai.geminiImageModel;
+    const { imageDataUrl: redrawn, usage } = viaOpenRouter
+      ? await redrawCanOnTransparent(imageDataUrl, {
+          key: ai.sttKey,
+          model,
+          baseUrl: ai.sttBaseUrl,
+          fetchImpl: ai.fetchImpl,
+        })
+      : await redrawCanOnWhite(imageDataUrl, {
+          key: ai.geminiKey,
+          model,
+          fetchImpl: ai.fetchImpl,
+        });
+    recordAiUsage(db, req.user.id, "redraw", model, usage);
+    res.json({ imageDataUrl: redrawn, provider: viaOpenRouter ? "openrouter" : "gemini" });
   });
 
   return router;

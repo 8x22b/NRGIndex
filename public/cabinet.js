@@ -718,8 +718,8 @@
         if (opinion.originalUrl) return originalDataUrl(opinion.originalUrl);
         return opinion.original;
       },
-      set: ({ dataUrl, cut }) =>
-        pickOpinionImage(dataUrl, cut ? "перерисовано 🍌 · фон снят ✓" : "перерисовано 🍌 · фон снять не вышло"),
+      set: ({ dataUrl, cut, note }) =>
+        pickOpinionImage(dataUrl, note || (cut ? "перерисовано 🍌 · фон снят ✓" : "перерисовано 🍌 · фон снять не вышло")),
       button: $("op-photo-redraw"),
       say: setOpPhotoStatus,
     });
@@ -1165,6 +1165,16 @@
     return canvas.toDataURL("image/jpeg", 0.85);
   };
 
+  // PNG-версия ужатия: альфу не теряем — результат OpenRouter уже вырезан.
+  const shrinkPng = (img, maxSide = 640) => {
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  };
+
   const processImageUrl = async (url) => prepareImage(await loadImageWithFallback(url)).dataUrl;
 
   // Необработанный оригинал по ссылке: только ужатие, без резки фона.
@@ -1194,7 +1204,12 @@
         return;
       }
       say("🍌 перерисовываю банку…");
-      const { imageDataUrl } = await api("POST", "api/cabinet/ai/photo-redraw", { imageDataUrl: current });
+      const { imageDataUrl, provider } = await api("POST", "api/cabinet/ai/photo-redraw", { imageDataUrl: current });
+      if (provider === "openrouter") {
+        // OpenRouter рисует сразу на прозрачном фоне — резать нечего.
+        set({ dataUrl: shrinkPng(await loadImage(imageDataUrl)), note: "перерисовано 🍌 · прозрачный фон ✓" });
+        return;
+      }
       say("🍌 снимаю зелёный фон…");
       set(await finishRedrawn(imageDataUrl));
     } catch (error) {
@@ -1755,10 +1770,10 @@
         if (pending.photoSource === "url" && url) return originalDataUrl(url);
         return null;
       },
-      set: ({ dataUrl, cut }) => {
+      set: ({ dataUrl, cut, note }) => {
         pending.image = dataUrl;
         pending.photoSource = "redraw";
-        pending.photoNote = cut ? "перерисовано 🍌 · фон снят ✓" : "перерисовано 🍌 · фон снять не вышло";
+        pending.photoNote = note || (cut ? "перерисовано 🍌 · фон снят ✓" : "перерисовано 🍌 · фон снять не вышло");
         strip.selected = -1;
         markSelected();
         updatePreviewImage();

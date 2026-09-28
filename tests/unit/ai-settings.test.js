@@ -16,6 +16,8 @@ test("aiSettings разделяет ключ разбора и OpenRouter STT", 
   assert.equal(settings.parseBaseUrl, "https://llm.example/v1");
   assert.equal(settings.sttKey, "or-secret");
   assert.equal(settings.sttBaseUrl, "https://openrouter.ai/api/v1");
+  assert.equal(settings.imageProvider, "gemini");
+  assert.equal(settings.openrouterImageModel, "openai/gpt-image-2.5-sunburst");
 });
 
 test("разбор текста использует отдельный API key и переданный прокси fetch", async () => {
