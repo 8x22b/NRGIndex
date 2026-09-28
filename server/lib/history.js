@@ -25,6 +25,7 @@ const DRINK_LABELS = {
   name: "Название",
   flavor: "Вкус",
   edition: "Издание",
+  barcode: "Штрих-код",
   image_path: "Картинка",
   source_label: "Подпись",
   accent_a: "Цвет A",

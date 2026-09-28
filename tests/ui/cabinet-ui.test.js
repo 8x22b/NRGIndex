@@ -56,6 +56,20 @@ test("OpenRouter-перерисовку кабинет не режет и сох
   assert.match(cabinetRoutes, /provider: viaOpenRouter \? "openrouter" : "gemini"/);
 });
 
+test("штрих-код: сканер, ручной ввод и сохранение кода", () => {
+  assert.match(cabinetHtml, /id="smart-barcode"/);
+  assert.match(cabinetHtml, /id="smart-barcode-code"/);
+  assert.match(cabinetHtml, /id="btn-barcode-lookup"/);
+  assert.match(cabinetHtml, /id="barcode-status"/);
+  assert.match(cabinetSource, /BarcodeDetector/);
+  assert.match(cabinetSource, /data_matrix/);
+  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode", \{ code \}\)/);
+  assert.match(cabinetSource, /pending\.barcode/);
+  assert.match(cabinetSource, /body\.barcode = pending\.barcode/);
+  assert.match(cabinetRoutes, /router\.post\("\/ai\/barcode"/);
+  assert.match(stylesSource, /\.barcode-row/);
+});
+
 test("рулетка по ассортименту: фото, распознавание и общий барабан", () => {
   assert.match(cabinetHtml, /id="assortment-photo"/);
   assert.match(cabinetHtml, /id="assortment-reel"/);

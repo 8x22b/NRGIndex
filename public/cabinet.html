@@ -82,6 +82,14 @@
           </label>
           <span class="voice-status" id="voice-status"></span>
         </div>
+        <div class="barcode-row">
+          <label class="btn btn--ghost btn--file">🏷 Скан штрих-кода
+            <input id="smart-barcode" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+          <input id="smart-barcode-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="или цифры / код Честного знака">
+          <button class="btn btn--ghost" type="button" id="btn-barcode-lookup">Найти</button>
+          <span class="voice-status" id="barcode-status" aria-live="polite"></span>
+        </div>
         <div class="voice-player" id="voice-player" hidden>
           <audio id="voice-audio" controls preload="metadata"></audio>
           <span class="voice-player__time" id="voice-duration">0:00</span>

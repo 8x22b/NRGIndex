@@ -456,6 +456,9 @@ img { display: block; max-width: 100%; }
 .btn--recording { color: #fff; background: #d63c3c; border-color: #d63c3c; animation: rec-pulse 1.2s ease-in-out infinite; }
 @keyframes rec-pulse { 50% { opacity: .7; } }
 .voice-row { display: flex; align-items: center; gap: .6rem; margin: .4rem 0 .7rem; flex-wrap: wrap; }
+.barcode-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-top: .6rem; }
+.barcode-row input[type="text"] { flex: 1 1 14rem; min-width: 0; }
+.barcode-row .voice-status { flex-basis: 100%; }
 .voice-status { color: var(--muted); font-size: .62rem; }
 .image-block { margin: 0 0 .8rem; padding: 1rem; border: 1px dashed rgba(255,255,255,.15); border-radius: .7rem; }
 .image-block legend { padding: 0 .5rem; color: var(--muted); font-size: .55rem; letter-spacing: .12em; text-transform: uppercase; }

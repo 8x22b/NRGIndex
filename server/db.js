@@ -154,6 +154,10 @@ const MIGRATIONS = [
   CREATE INDEX IF NOT EXISTS idx_ratings_updated ON ratings(updated_at);
   CREATE INDEX IF NOT EXISTS idx_drinks_created ON drinks(created_at);
   `,
+  `
+  ALTER TABLE drinks ADD COLUMN barcode TEXT NOT NULL DEFAULT '';
+  CREATE INDEX idx_drinks_barcode ON drinks(barcode);
+  `,
 ];
 
 function migrate(db) {
