@@ -1219,6 +1219,118 @@
     }
   };
 
+  /* ---------- рулетка по ассортименту ---------- */
+  const assortment = { items: [], drum: null, spinning: false, winner: null };
+
+  // Средний тир известной банки — из публичной сводки, как на главной.
+  const assortmentTier = (slug) => {
+    const drink = state.summary?.drinks.find((row) => row.id === slug);
+    const scores = Object.values(drink?.ratings || {})
+      .map((rating) => state.summary.tiers.find((tier) => tier.id === rating.tier)?.score)
+      .filter(Boolean);
+    if (!scores.length) return null;
+    const value = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    return state.summary.tiers.find((tier) => tier.score === Math.round(value)) || null;
+  };
+
+  const assortmentItem = (item) => {
+    if (item.slug) {
+      const drink = state.summary?.drinks.find((row) => row.id === item.slug);
+      const tier = assortmentTier(item.slug);
+      return `<span class="roulette__item" style="--card-accent:${safeColor(drink?.accent?.[0], "#ff4f79")}">
+        ${tier ? `<b style="color:${TIER_COLORS[tier.id] || "#ff4f79"}">${esc(tier.id)}</b>` : ""}
+        <img src="${esc(item.image || "assets/favicon.svg")}" alt="" loading="lazy" decoding="async">
+        <small>${esc(item.name)}</small>
+      </span>`;
+    }
+    return `<span class="roulette__item roulette__item--text" style="--card-accent:#ff4f79">
+      <strong>${esc(item.name)}</strong><em>${esc(item.flavor || "вкус не распознан")}</em>
+    </span>`;
+  };
+
+  assortment.drum = window.NrgRoulette.create($("assortment-reel"), assortmentItem);
+
+  $("assortment-photo").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const status = $("assortment-status");
+    try {
+      status.textContent = "смотрю фото…";
+      const objectUrl = URL.createObjectURL(file);
+      let dataUrl;
+      try {
+        dataUrl = shrinkOnly(await loadImage(objectUrl), 1280);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+      const { items } = await api("POST", "api/cabinet/ai/assortment", { imageDataUrl: dataUrl });
+      if (!items?.length) {
+        status.textContent = "не разглядел ни одной банки — попробуй ближе и без бликов";
+        return;
+      }
+      assortment.items = items;
+      assortment.winner = null;
+      $("assortment-window").hidden = false;
+      $("assortment-bottom").hidden = false;
+      $("assortment-clear").hidden = false;
+      $("assortment-result").textContent = "";
+      $("assortment-count").textContent = `распознано: ${items.length}`;
+      assortment.drum.reset(items);
+      status.textContent = "готово — жми «Крутить»";
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  $("assortment-spin").onclick = async () => {
+    if (assortment.spinning || !assortment.items.length) return;
+    assortment.spinning = true;
+    $("assortment-spin").disabled = true;
+    $("assortment-result").textContent = "крутим…";
+    const winner = await assortment.drum.spin({
+      pool: assortment.items,
+      onWinner: (item) => {
+        assortment.winner = item;
+        $("assortment-result").innerHTML = item.slug
+          ? `сегодня: <button type="button" class="roulette__open" data-assortment-open="${esc(item.slug)}">${esc(item.name)}${item.flavor ? ` — ${esc(item.flavor)}` : ""} →</button>`
+          : `сегодня: <b>${esc(item.name)}</b>${item.flavor ? ` — ${esc(item.flavor)}` : ""} <button type="button" class="btn btn--ghost" data-assortment-add>Завести в индекс</button>`;
+      },
+    });
+    if (winner) $("assortment-spin").textContent = "Ещё раз";
+    assortment.spinning = false;
+    $("assortment-spin").disabled = false;
+  };
+
+  $("assortment-result").addEventListener("click", (event) => {
+    const slug = event.target.closest("[data-assortment-open]")?.dataset.assortmentOpen;
+    if (slug) {
+      openOpinion(slug);
+      return;
+    }
+    if (!event.target.closest("[data-assortment-add]")) return;
+    const item = assortment.winner;
+    if (!item) return;
+    // Незнакомую банку предзаполняем в смарт-форму — проверить и сохранить.
+    fillManual({ brand: item.brand, name: item.name, flavor: item.flavor, edition: "", tier: "B", tierGuessed: true, review: "" });
+    document.querySelector("details.cabinet-ai").open = true;
+    $("smart-form").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("smart-status").textContent = "Проверь поля и жми «Добавить вручную из этих полей»";
+  });
+
+  $("assortment-clear").onclick = () => {
+    assortment.items = [];
+    assortment.winner = null;
+    assortment.drum.reset([]);
+    $("assortment-window").hidden = true;
+    $("assortment-bottom").hidden = true;
+    $("assortment-clear").hidden = true;
+    $("assortment-result").textContent = "";
+    $("assortment-count").textContent = "";
+    $("assortment-status").textContent = "";
+  };
+
   /* ---------- smart flow ---------- */
   const TIERS = ["S", "A", "B", "C", "D"];
 

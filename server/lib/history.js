@@ -56,6 +56,7 @@ const SETTING_LABELS = {
   google_cse_cx: "ID поисковика Google (CX)",
   gemini_api_key: "Ключ Gemini",
   gemini_image_model: "Модель Gemini",
+  gemini_vision_model: "Модель Gemini (ассортимент)",
   image_provider: "Провайдер перерисовки",
   openrouter_image_model: "Модель OpenRouter (картинки)",
   openrouter_image_template: "Шаблон OpenRouter (картинки)",

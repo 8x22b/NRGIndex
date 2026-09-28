@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const appSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "app.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "index.html"), "utf8");
+const rouletteSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "roulette.js"), "utf8");
 const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 const profileSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "profile.js"), "utf8");
 
@@ -52,10 +53,19 @@ test("рулетка: под тирлистом, фильтры по тирам 
   for (const tier of ["S", "A", "B", "C", "D"]) assert.match(indexHtml, new RegExp(`data-roll-tier="${tier}"`));
   assert.match(appSource, /!untriedOnly \|\| !drink\.ratings\?\.\[currentUser\?\.username\]/);
   assert.match(appSource, /setupRoulette\(\);/);
-  // лента из нескольких копий пула, победитель не у края, длительность и торможение случайные
-  assert.match(appSource, /while \(items\.length < 80\)/);
-  assert.match(appSource, /strip\.length - 1 - randInt\(10, 18\)/);
-  assert.match(appSource, /randInt\(6500, 9000\)/);
+});
+
+test("рулетка: общий барабан, без откатов и прыжка на повторном спине", () => {
+  assert.match(indexHtml, /src="roulette\.js"/);
+  assert.ok(indexHtml.indexOf("roulette.js") < indexHtml.indexOf("app.js"), "барабан подключён до app.js");
+  assert.match(appSource, /NrgRoulette\.create/);
+  assert.doesNotMatch(appSource, /randInt\(6, 30\)/); // осадка-откат убрана
+  assert.doesNotMatch(appSource, /settle/);
+  assert.doesNotMatch(rouletteSource, /overshoot|settle/);
+  assert.match(rouletteSource, /cubic-bezier\(\.15,\.75,\.25,1\)/);
+  assert.match(rouletteSource, /randInt\(\.\.\.DURATION\)/);
+  assert.match(rouletteSource, /translateX/);
+  assert.match(rouletteSource, /onWinner/);
 });
 
 test("диалог: кнопка копирования ссылки на банку", () => {

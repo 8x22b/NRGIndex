@@ -634,6 +634,28 @@ test("настройки ИИ: фото-шаблон загружается, о�
   assert.equal(data.json.settings.openrouterImageTemplate, "");
 });
 
+test("ассортимент: гость не может, без ключа Gemini — 503", async () => {
+  const guest = await request(ctx.base, "POST", "/api/cabinet/ai/assortment", {
+    body: { imageDataUrl: testImageDataUrl },
+  });
+  assert.equal(guest.status, 401);
+  const noKey = await request(ctx.base, "POST", "/api/cabinet/ai/assortment", {
+    cookie: userCookie,
+    body: { imageDataUrl: testImageDataUrl },
+  });
+  assert.equal(noKey.status, 503);
+});
+
+test("настройки ИИ: модель распознавания ассортимента сохраняется", async () => {
+  const ok = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { geminiVisionModel: "gemini-3.8-flash" },
+  });
+  assert.equal(ok.status, 200);
+  const data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.geminiVisionModel, "gemini-3.8-flash");
+});
+
 test("настройки ИИ: прокси — пароль скрыт, маска не затирает, журнал без секрета", async () => {
   const bad = await request(ctx.base, "PUT", "/api/admin/settings", {
     cookie: adminCookie,

@@ -23,6 +23,7 @@ test("aiSettings разделяет ключ разбора и OpenRouter STT", 
   assert.equal(settings.openrouterImageTemplate, "");
   assert.match(settings.openrouterImagePrompt, /transparent/i);
   assert.match(settings.geminiImagePrompt, /#00FF00/);
+  assert.equal(settings.geminiVisionModel, "gemini-3.8-flash");
 });
 
 test("aiSettings отдаёт кастомные промпты генерации", () => {
@@ -30,10 +31,12 @@ test("aiSettings отдаёт кастомные промпты генераци
     openrouter_image_prompt: "custom-or",
     gemini_image_prompt: "custom-g",
     openrouter_image_template: "/uploads/template-x.png",
+    gemini_vision_model: "gemini-x",
   }));
   assert.equal(settings.openrouterImagePrompt, "custom-or");
   assert.equal(settings.geminiImagePrompt, "custom-g");
   assert.equal(settings.openrouterImageTemplate, "/uploads/template-x.png");
+  assert.equal(settings.geminiVisionModel, "gemini-x");
 });
 
 test("разбор текста использует отдельный API key и переданный прокси fetch", async () => {

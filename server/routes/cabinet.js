@@ -7,11 +7,12 @@ const {
   transcribeAudio,
   decodeAudio,
   aiSettings,
+  estimateCostUsd,
   searchCanImages,
   TIERS,
 } = require("../lib/ai");
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
-const { redrawCanOnWhite } = require("../lib/gemini");
+const { redrawCanOnWhite, recognizeAssortment } = require("../lib/gemini");
 const { redrawCanOnTransparent, templateDataUrlFromUpload } = require("../lib/openrouter-image");
 const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
@@ -331,6 +332,28 @@ module.exports = (db, auth, config) => {
       },
     });
     res.json({ text });
+  });
+
+  // Фото полки → список банок от Gemini → матчинг с базой (фото и карточка).
+  router.post("/ai/assortment", async (req, res) => {
+    checkAiLimit(req.user.id);
+    const imageDataUrl = str(req.body?.imageDataUrl ?? "", "Фото", { max: 12 * 1024 * 1024 });
+    const ai = aiSettings(db);
+    const { items, usage } = await recognizeAssortment(imageDataUrl, {
+      key: ai.geminiKey,
+      model: ai.geminiVisionModel,
+      fetchImpl: ai.fetchImpl,
+    });
+    recordAiUsage(db, req.user.id, "vision", ai.geminiVisionModel, {
+      ...usage,
+      costUsd: usage.costUsd || estimateCostUsd(ai.geminiVisionModel, usage),
+    });
+    res.json({
+      items: items.map((item) => {
+        const match = findSimilarDrinks(db, item, { limit: 1, min: 0.6 })[0];
+        return { ...item, slug: match?.slug || "", image: match?.image || "" };
+      }),
+    });
   });
 
   // Поиск фото дёргается на каждую правку полей — свой лимит и короткий кэш,

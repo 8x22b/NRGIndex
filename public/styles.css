@@ -518,6 +518,11 @@ img { display: block; max-width: 100%; }
 .roulette__item b { position: absolute; top: .6rem; left: .75rem; font: 600 1.4rem/1 var(--serif); }
 .roulette__item small { max-width: 100%; overflow: hidden; color: var(--muted); font-size: .66rem; text-overflow: ellipsis; white-space: nowrap; }
 .roulette__item.is-winner { border-color: var(--orange); transform: scale(1.08); box-shadow: 0 0 2.5rem color-mix(in srgb, var(--card-accent) 55%, transparent); }
+.assortment-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .8rem; }
+#assortment-window { margin-bottom: .2rem; }
+.roulette__item--text { align-content: center; justify-items: start; gap: .35rem; text-align: left; }
+.roulette__item--text strong { font: 500 1.05rem/1.2 var(--serif); }
+.roulette__item--text em { color: var(--muted); font-size: .72rem; font-style: normal; }
 .roulette__pointer { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: var(--orange); box-shadow: 0 0 1rem var(--orange); transform: translateX(-50%); pointer-events: none; }
 .roulette__bottom { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap; }
 .roulette__result { color: var(--muted); font-size: .8rem; }

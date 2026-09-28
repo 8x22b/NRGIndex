@@ -70,6 +70,12 @@ test("настройки промптов генерации: поля, сохр
   assert.match(adminJs, /openrouterImagePrompt: "", geminiImagePrompt: ""/);
 });
 
+test("настройки распознавания ассортимента: модель Gemini", () => {
+  assert.match(adminHtml, /id="s-gemini-vision-model"/);
+  assert.match(adminJs, /geminiVisionModel: \$\("s-gemini-vision-model"\)\.value/);
+  assert.match(adminRoutes, /gemini_vision_model/);
+});
+
 test("настройки фото-шаблона OpenRouter: загрузка, превью и сброс", () => {
   assert.match(adminHtml, /id="s-template-file"/);
   assert.match(adminHtml, /id="s-template-preview"/);

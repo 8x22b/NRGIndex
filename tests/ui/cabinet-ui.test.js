@@ -56,6 +56,21 @@ test("OpenRouter-перерисовку кабинет не режет и сох
   assert.match(cabinetRoutes, /provider: viaOpenRouter \? "openrouter" : "gemini"/);
 });
 
+test("рулетка по ассортименту: фото, распознавание и общий барабан", () => {
+  assert.match(cabinetHtml, /id="assortment-photo"/);
+  assert.match(cabinetHtml, /id="assortment-reel"/);
+  assert.match(cabinetHtml, /id="assortment-spin"/);
+  assert.match(cabinetHtml, /id="assortment-result"/);
+  assert.match(cabinetHtml, /id="assortment-clear"/);
+  assert.ok(cabinetHtml.indexOf("roulette.js") < cabinetHtml.indexOf("cabinet.js"), "барабан подключён до cabinet.js");
+  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/assortment"/);
+  assert.match(cabinetSource, /NrgRoulette\.create/);
+  assert.match(cabinetSource, /openOpinion\(slug\)/);
+  assert.match(cabinetSource, /data-assortment-add/);
+  assert.match(cabinetRoutes, /router\.post\("\/ai\/assortment"/);
+  assert.match(stylesSource, /\.roulette__item--text/);
+});
+
 test("промпт просит прямой ракурс и зелёный фон", () => {
   const geminiSource = fs.readFileSync(path.join(__dirname, "..", "..", "server", "lib", "gemini.js"), "utf8");
   assert.match(geminiSource, /straight-on front view/);

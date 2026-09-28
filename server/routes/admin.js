@@ -12,7 +12,7 @@ const { userToApi, drinkToAdmin } = require("../lib/serialize");
 const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, DEFAULT_IMAGE_PROVIDER, IMAGE_PROVIDERS, normalizeBaseUrl, providerFailureDetail, searchGoogleCse } = require("../lib/ai");
 const history = require("../lib/history");
 const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../lib/proxy");
-const { checkGeminiKey, DEFAULT_IMAGE_MODEL, REDRAW_PROMPT: GEMINI_REDRAW_PROMPT } = require("../lib/gemini");
+const { checkGeminiKey, DEFAULT_IMAGE_MODEL, DEFAULT_VISION_MODEL, REDRAW_PROMPT: GEMINI_REDRAW_PROMPT } = require("../lib/gemini");
 const { DEFAULT_OPENROUTER_IMAGE_MODEL, REDRAW_PROMPT: OPENROUTER_REDRAW_PROMPT } = require("../lib/openrouter-image");
 
 const ROLES = ["admin", "editor", "user"];
@@ -128,6 +128,7 @@ module.exports = (db, auth, config) => {
       googleCseFromEnv: ai.googleCseFromEnv,
       geminiKeySet: Boolean(ai.geminiKey),
       geminiImageModel: ai.geminiImageModel,
+      geminiVisionModel: ai.geminiVisionModel,
       geminiFromEnv: ai.geminiFromEnv,
       imageProvider: ai.imageProvider,
       openrouterImageModel: ai.openrouterImageModel,
@@ -791,6 +792,9 @@ module.exports = (db, auth, config) => {
     if ("geminiImageModel" in body) {
       next.gemini_image_model = str(body.geminiImageModel || DEFAULT_IMAGE_MODEL, "Модель Gemini", { max: 100 });
     }
+    if ("geminiVisionModel" in body) {
+      next.gemini_vision_model = str(body.geminiVisionModel || DEFAULT_VISION_MODEL, "Модель Gemini (ассортимент)", { max: 100 });
+    }
     if ("imageProvider" in body) {
       next.image_provider = oneOf(String(body.imageProvider || DEFAULT_IMAGE_PROVIDER), IMAGE_PROVIDERS, "Провайдер перерисовки");
     }
@@ -824,6 +828,7 @@ module.exports = (db, auth, config) => {
       google_cse_cx: getSetting(db, "google_cse_cx", ""),
       gemini_api_key: getSetting(db, "gemini_api_key", ""),
       gemini_image_model: getSetting(db, "gemini_image_model", ""),
+      gemini_vision_model: getSetting(db, "gemini_vision_model", ""),
       image_provider: ai.imageProvider,
       openrouter_image_model: ai.openrouterImageModel,
       openrouter_image_prompt: getSetting(db, "openrouter_image_prompt", ""),

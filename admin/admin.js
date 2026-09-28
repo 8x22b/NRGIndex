@@ -870,6 +870,8 @@
         : "не задан";
     $("s-gemini-model").value = settings.geminiImageModel || "";
     $("s-gemini-model").placeholder = "gemini-3.1-flash-lite-image";
+    $("s-gemini-vision-model").value = settings.geminiVisionModel || "";
+    $("s-gemini-vision-model").placeholder = "gemini-3.8-flash";
     $("s-image-provider").value = settings.imageProvider === "openrouter" ? "openrouter" : "gemini";
     $("s-openrouter-image-model").value = settings.openrouterImageModel || "";
     $("s-openrouter-image-model").placeholder = settings.defaults?.openrouterImageModel || "openai/gpt-image-2.5-sunburst";
@@ -910,6 +912,7 @@
       openrouterImageModel: $("s-openrouter-image-model").value.trim(),
       openrouterImagePrompt: $("s-openrouter-image-prompt").value.trim(),
       geminiImagePrompt: $("s-gemini-image-prompt").value.trim(),
+      geminiVisionModel: $("s-gemini-vision-model").value.trim(),
     };
     if ($("s-key").value) payload.textApiKey = $("s-key").value;
     if ($("s-openrouter-key").value) payload.openrouterKey = $("s-openrouter-key").value;

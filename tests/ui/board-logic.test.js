@@ -7,6 +7,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const APP = fs.readFileSync(path.join(__dirname, "..", "..", "public", "app.js"), "utf8");
+const ROULETTE = fs.readFileSync(path.join(__dirname, "..", "..", "public", "roulette.js"), "utf8");
 
 function makeSummary() {
   return {
@@ -54,6 +55,7 @@ function element() {
     classList: { add() {}, remove() {}, toggle() {} },
     style: { setProperty() {} },
     addEventListener() {},
+    insertAdjacentHTML() {},
     querySelectorAll: () => [],
     querySelector: () => null,
     scrollIntoView() {},
@@ -128,6 +130,8 @@ async function runApp({ summary, pathname = "/", search = "" }) {
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
+  // как на странице: барабан рулетки подключается до app.js
+  vm.runInContext(ROULETTE, sandbox, { filename: "roulette.js" });
   vm.runInContext(APP, sandbox, { filename: "app.js" });
   // ждём fetch + debounce renderBoard (170мс)
   await new Promise((resolve) => setTimeout(resolve, 400));
