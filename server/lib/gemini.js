@@ -78,7 +78,7 @@ function noImageError(data) {
 
 // Перерисовывает банку на зелёном хромакее под прямым ракурсом.
 // Принимает dataURL (своё фото, фото из ленты), возвращает dataURL результата.
-async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL, fetchImpl = fetch } = {}) {
+async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL, prompt, fetchImpl = fetch } = {}) {
   if (!key) {
     throw new ApiError(503, "Ключ Gemini не настроен (админка → Настройки)", "gemini_not_configured");
   }
@@ -92,7 +92,7 @@ async function redrawCanOnWhite(imageDataUrl, { key, model = DEFAULT_IMAGE_MODEL
       body: JSON.stringify({
         model,
         input: [
-          { type: "text", text: REDRAW_PROMPT },
+          { type: "text", text: prompt || REDRAW_PROMPT },
           { type: "image", mime_type: mime, data: buffer.toString("base64") },
         ],
         response_format: { type: "image", mime_type: "image/jpeg" },
@@ -156,6 +156,7 @@ async function checkGeminiKey({ key, model = DEFAULT_IMAGE_MODEL, fetchImpl = fe
 
 module.exports = {
   DEFAULT_IMAGE_MODEL,
+  REDRAW_PROMPT,
   redrawCanOnWhite,
   checkGeminiKey,
 };

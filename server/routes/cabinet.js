@@ -12,7 +12,7 @@ const {
 } = require("../lib/ai");
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
 const { redrawCanOnWhite } = require("../lib/gemini");
-const { redrawCanOnTransparent } = require("../lib/openrouter-image");
+const { redrawCanOnTransparent, templateDataUrlFromUpload } = require("../lib/openrouter-image");
 const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
 const {
@@ -435,12 +435,18 @@ module.exports = (db, auth, config) => {
       ? await redrawCanOnTransparent(imageDataUrl, {
           key: ai.sttKey,
           model,
+          prompt: ai.openrouterImagePrompt,
+          // шаблон нужен только OpenRouter: битая настройка не должна ломать Gemini
+          template: ai.openrouterImageTemplate
+            ? templateDataUrlFromUpload(config.uploadsDir, ai.openrouterImageTemplate)
+            : undefined,
           baseUrl: ai.sttBaseUrl,
           fetchImpl: ai.fetchImpl,
         })
       : await redrawCanOnWhite(imageDataUrl, {
           key: ai.geminiKey,
           model,
+          prompt: ai.geminiImagePrompt,
           fetchImpl: ai.fetchImpl,
         });
     recordAiUsage(db, req.user.id, "redraw", model, usage);

@@ -1,8 +1,12 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const {
   redrawCanOnTransparent,
   templateDataUrl,
+  templateDataUrlFromUpload,
   DEFAULT_OPENROUTER_IMAGE_MODEL,
 } = require("../../server/lib/openrouter-image");
 
@@ -49,6 +53,46 @@ test("redrawCanOnTransparent: шлёт исходник и шаблон, воз�
   assert.equal(usage.costUsd, 0.04174);
   assert.equal(usage.totalTokens, 126);
   assert.ok(usage.ms >= 0);
+});
+
+test("redrawCanOnTransparent: кастомный промпт уходит вместо стандартного", async () => {
+  let captured;
+  const fetchImpl = async (url, init) => {
+    captured = { url, init };
+    return {
+      ok: true,
+      json: async () => ({ data: [{ b64_json: PNG_1X1, media_type: "image/png" }] }),
+    };
+  };
+  await redrawCanOnTransparent(DATA_URL, { key: "k", prompt: "Custom OR prompt", fetchImpl });
+  const body = JSON.parse(captured.init.body);
+  assert.equal(body.prompt, "Custom OR prompt");
+});
+
+test("redrawCanOnTransparent: кастомный шаблон идёт вторым reference", async () => {
+  let captured;
+  const fetchImpl = async (url, init) => {
+    captured = { url, init };
+    return {
+      ok: true,
+      json: async () => ({ data: [{ b64_json: PNG_1X1, media_type: "image/png" }] }),
+    };
+  };
+  await redrawCanOnTransparent(DATA_URL, { key: "k", template: "data:image/webp;base64,AAAA", fetchImpl });
+  const body = JSON.parse(captured.init.body);
+  assert.equal(body.input_references[1].image_url.url, "data:image/webp;base64,AAAA");
+});
+
+test("templateDataUrlFromUpload: читает файл и отсекает чужое", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nrg-template-"));
+  try {
+    fs.writeFileSync(path.join(dir, "template-x.png"), Buffer.from(PNG_1X1, "base64"));
+    assert.ok(templateDataUrlFromUpload(dir, "/uploads/template-x.png").startsWith("data:image/png;base64,"));
+    assert.throws(() => templateDataUrlFromUpload(dir, "/uploads/template-x.gif"), /не найден/);
+    assert.throws(() => templateDataUrlFromUpload(dir, "/uploads/template-missing.png"), /не найден/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("redrawCanOnTransparent: без ключа сеть не трогаем", async () => {

@@ -60,6 +60,26 @@ test("настройки перерисовки: провайдер Gemini/OpenR
   assert.match(adminRoutes, /DEFAULT_OPENROUTER_IMAGE_MODEL/);
 });
 
+test("настройки промптов генерации: поля, сохранение и сброс", () => {
+  assert.match(adminHtml, /id="s-openrouter-image-prompt"/);
+  assert.match(adminHtml, /id="s-gemini-image-prompt"/);
+  assert.match(adminHtml, /id="btn-prompts-clear"/);
+  assert.match(adminHtml, /settings-prompt/);
+  assert.match(adminJs, /openrouterImagePrompt: \$\("s-openrouter-image-prompt"\)\.value/);
+  assert.match(adminJs, /geminiImagePrompt: \$\("s-gemini-image-prompt"\)\.value/);
+  assert.match(adminJs, /openrouterImagePrompt: "", geminiImagePrompt: ""/);
+});
+
+test("настройки фото-шаблона OpenRouter: загрузка, превью и сброс", () => {
+  assert.match(adminHtml, /id="s-template-file"/);
+  assert.match(adminHtml, /id="s-template-preview"/);
+  assert.match(adminHtml, /id="btn-template-clear"/);
+  assert.match(adminJs, /fileToOriginalDataUrl/);
+  assert.match(adminJs, /api\("POST", "api\/admin\/settings\/image-template", \{ dataUrl \}\)/);
+  assert.match(adminJs, /api\("DELETE", "api\/admin\/settings\/image-template"\)/);
+  assert.match(adminRoutes, /\/settings\/image-template/);
+});
+
 test("лента фото в админке дожимает через прокси при хотлинк-бане", () => {
   assert.match(adminJs, /dataset\.proxied/);
   assert.match(adminJs, /api\/cabinet\/ai\/photo-proxy\?url=/);

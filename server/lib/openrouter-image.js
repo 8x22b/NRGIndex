@@ -38,6 +38,27 @@ function templateDataUrl() {
   return templateCache;
 }
 
+const TEMPLATE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
+
+// Шаблон из админки лежит в uploads как есть: обработка фона калечит
+// тёмную банку на тёмном фоне, поэтому сохраняем и отдаём сырые байты.
+function templateDataUrlFromUpload(uploadsDir, storedPath) {
+  const name = path.basename(String(storedPath || ""));
+  const mime = TEMPLATE_MIME[path.extname(name).toLowerCase()];
+  let buffer = null;
+  if (name && mime) {
+    try {
+      buffer = fs.readFileSync(path.join(uploadsDir, name));
+    } catch {
+      buffer = null;
+    }
+  }
+  if (!buffer?.length) {
+    throw new ApiError(503, "Фото-шаблон не найден — загрузите заново или сбросьте в админке", "template_missing");
+  }
+  return `data:${mime};base64,${buffer.toString("base64")}`;
+}
+
 function providerDetail(data, maxLength = 200) {
   const raw = data?.error?.message || data?.error || data?.message || data?.detail || "";
   return String(raw).replace(/\s+/g, " ").slice(0, maxLength);
@@ -53,7 +74,7 @@ function providerError(res, data) {
 }
 
 // Принимает dataURL исходного фото, возвращает dataURL PNG с альфой и usage с ценой.
-async function redrawCanOnTransparent(imageDataUrl, { key, model = DEFAULT_OPENROUTER_IMAGE_MODEL, baseUrl = OPENROUTER_BASE_URL, fetchImpl = fetch } = {}) {
+async function redrawCanOnTransparent(imageDataUrl, { key, model = DEFAULT_OPENROUTER_IMAGE_MODEL, baseUrl = OPENROUTER_BASE_URL, prompt, template, fetchImpl = fetch } = {}) {
   if (!key) {
     throw new ApiError(503, "OpenRouter-ключ не настроен (админка → Настройки)", "openrouter_not_configured");
   }
@@ -70,14 +91,14 @@ async function redrawCanOnTransparent(imageDataUrl, { key, model = DEFAULT_OPENR
       },
       body: JSON.stringify({
         model,
-        prompt: REDRAW_PROMPT,
+        prompt: prompt || REDRAW_PROMPT,
         aspect_ratio: "9:16",
         quality: "low",
         background: "transparent",
         output_format: "png",
         input_references: [
           { type: "image_url", image_url: { url: `data:${mime};base64,${buffer.toString("base64")}` } },
-          { type: "image_url", image_url: { url: templateDataUrl() } },
+          { type: "image_url", image_url: { url: template || templateDataUrl() } },
         ],
       }),
       signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
@@ -121,4 +142,5 @@ module.exports = {
   REDRAW_PROMPT,
   redrawCanOnTransparent,
   templateDataUrl,
+  templateDataUrlFromUpload,
 };

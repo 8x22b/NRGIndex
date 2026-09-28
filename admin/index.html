@@ -25,6 +25,12 @@
     .admin-form .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
     .drink-related { grid-column: 1 / -1; }
     .drink-related select { min-height: 8rem; }
+    .admin-form .grid-2 .settings-prompt { grid-column: 1 / -1; }
+    .settings-prompt textarea { min-height: 7rem; resize: vertical; font: 12.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .settings-template { grid-column: 1 / -1; display: grid; gap: 6px; font-size: 13px; }
+    .settings-template .admin-image-url-row { align-items: center; }
+    .settings-template input[type="file"] { flex: 1; min-width: 0; color: inherit; }
+    .settings-template img { width: 96px; height: 120px; object-fit: contain; padding: 6px; border: 1px dashed rgba(255,255,255,.25); border-radius: 10px; background: rgba(0,0,0,.25); }
     .drink-accent-fields { max-width: 520px; margin-top: 2px; }
     .admin-image-url-row { display: flex; gap: 10px; align-items: end; }
     .admin-image-url-row input { flex: 1; }
@@ -384,12 +390,28 @@
             </select>
           </label>
           <label>Модель OpenRouter для картинок<input id="s-openrouter-image-model" type="text" spellcheck="false" autocapitalize="none" placeholder="openai/gpt-image-2.5-sunburst"></label>
+          <label class="settings-prompt">Промпт OpenRouter-генерации
+            <textarea id="s-openrouter-image-prompt" rows="4" spellcheck="false" placeholder="пусто — стандартный промпт"></textarea>
+          </label>
+          <label class="settings-prompt">Промпт Gemini-генерации
+            <textarea id="s-gemini-image-prompt" rows="4" spellcheck="false" placeholder="пусто — стандартный промпт"></textarea>
+          </label>
+          <div class="settings-template">
+            <span>Фото-шаблон OpenRouter-генерации</span>
+            <div class="admin-image-url-row">
+              <input id="s-template-file" type="file" accept="image/png,image/jpeg,image/webp">
+              <button class="btn btn--ghost" type="button" id="btn-template-clear">Сбросить шаблон</button>
+            </div>
+            <img id="s-template-preview" alt="" hidden>
+            <span class="admin-hint">Пусто — встроенный шаблон. Картинка уходит в input_references как эталон ракурса: у модели меняется только рисунок банки.</span>
+          </div>
         </div>
         <p class="admin-hint">Base URL — корень API без <code>/chat/completions</code>. Запросы идут на <code>{base}/chat/completions</code> и <code>{base}/audio/transcriptions</code>. Для OpenRouter аудио отправляется JSON-ом, для остальных — multipart, как в OpenAI API. Пустое поле — значение по умолчанию.</p>
         <p class="admin-hint">Прокси прозрачный: разбор текста и распознавание голоса идут через него целиком (HTTPS туннелируется через CONNECT, ключ и данные прокси не видит). Поддерживаются <code>http://</code>, <code>https://</code> и <code>socks5://</code>, логин и пароль — прямо в адресе. Поиск фото ходит напрямую. Пароль в поле показан как <code>***</code> — не трогай его, и он сохранится. Можно задать и через <code>AI_PROXY_URL</code> в env.</p>
         <p class="admin-hint">Google CSE — первый источник фото (бесплатно 100 запросов/день). Без ключа работают DuckDuckGo + Open Food Facts + Wikimedia. Ключ: <code>console.cloud.google.com → Custom Search API → API key</code>; CX: <code>programmablesearchengine.google.com → Search entire web + Image search</code>. Можно задать и через <code>GOOGLE_CSE_KEY</code> / <code>GOOGLE_CSE_CX</code> в env.</p>
         <p class="admin-hint">Gemini (Nano Banana) перерисовывает банку на белом фоне под прямым ракурсом — кнопка «🍌» рядом с фото в кабинете. Ключ бесплатный: <code>aistudio.google.com → Get API key</code>, free tier хватает. Можно задать и через <code>GEMINI_API_KEY</code> / <code>GEMINI_IMAGE_MODEL</code> в env.</p>
         <p class="admin-hint">Провайдер перерисовки: Gemini — как раньше (зелёный хромакей, фон вырезается); OpenRouter — генерация сразу на прозрачном фоне по шаблону, фон не режется. В режиме OpenRouter используется ключ STT выше; параметры запроса: 9:16, low, transparent, PNG.</p>
+        <p class="admin-hint">Промпты генерации уходят провайдеру как есть (поле показывает действующий текст). В промпте Gemini сохраняйте требование зелёного фона (#00FF00) — иначе фон не вырежется; в промпте OpenRouter — требование прозрачного фона (transparent) — иначе PNG придёт с фоном и его никто не уберёт. Кнопка «Сбросить промпты» возвращает оба к стандартным. Шаблон можно заменить кнопкой выбора файла; «Сбросить шаблон» возвращает встроенный.</p>
         <div class="admin-actions">
           <button class="btn" type="submit">Сохранить</button>
           <button class="btn btn--ghost" type="button" id="btn-ai-check">Проверить связь с ИИ</button>
@@ -399,6 +421,7 @@
           <button class="btn btn--ghost" type="button" id="btn-text-key-clear">Убрать ключ разбора</button>
           <button class="btn btn--ghost" type="button" id="btn-google-key-clear">Убрать ключ Google</button>
           <button class="btn btn--ghost" type="button" id="btn-gemini-key-clear">Убрать ключ Gemini</button>
+          <button class="btn btn--ghost" type="button" id="btn-prompts-clear">Сбросить промпты</button>
         </div>
         <p class="form-status" id="settings-status" aria-live="polite"></p>
       </form>
