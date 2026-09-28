@@ -28,6 +28,20 @@ test("redrawCanOnWhite: шлёт картинку + промпт, возвращ
   assert.equal(body.response_format?.mime_type, "image/jpeg");
 });
 
+test("redrawCanOnWhite: кастомный промпт уходит вместо стандартного", async () => {
+  let captured;
+  const fetchImpl = async (url, init) => {
+    captured = { url, init };
+    return {
+      ok: true,
+      json: async () => ({ output_image: { mime_type: "image/png", data: PNG_1X1 } }),
+    };
+  };
+  await redrawCanOnWhite(DATA_URL, { key: "k", prompt: "Custom can prompt", fetchImpl });
+  const body = JSON.parse(captured.init.body);
+  assert.equal(body.input[0].text, "Custom can prompt");
+});
+
 test("redrawCanOnWhite: без ключа сеть не трогаем", async () => {
   let called = false;
   await assert.rejects(() => redrawCanOnWhite(DATA_URL, { key: "", fetchImpl: async () => { called = true; } }), /Gemini/);

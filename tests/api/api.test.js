@@ -1,5 +1,7 @@
 const { test, before, after } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const sharp = require("sharp");
 const { startServer, createUser, request, login } = require("../helpers");
 
@@ -580,6 +582,56 @@ test("настройки ИИ: провайдер перерисовки вал�
   assert.equal(data.json.settings.openrouterImageModel, "openai/gpt-image-2.5-sunburst");
   assert.equal(data.json.settings.defaults.openrouterImageModel, "openai/gpt-image-2.5-sunburst");
   await request(ctx.base, "PUT", "/api/admin/settings", { cookie: adminCookie, body: { imageProvider: "gemini" } });
+});
+
+test("настройки ИИ: промпты генерации сохраняются и сбрасываются", async () => {
+  const set = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { openrouterImagePrompt: "Custom OR prompt", geminiImagePrompt: "Custom Gemini prompt" },
+  });
+  assert.equal(set.status, 200);
+  let data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.openrouterImagePrompt, "Custom OR prompt");
+  assert.equal(data.json.settings.geminiImagePrompt, "Custom Gemini prompt");
+
+  const tooLong = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { openrouterImagePrompt: "x".repeat(4001) },
+  });
+  assert.equal(tooLong.status, 400);
+
+  const reset = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { openrouterImagePrompt: "", geminiImagePrompt: "" },
+  });
+  assert.equal(reset.status, 200);
+  data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.match(data.json.settings.openrouterImagePrompt, /transparent/i);
+  assert.match(data.json.settings.geminiImagePrompt, /#00FF00/);
+});
+
+test("настройки ИИ: фото-шаблон загружается, отдаётся и сбрасывается", async () => {
+  const bad = await request(ctx.base, "POST", "/api/admin/settings/image-template", {
+    cookie: adminCookie,
+    body: { dataUrl: "data:image/png;base64,AAAA" },
+  });
+  assert.equal(bad.status, 400);
+
+  const upload = await request(ctx.base, "POST", "/api/admin/settings/image-template", {
+    cookie: adminCookie,
+    body: { dataUrl: testImageDataUrl },
+  });
+  assert.equal(upload.status, 201);
+  assert.match(upload.json.path, /^\/uploads\/template-[a-z0-9-]+\.png$/);
+  assert.ok(fs.existsSync(path.join(ctx.config.uploadsDir, path.basename(upload.json.path))));
+
+  let data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.openrouterImageTemplate, upload.json.path);
+
+  const reset = await request(ctx.base, "DELETE", "/api/admin/settings/image-template", { cookie: adminCookie });
+  assert.equal(reset.status, 200);
+  data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.openrouterImageTemplate, "");
 });
 
 test("настройки ИИ: прокси — пароль скрыт, маска не затирает, журнал без секрета", async () => {

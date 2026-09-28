@@ -1,7 +1,8 @@
 const { ApiError, badRequest } = require("./errors");
 const { getSetting } = require("../db");
 const { proxiedFetch } = require("./proxy");
-const { DEFAULT_OPENROUTER_IMAGE_MODEL } = require("./openrouter-image");
+const { DEFAULT_OPENROUTER_IMAGE_MODEL, REDRAW_PROMPT: OPENROUTER_REDRAW_PROMPT } = require("./openrouter-image");
+const { REDRAW_PROMPT: GEMINI_REDRAW_PROMPT } = require("./gemini");
 
 const TIERS = ["S", "A", "B", "C", "D"];
 const DEFAULT_BASE_URL = "https://openrouter.ai/api/v1";
@@ -114,6 +115,9 @@ function aiSettings(db) {
     geminiFromEnv: !getSetting(db, "gemini_api_key", "") && Boolean(process.env.GEMINI_API_KEY),
     imageProvider: getSetting(db, "image_provider", "") || DEFAULT_IMAGE_PROVIDER,
     openrouterImageModel: getSetting(db, "openrouter_image_model", "") || DEFAULT_OPENROUTER_IMAGE_MODEL,
+    openrouterImageTemplate: getSetting(db, "openrouter_image_template", ""),
+    geminiImagePrompt: getSetting(db, "gemini_image_prompt", "") || GEMINI_REDRAW_PROMPT,
+    openrouterImagePrompt: getSetting(db, "openrouter_image_prompt", "") || OPENROUTER_REDRAW_PROMPT,
     // все запросы к ИИ-провайдеру идут через этот fetch: прозрачно, с прокси или без
     fetchImpl: proxiedFetch(proxyUrl),
   };

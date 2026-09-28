@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 const { aiSettings, parseDrinkText, transcribeAudio } = require("../../server/lib/ai");
 
 function dbWith(values) {
-  return { prepare: (sql) => ({ get: (key) => ({ value: values[key] }) }) };
+  // как better-sqlite3: нет строки в settings — .get() возвращает undefined,
+  // и getSetting отдаёт fallback
+  return { prepare: (sql) => ({ get: (key) => (key in values ? { value: values[key] } : undefined) }) };
 }
 
 test("aiSettings разделяет ключ разбора и OpenRouter STT", () => {
@@ -18,6 +20,20 @@ test("aiSettings разделяет ключ разбора и OpenRouter STT", 
   assert.equal(settings.sttBaseUrl, "https://openrouter.ai/api/v1");
   assert.equal(settings.imageProvider, "gemini");
   assert.equal(settings.openrouterImageModel, "openai/gpt-image-2.5-sunburst");
+  assert.equal(settings.openrouterImageTemplate, "");
+  assert.match(settings.openrouterImagePrompt, /transparent/i);
+  assert.match(settings.geminiImagePrompt, /#00FF00/);
+});
+
+test("aiSettings отдаёт кастомные промпты генерации", () => {
+  const settings = aiSettings(dbWith({
+    openrouter_image_prompt: "custom-or",
+    gemini_image_prompt: "custom-g",
+    openrouter_image_template: "/uploads/template-x.png",
+  }));
+  assert.equal(settings.openrouterImagePrompt, "custom-or");
+  assert.equal(settings.geminiImagePrompt, "custom-g");
+  assert.equal(settings.openrouterImageTemplate, "/uploads/template-x.png");
 });
 
 test("разбор текста использует отдельный API key и переданный прокси fetch", async () => {

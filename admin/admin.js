@@ -873,6 +873,12 @@
     $("s-image-provider").value = settings.imageProvider === "openrouter" ? "openrouter" : "gemini";
     $("s-openrouter-image-model").value = settings.openrouterImageModel || "";
     $("s-openrouter-image-model").placeholder = settings.defaults?.openrouterImageModel || "openai/gpt-image-2.5-sunburst";
+    $("s-openrouter-image-prompt").value = settings.openrouterImagePrompt || "";
+    $("s-gemini-image-prompt").value = settings.geminiImagePrompt || "";
+    const template = settings.openrouterImageTemplate || "";
+    $("s-template-preview").hidden = !template;
+    if (template) $("s-template-preview").src = template;
+    else $("s-template-preview").removeAttribute("src");
   };
 
   $("btn-ai-check").onclick = async () => {
@@ -902,6 +908,8 @@
       geminiImageModel: $("s-gemini-model").value.trim(),
       imageProvider: $("s-image-provider").value,
       openrouterImageModel: $("s-openrouter-image-model").value.trim(),
+      openrouterImagePrompt: $("s-openrouter-image-prompt").value.trim(),
+      geminiImagePrompt: $("s-gemini-image-prompt").value.trim(),
     };
     if ($("s-key").value) payload.textApiKey = $("s-key").value;
     if ($("s-openrouter-key").value) payload.openrouterKey = $("s-openrouter-key").value;
@@ -1006,6 +1014,55 @@
       await api("PUT", "api/admin/settings", { geminiKey: "" });
       await refresh();
       status("settings-status", "Ключ Gemini убран");
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
+  };
+
+  $("btn-prompts-clear").onclick = async () => {
+    const ok = await window.nrgConfirm({
+      title: "Сбросить промпты?",
+      message: "Оба промпта генерации вернутся к стандартным.",
+      details: ["Промпт OpenRouter и промпт Gemini будут очищены — генерация пойдёт со встроенным текстом"],
+      confirmText: "Сбросить",
+    });
+    if (!ok) return;
+    try {
+      await api("PUT", "api/admin/settings", { openrouterImagePrompt: "", geminiImagePrompt: "" });
+      await refresh();
+      status("settings-status", "Промпты сброшены к стандартным");
+    } catch (error) {
+      status("settings-status", error.message, true);
+    }
+  };
+
+  $("s-template-file").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      status("settings-status", "Загружаю шаблон…");
+      const dataUrl = await fileToOriginalDataUrl(file);
+      await api("POST", "api/admin/settings/image-template", { dataUrl });
+      await refresh();
+      status("settings-status", "Фото-шаблон обновлён ✓");
+    } catch (error) {
+      status("settings-status", error.message, true);
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  $("btn-template-clear").onclick = async () => {
+    const ok = await window.nrgConfirm({
+      title: "Сбросить шаблон?",
+      message: "Вернётся встроенный фото-шаблон перерисовки.",
+      confirmText: "Сбросить",
+    });
+    if (!ok) return;
+    try {
+      await api("DELETE", "api/admin/settings/image-template");
+      await refresh();
+      status("settings-status", "Фото-шаблон сброшен");
     } catch (error) {
       status("settings-status", error.message, true);
     }
@@ -1687,6 +1744,14 @@
       reader.readAsDataURL(blob);
     });
   };
+  const fileToOriginalDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+      reader.readAsDataURL(file);
+    });
+
   const fileToDataUrl = (file, maxSide) =>
     new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);

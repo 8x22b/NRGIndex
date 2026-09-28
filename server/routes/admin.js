@@ -1,8 +1,10 @@
 const express = require("express");
 const crypto = require("node:crypto");
+const fs = require("node:fs");
+const path = require("node:path");
 const { hashPassword } = require("../auth");
 const { notFound, badRequest, conflict, forbidden } = require("../lib/errors");
-const { str, username, password, oneOf, int, color, idArray, bool } = require("../lib/validate");
+const { str, username, password, oneOf, int, color, idArray, bool, imageFromDataUrl } = require("../lib/validate");
 const { writeAudit, getSetting, setSetting } = require("../db");
 const { ACCENTS, touchContent, uniqueSlug, ratingsForDrink, relationsForDrink } = require("../lib/content");
 const { saveProcessedImage, reprocessStoredImage } = require("../lib/images");
@@ -10,8 +12,8 @@ const { userToApi, drinkToAdmin } = require("../lib/serialize");
 const { TIERS, aiSettings, DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_STT_MODEL, DEFAULT_IMAGE_PROVIDER, IMAGE_PROVIDERS, normalizeBaseUrl, providerFailureDetail, searchGoogleCse } = require("../lib/ai");
 const history = require("../lib/history");
 const { normalizeProxyUrl, maskProxyUrl, proxiedFetch } = require("../lib/proxy");
-const { checkGeminiKey, DEFAULT_IMAGE_MODEL } = require("../lib/gemini");
-const { DEFAULT_OPENROUTER_IMAGE_MODEL } = require("../lib/openrouter-image");
+const { checkGeminiKey, DEFAULT_IMAGE_MODEL, REDRAW_PROMPT: GEMINI_REDRAW_PROMPT } = require("../lib/gemini");
+const { DEFAULT_OPENROUTER_IMAGE_MODEL, REDRAW_PROMPT: OPENROUTER_REDRAW_PROMPT } = require("../lib/openrouter-image");
 
 const ROLES = ["admin", "editor", "user"];
 
@@ -129,6 +131,9 @@ module.exports = (db, auth, config) => {
       geminiFromEnv: ai.geminiFromEnv,
       imageProvider: ai.imageProvider,
       openrouterImageModel: ai.openrouterImageModel,
+      openrouterImageTemplate: ai.openrouterImageTemplate,
+      openrouterImagePrompt: ai.openrouterImagePrompt,
+      geminiImagePrompt: ai.geminiImagePrompt,
       defaults: { aiBaseUrl: DEFAULT_BASE_URL, parseBaseUrl: DEFAULT_BASE_URL, openrouterModel: DEFAULT_MODEL, sttModel: DEFAULT_STT_MODEL, imageProvider: DEFAULT_IMAGE_PROVIDER, openrouterImageModel: DEFAULT_OPENROUTER_IMAGE_MODEL },
     };
     const audit = isAdmin(req) ? history.listAudit(db) : [];
@@ -792,6 +797,15 @@ module.exports = (db, auth, config) => {
     if ("openrouterImageModel" in body) {
       next.openrouter_image_model = str(body.openrouterImageModel || DEFAULT_OPENROUTER_IMAGE_MODEL, "Модель OpenRouter", { max: 120 });
     }
+    if ("openrouterImagePrompt" in body) {
+      const value = str(body.openrouterImagePrompt ?? "", "Промпт OpenRouter", { required: false, max: 4000 });
+      // ровно стандартный текст не храним: пусто = встроенный промпт
+      next.openrouter_image_prompt = value === OPENROUTER_REDRAW_PROMPT ? "" : value;
+    }
+    if ("geminiImagePrompt" in body) {
+      const value = str(body.geminiImagePrompt ?? "", "Промпт Gemini", { required: false, max: 4000 });
+      next.gemini_image_prompt = value === GEMINI_REDRAW_PROMPT ? "" : value;
+    }
     if ("aiProxyUrl" in body) {
       const raw = str(body.aiProxyUrl ?? "", "Прокси", { required: false, max: 500 });
       const stored = getSetting(db, "ai_proxy_url", "");
@@ -812,6 +826,8 @@ module.exports = (db, auth, config) => {
       gemini_image_model: getSetting(db, "gemini_image_model", ""),
       image_provider: ai.imageProvider,
       openrouter_image_model: ai.openrouterImageModel,
+      openrouter_image_prompt: getSetting(db, "openrouter_image_prompt", ""),
+      gemini_image_prompt: getSetting(db, "gemini_image_prompt", ""),
       ai_proxy_url: getSetting(db, "ai_proxy_url", ""),
     };
     const before = Object.fromEntries(
@@ -825,6 +841,29 @@ module.exports = (db, auth, config) => {
     if ("site_title" in next || "site_description" in next) touchContent(db);
     const changed = Object.keys(next).filter((key) => before[key] !== next[key]);
     res.json({ ok: true, changed });
+  });
+
+  const TEMPLATE_MAX_BYTES = 4 * 1024 * 1024;
+
+  // Своё фото-шаблон: сохраняем сырые байты (обработка вырезала бы тёмный корпус
+  // банки на тёмном фоне). Старый файл не удаляем — откат настройки вернёт его.
+  router.post("/settings/image-template", requireAdmin, (req, res) => {
+    const { ext, buffer } = imageFromDataUrl(req.body?.dataUrl, { maxBytes: TEMPLATE_MAX_BYTES });
+    const name = `template-${Date.now().toString(36)}-${crypto.randomBytes(6).toString("hex")}.${ext}`;
+    fs.mkdirSync(config.uploadsDir, { recursive: true });
+    fs.writeFileSync(path.join(config.uploadsDir, name), buffer);
+    const imagePath = `/uploads/${name}`;
+    const before = { openrouter_image_template: getSetting(db, "openrouter_image_template", "") };
+    setSetting(db, "openrouter_image_template", imagePath);
+    history.recordSettings(db, req.user, before, { openrouter_image_template: imagePath });
+    res.status(201).json({ path: imagePath });
+  });
+
+  router.delete("/settings/image-template", requireAdmin, (req, res) => {
+    const before = { openrouter_image_template: getSetting(db, "openrouter_image_template", "") };
+    setSetting(db, "openrouter_image_template", "");
+    history.recordSettings(db, req.user, before, { openrouter_image_template: "" });
+    res.json({ ok: true });
   });
 
   // Проверка связи с ИИ-провайдером (через прокси, если задан): GET {base}/models.
