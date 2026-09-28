@@ -69,6 +69,7 @@
     userPhoto: false,
     similarCount: 0, // сколько похожих банок нашёл ИИ
     duplicateAck: true, // «это не он» — без этого новую банку не сохраняем
+    barcode: "",
   };
 
   /* ---------- views ---------- */
@@ -1219,6 +1220,118 @@
     }
   };
 
+  /* ---------- рулетка по ассортименту ---------- */
+  const assortment = { items: [], drum: null, spinning: false, winner: null };
+
+  // Средний тир известной банки — из публичной сводки, как на главной.
+  const assortmentTier = (slug) => {
+    const drink = state.summary?.drinks.find((row) => row.id === slug);
+    const scores = Object.values(drink?.ratings || {})
+      .map((rating) => state.summary.tiers.find((tier) => tier.id === rating.tier)?.score)
+      .filter(Boolean);
+    if (!scores.length) return null;
+    const value = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+    return state.summary.tiers.find((tier) => tier.score === Math.round(value)) || null;
+  };
+
+  const assortmentItem = (item) => {
+    if (item.slug) {
+      const drink = state.summary?.drinks.find((row) => row.id === item.slug);
+      const tier = assortmentTier(item.slug);
+      return `<span class="roulette__item" style="--card-accent:${safeColor(drink?.accent?.[0], "#ff4f79")}">
+        ${tier ? `<b style="color:${TIER_COLORS[tier.id] || "#ff4f79"}">${esc(tier.id)}</b>` : ""}
+        <img src="${esc(item.image || "assets/favicon.svg")}" alt="" loading="lazy" decoding="async">
+        <small>${esc(item.name)}</small>
+      </span>`;
+    }
+    return `<span class="roulette__item roulette__item--text" style="--card-accent:#ff4f79">
+      <strong>${esc(item.name)}</strong><em>${esc(item.flavor || "вкус не распознан")}</em>
+    </span>`;
+  };
+
+  assortment.drum = window.NrgRoulette.create($("assortment-reel"), assortmentItem);
+
+  $("assortment-photo").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const status = $("assortment-status");
+    try {
+      status.textContent = "смотрю фото…";
+      const objectUrl = URL.createObjectURL(file);
+      let dataUrl;
+      try {
+        dataUrl = shrinkOnly(await loadImage(objectUrl), 1280);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+      const { items } = await api("POST", "api/cabinet/ai/assortment", { imageDataUrl: dataUrl });
+      if (!items?.length) {
+        status.textContent = "не разглядел ни одной банки — попробуй ближе и без бликов";
+        return;
+      }
+      assortment.items = items;
+      assortment.winner = null;
+      $("assortment-window").hidden = false;
+      $("assortment-bottom").hidden = false;
+      $("assortment-clear").hidden = false;
+      $("assortment-result").textContent = "";
+      $("assortment-count").textContent = `распознано: ${items.length}`;
+      assortment.drum.reset(items);
+      status.textContent = "готово — жми «Крутить»";
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      event.target.value = "";
+    }
+  });
+
+  $("assortment-spin").onclick = async () => {
+    if (assortment.spinning || !assortment.items.length) return;
+    assortment.spinning = true;
+    $("assortment-spin").disabled = true;
+    $("assortment-result").textContent = "крутим…";
+    const winner = await assortment.drum.spin({
+      pool: assortment.items,
+      onWinner: (item) => {
+        assortment.winner = item;
+        $("assortment-result").innerHTML = item.slug
+          ? `сегодня: <button type="button" class="roulette__open" data-assortment-open="${esc(item.slug)}">${esc(item.name)}${item.flavor ? ` — ${esc(item.flavor)}` : ""} →</button>`
+          : `сегодня: <b>${esc(item.name)}</b>${item.flavor ? ` — ${esc(item.flavor)}` : ""} <button type="button" class="btn btn--ghost" data-assortment-add>Завести в индекс</button>`;
+      },
+    });
+    if (winner) $("assortment-spin").textContent = "Ещё раз";
+    assortment.spinning = false;
+    $("assortment-spin").disabled = false;
+  };
+
+  $("assortment-result").addEventListener("click", (event) => {
+    const slug = event.target.closest("[data-assortment-open]")?.dataset.assortmentOpen;
+    if (slug) {
+      openOpinion(slug);
+      return;
+    }
+    if (!event.target.closest("[data-assortment-add]")) return;
+    const item = assortment.winner;
+    if (!item) return;
+    // Незнакомую банку предзаполняем в смарт-форму — проверить и сохранить.
+    fillManual({ brand: item.brand, name: item.name, flavor: item.flavor, edition: "", tier: "B", tierGuessed: true, review: "" });
+    document.querySelector("details.cabinet-ai").open = true;
+    $("smart-form").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("smart-status").textContent = "Проверь поля и жми «Добавить вручную из этих полей»";
+  });
+
+  $("assortment-clear").onclick = () => {
+    assortment.items = [];
+    assortment.winner = null;
+    assortment.drum.reset([]);
+    $("assortment-window").hidden = true;
+    $("assortment-bottom").hidden = true;
+    $("assortment-clear").hidden = true;
+    $("assortment-result").textContent = "";
+    $("assortment-count").textContent = "";
+    $("assortment-status").textContent = "";
+  };
+
   /* ---------- smart flow ---------- */
   const TIERS = ["S", "A", "B", "C", "D"];
 
@@ -1532,6 +1645,7 @@
       tier: TIERS.includes(parsed.tier) ? parsed.tier : "B",
       review: parsed.review || "",
     };
+    if (pending.barcode) body.barcode = pending.barcode;
     if (pending.image && pending.image.startsWith("data:")) body.imageDataUrl = pending.image;
     savingDrink = true;
     try {
@@ -1551,12 +1665,15 @@
     pending.userPhoto = false;
     pending.photoSource = "auto";
     pending.photoNote = "";
+    pending.barcode = "";
     clearStrip();
     ["m-brand", "m-name", "m-flavor", "m-edition", "m-review", "m-image-url"].forEach((id) => {
       $(id).value = "";
     });
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
+    $("smart-barcode-code").value = "";
+    setBarcodeStatus("");
     renderSimilar([]);
     clearVoice("smart");
   };
@@ -1587,6 +1704,125 @@
       )
       .join("");
   };
+
+  /* ---------- добавление по штрих-коду ---------- */
+  const BARCODE_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "data_matrix"];
+  let barcodeBusy = false;
+
+  const setBarcodeStatus = (text, isError = false) => {
+    $("barcode-status").textContent = text;
+    $("barcode-status").style.color = isError ? "#ff8a8a" : "";
+  };
+
+  const barcodeNote = (data) => {
+    const bits = [`штрих-код ${data.code}`];
+    const source = data.product?.source;
+    if (source === "openfoodfacts") bits.push("Open Food Facts");
+    if (source === "crpt") bits.push("Честный знак");
+    if (source === "index") bits.push("уже в индексе");
+    if (data.product?.volume) bits.push(data.product.volume);
+    if (data.product?.caffeineMg) bits.push(`${data.product.caffeineMg} мг кофеина`);
+    if (data.product?.kcal) bits.push(`${data.product.kcal} ккал`);
+    return bits.join(" · ");
+  };
+
+  const lookupBarcode = async (code) => {
+    if (barcodeBusy || !code) return;
+    barcodeBusy = true;
+    setBarcodeStatus("ищу по коду…");
+    try {
+      const data = await api("POST", "api/cabinet/ai/barcode", { code });
+      const product = data.product || data.inIndex;
+      if (!product) {
+        setBarcodeStatus("по коду ничего не нашлось — заполни вручную", true);
+        return;
+      }
+      pending.barcode = data.code;
+      pending.parsed = {
+        brand: product.brand || product.name || "",
+        name: product.name || product.brand || "",
+        flavor: product.flavor || "",
+        edition: "",
+        tier: "B",
+        tierGuessed: true,
+        review: "",
+      };
+      pending.image = null;
+      pending.original = null;
+      pending.photoSource = "auto";
+      pending.photoNote = data.inIndex ? "банка уже в индексе" : "фото не нашлось — ищу по названию";
+      renderSimilar(data.similar || []);
+      if (data.product?.image) {
+        // Фото OFF важнее ленты: как только оно загрузится — показываем его.
+        pending.photoSource = "barcode";
+        pending.photoNote = "фото Open Food Facts · фон режется…";
+        processImageUrl(data.product.image)
+          .then((dataUrl) => {
+            if (pending.barcode !== data.code) return;
+            pending.image = dataUrl;
+            pending.photoNote = "фото Open Food Facts ✓";
+            updatePreviewImage();
+          })
+          .catch(() => {
+            pending.photoNote = "фото из Open Food Facts не загрузилось";
+            updatePreviewImage();
+          });
+      }
+      setBarcodeStatus(barcodeNote(data));
+      showPreview();
+      refreshPhotos();
+      if (data.inIndex) $("smart-status").textContent = "уже в индексе — жми «Оценить эту» выше";
+    } catch (error) {
+      setBarcodeStatus(error.message, true);
+    } finally {
+      barcodeBusy = false;
+    }
+  };
+
+  const scanBarcodeImage = async (file) => {
+    if (!("BarcodeDetector" in window)) {
+      setBarcodeStatus("сканирование камерой тут не поддерживается — введи цифры вручную", true);
+      return;
+    }
+    try {
+      setBarcodeStatus("читаю код с фото…");
+      const supported = await window.BarcodeDetector.getSupportedFormats();
+      const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
+      if (!formats.length) {
+        setBarcodeStatus("этот браузер не умеет читать коды — введи вручную", true);
+        return;
+      }
+      const detector = new window.BarcodeDetector({ formats });
+      const bitmap = await createImageBitmap(file);
+      const found = await detector.detect(bitmap);
+      bitmap.close?.();
+      if (!found.length) {
+        setBarcodeStatus("код не распознан — попробуй ближе и без бликов", true);
+        return;
+      }
+      await lookupBarcode(found[0].rawValue);
+    } catch (error) {
+      setBarcodeStatus(error.message || "не удалось прочитать код", true);
+    }
+  };
+
+  $("smart-barcode").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) await scanBarcodeImage(file);
+  });
+
+  $("btn-barcode-lookup").onclick = () => {
+    const code = $("smart-barcode-code").value.trim();
+    if (code) lookupBarcode(code);
+  };
+
+  $("smart-barcode-code").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const code = $("smart-barcode-code").value.trim();
+    if (code) lookupBarcode(code);
+  });
 
   // Разбор ИИ не сохраняем молча: открываем редактор с готовым тиром и отзывом —
   // можно поправить текст, приложить фото и только потом опубликовать.

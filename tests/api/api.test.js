@@ -634,6 +634,63 @@ test("настройки ИИ: фото-шаблон загружается, о�
   assert.equal(data.json.settings.openrouterImageTemplate, "");
 });
 
+test("ассортимент: гость не может, без ключа Gemini — 503", async () => {
+  const guest = await request(ctx.base, "POST", "/api/cabinet/ai/assortment", {
+    body: { imageDataUrl: testImageDataUrl },
+  });
+  assert.equal(guest.status, 401);
+  const noKey = await request(ctx.base, "POST", "/api/cabinet/ai/assortment", {
+    cookie: userCookie,
+    body: { imageDataUrl: testImageDataUrl },
+  });
+  assert.equal(noKey.status, 503);
+});
+
+test("настройки ИИ: модель распознавания ассортимента сохраняется", async () => {
+  const ok = await request(ctx.base, "PUT", "/api/admin/settings", {
+    cookie: adminCookie,
+    body: { geminiVisionModel: "gemini-3.8-flash" },
+  });
+  assert.equal(ok.status, 200);
+  const data = await request(ctx.base, "GET", "/api/admin/data", { cookie: adminCookie });
+  assert.equal(data.json.settings.geminiVisionModel, "gemini-3.8-flash");
+});
+
+test("штрих-код: гость не может, мусор — 400", async () => {
+  const guest = await request(ctx.base, "POST", "/api/cabinet/ai/barcode", { body: { code: "4680036912629" } });
+  assert.equal(guest.status, 401);
+  for (const code of ["привет", "4680036912620"]) {
+    const bad = await request(ctx.base, "POST", "/api/cabinet/ai/barcode", { cookie: userCookie, body: { code } });
+    assert.equal(bad.status, 400);
+  }
+});
+
+test("штрих-код сохраняется у банки и повторный скан находит её без сети", async () => {
+  const created = await request(ctx.base, "POST", "/api/cabinet/drinks", {
+    cookie: userCookie,
+    body: { brand: "Gorilla", name: "Gorilla Energy", flavor: "классика", tier: "B", review: "", barcode: "4680036912629" },
+  });
+  assert.equal(created.status, 201);
+  const row = ctx.db.prepare("SELECT barcode FROM drinks WHERE slug = ?").get(created.json.drink.slug);
+  assert.equal(row.barcode, "4680036912629");
+
+  const found = await request(ctx.base, "POST", "/api/cabinet/ai/barcode", {
+    cookie: userCookie,
+    body: { code: "4680036912629" },
+  });
+  assert.equal(found.status, 200);
+  assert.equal(found.json.inIndex.slug, created.json.drink.slug);
+  assert.equal(found.json.product.source, "index");
+  assert.equal(found.json.similar[0].slug, created.json.drink.slug);
+  assert.match(found.json.similar[0].reason, /штрих-код/);
+
+  const badBarcode = await request(ctx.base, "POST", "/api/cabinet/drinks", {
+    cookie: userCookie,
+    body: { brand: "X", name: "X", flavor: "y", tier: "B", barcode: "4680036912620" },
+  });
+  assert.equal(badBarcode.status, 400);
+});
+
 test("настройки ИИ: прокси — пароль скрыт, маска не затирает, журнал без секрета", async () => {
   const bad = await request(ctx.base, "PUT", "/api/admin/settings", {
     cookie: adminCookie,

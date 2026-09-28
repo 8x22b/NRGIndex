@@ -1,6 +1,13 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { redrawCanOnWhite, checkGeminiKey, DEFAULT_IMAGE_MODEL } = require("../../server/lib/gemini");
+const {
+  redrawCanOnWhite,
+  checkGeminiKey,
+  recognizeAssortment,
+  normalizeAssortment,
+  DEFAULT_IMAGE_MODEL,
+  DEFAULT_VISION_MODEL,
+} = require("../../server/lib/gemini");
 
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const DATA_URL = `data:image/png;base64,${PNG_1X1}`;
@@ -128,4 +135,85 @@ test("checkGeminiKey: без ключа сеть не трогаем", async () 
   let called = false;
   await assert.rejects(() => checkGeminiKey({ key: "", fetchImpl: async () => { called = true; } }), /Gemini/);
   assert.equal(called, false);
+});
+
+test("recognizeAssortment шлёт промпт и фото, разбирает JSON из steps", async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push({ url, init });
+    return {
+      ok: true,
+      json: async () => ({
+        steps: [
+          {
+            content: [
+              {
+                type: "text",
+                text: '```json\n{"items":[{"brand":"Burn","name":"Burn Energy","flavor":"яблоко"}]}\n```',
+              },
+            ],
+          },
+        ],
+        usage_metadata: { promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120 },
+      }),
+    };
+  };
+  const { items, usage } = await recognizeAssortment(DATA_URL, { key: "k", fetchImpl });
+
+  assert.equal(seen[0].url, "https://generativelanguage.googleapis.com/v1beta/interactions");
+  assert.equal(seen[0].init.headers["x-goog-api-key"], "k");
+  const body = JSON.parse(seen[0].init.body);
+  assert.equal(body.model, DEFAULT_VISION_MODEL);
+  assert.equal(body.model, "gemini-3.8-flash");
+  const textPart = body.input.find((part) => part.type === "text");
+  assert.match(textPart.text, /JSON/);
+  assert.match(textPart.text, /энергет/i);
+  const imagePart = body.input.find((part) => part.type === "image");
+  assert.equal(imagePart.mime_type, "image/png");
+  assert.ok(imagePart.data.length > 10);
+  assert.deepEqual(items, [{ brand: "Burn", name: "Burn Energy", flavor: "яблоко" }]);
+  assert.equal(usage.totalTokens, 120);
+  assert.equal(usage.costUsd, 0);
+});
+
+test("recognizeAssortment: без ключа/битого dataURL сеть не трогаем", async () => {
+  let called = false;
+  await assert.rejects(
+    () => recognizeAssortment(DATA_URL, { key: "", fetchImpl: async () => { called = true; } }),
+    /Gemini/,
+  );
+  assert.equal(called, false);
+  await assert.rejects(
+    () => recognizeAssortment("https://example.com/x.png", { key: "k", fetchImpl: async () => { called = true; } }),
+    /data:image/,
+  );
+  assert.equal(called, false);
+});
+
+test("recognizeAssortment: не-JSON — понятная ошибка", async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({ steps: [{ content: [{ type: "text", text: "извините, не вижу банок" }] }] }),
+  });
+  await assert.rejects(
+    () => recognizeAssortment(DATA_URL, { key: "k", fetchImpl }),
+    /не JSON/,
+  );
+});
+
+test("normalizeAssortment: дубли, пустые и лимит 40", () => {
+  const items = normalizeAssortment({
+    items: [
+      { brand: "Burn", name: "", flavor: "яблоко" },
+      { brand: "bUrN", name: "", flavor: "яблоко" },
+      { brand: "", name: "", flavor: "" },
+      { name: "Lit Energy" },
+      ...Array.from({ length: 50 }, (_, index) => ({ brand: `B${index}` })),
+    ],
+  });
+  assert.equal(items[0].name, "Burn");
+  assert.equal(items[0].brand, "Burn");
+  assert.equal(items.filter((item) => item.brand.toLowerCase() === "burn").length, 1);
+  assert.equal(items.length, 40);
+  assert.ok(items.some((item) => item.brand === "Lit Energy"));
 });

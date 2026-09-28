@@ -82,6 +82,14 @@
           </label>
           <span class="voice-status" id="voice-status"></span>
         </div>
+        <div class="barcode-row">
+          <label class="btn btn--ghost btn--file">🏷 Скан штрих-кода
+            <input id="smart-barcode" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+          <input id="smart-barcode-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="или цифры / код Честного знака">
+          <button class="btn btn--ghost" type="button" id="btn-barcode-lookup">Найти</button>
+          <span class="voice-status" id="barcode-status" aria-live="polite"></span>
+        </div>
         <div class="voice-player" id="voice-player" hidden>
           <audio id="voice-audio" controls preload="metadata"></audio>
           <span class="voice-player__time" id="voice-duration">0:00</span>
@@ -166,6 +174,29 @@
           <input id="find-input" type="search" placeholder="Бренд, название или вкус…" autocomplete="off" aria-label="Поиск по уже добавленным энергосам">
         </label>
         <div class="unrated-grid" id="find-results"></div>
+      </div>
+
+      <div class="cabinet-mine" id="assortment-block">
+        <div class="cabinet-mine__head">
+          <h3>Рулетка по ассортименту</h3>
+          <span class="hint" id="assortment-count"></span>
+        </div>
+        <p class="hint">Сфоткай полку с энергетиками — Gemini распознает банки и вкусы, а рулетка выберет, что взять сегодня. Знакомую банку можно сразу оценить.</p>
+        <div class="assortment-actions">
+          <label class="btn btn--ghost btn--file">📷 Сфоткать ассортимент
+            <input id="assortment-photo" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+          <button class="btn btn--ghost" type="button" id="assortment-clear" hidden>Обычная рулетка</button>
+          <span class="form-status" id="assortment-status" aria-live="polite"></span>
+        </div>
+        <div class="roulette__window" id="assortment-window" hidden>
+          <div class="roulette__reel" id="assortment-reel"></div>
+          <span class="roulette__pointer" aria-hidden="true"></span>
+        </div>
+        <div class="roulette__bottom" id="assortment-bottom" hidden>
+          <div class="roulette__result" id="assortment-result" aria-live="polite"></div>
+          <button class="btn roulette__spin" type="button" id="assortment-spin">Крутить</button>
+        </div>
       </div>
 
       <div class="cabinet-mine">
@@ -295,6 +326,7 @@
 
   <script src="confirm.js"></script>
   <script src="avatar-crop.js"></script>
+  <script src="roulette.js"></script>
   <script src="cabinet.js"></script>
 </body>
 </html>

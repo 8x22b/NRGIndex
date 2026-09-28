@@ -7,12 +7,14 @@ const {
   transcribeAudio,
   decodeAudio,
   aiSettings,
+  estimateCostUsd,
   searchCanImages,
   TIERS,
 } = require("../lib/ai");
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
-const { redrawCanOnWhite } = require("../lib/gemini");
+const { redrawCanOnWhite, recognizeAssortment } = require("../lib/gemini");
 const { redrawCanOnTransparent, templateDataUrlFromUpload } = require("../lib/openrouter-image");
+const { parseScanCode, barcodeField, lookupOpenFoodFacts, lookupChestnyZnak } = require("../lib/barcode");
 const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
 const {
@@ -51,6 +53,23 @@ module.exports = (db, auth, config) => {
     }
     entry.count += 1;
     if (entry.count > AI_LIMIT) throw tooMany("Лимит ИИ-запросов: 40 в час");
+  }
+
+  const barcodeUsage = new Map();
+  const BARCODE_LIMIT = 120;
+  const barcodeCache = new Map();
+  const BARCODE_CACHE_MS = 30 * 60 * 1000;
+  const BARCODE_CACHE_MAX = 300;
+
+  function checkBarcodeLimit(userId) {
+    const now = Date.now();
+    const entry = barcodeUsage.get(userId);
+    if (!entry || entry.resetAt < now) {
+      barcodeUsage.set(userId, { count: 1, resetAt: now + AI_WINDOW_MS });
+      return;
+    }
+    entry.count += 1;
+    if (entry.count > BARCODE_LIMIT) throw tooMany("Лимит поиска по коду: 120 в час");
   }
 
   function findDrink(slug) {
@@ -136,6 +155,7 @@ module.exports = (db, auth, config) => {
     const fields = drinkFields(req.body);
     const tier = oneOf(String(req.body?.tier || "B"), TIERS, "Тир");
     const review = str(req.body?.review ?? "", "Отзыв", { required: false, max: 1000 });
+    const barcode = barcodeField(req.body?.barcode);
     const image = req.body?.imageDataUrl
       ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
       : null;
@@ -147,8 +167,8 @@ module.exports = (db, auth, config) => {
     const create = db.transaction(() => {
       const info = db
         .prepare(
-          `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by, image_width, image_height, image_srcset)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+          `INSERT INTO drinks (slug, brand, name, flavor, edition, image_path, source_label, accent_a, accent_b, is_published, created_by, image_width, image_height, image_srcset, barcode)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
         )
         .run(
           slug,
@@ -164,6 +184,7 @@ module.exports = (db, auth, config) => {
           image?.width || 0,
           image?.height || 0,
           image?.srcset || "",
+          barcode,
         );
       const id = info.lastInsertRowid;
       db.prepare("INSERT INTO ratings (drink_id, user_id, tier_id, review) VALUES (?, ?, ?, ?)").run(
@@ -199,13 +220,14 @@ module.exports = (db, auth, config) => {
     const imageWidth = image ? image.width : drink.image_width || 0;
     const imageHeight = image ? image.height : drink.image_height || 0;
     const imageSrcset = image ? image.srcset : drink.image_srcset || "";
+    const barcode = req.body?.barcode === undefined ? drink.barcode || "" : barcodeField(req.body.barcode);
 
     db.transaction(() => {
       const before = history.snapDrink(db, drink.id);
       db.prepare(
         `UPDATE drinks SET brand = ?, name = ?, flavor = ?, edition = ?, image_path = ?,
-           accent_a = ?, accent_b = ?, image_width = ?, image_height = ?, image_srcset = ?, updated_at = datetime('now') WHERE id = ?`,
-      ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, imageWidth, imageHeight, imageSrcset, drink.id);
+           accent_a = ?, accent_b = ?, image_width = ?, image_height = ?, image_srcset = ?, barcode = ?, updated_at = datetime('now') WHERE id = ?`,
+      ).run(fields.brand, fields.name, fields.flavor, fields.edition, imagePath, accentA, accentB, imageWidth, imageHeight, imageSrcset, barcode, drink.id);
       // Частичный патч: неуказанный тир/отзыв сохраняем, а не сбрасываем в «B»/«».
       if (req.body?.tier !== undefined || req.body?.review !== undefined) {
         const current = history.snapRating(db, drink.id, req.user.id);
@@ -315,6 +337,73 @@ module.exports = (db, auth, config) => {
     res.json({ parsed, similar });
   });
 
+  // Штрих-код или Data Matrix: сначала своя база, потом Open Food Facts,
+  // для Честного знака — best-effort CRPT. Нет данных — product: null, не ошибка.
+  router.post("/ai/barcode", async (req, res) => {
+    checkBarcodeLimit(req.user.id);
+    const scan = parseScanCode(str(req.body?.code ?? "", "Код", { max: 300 }));
+    const cached = barcodeCache.get(scan.gtin);
+    if (cached && cached.expiresAt > Date.now()) return res.json(cached.payload);
+
+    const stored = db
+      .prepare("SELECT slug, brand, name, flavor, image_path FROM drinks WHERE barcode = ?")
+      .get(scan.gtin);
+    const ai = aiSettings(db);
+    let product = stored
+      ? {
+          source: "index",
+          brand: stored.brand,
+          name: stored.name,
+          flavor: stored.flavor,
+          volume: "",
+          image: stored.image_path || "",
+          caffeineMg: 0,
+          kcal: 0,
+          sugarG: 0,
+        }
+      : await lookupOpenFoodFacts(scan.gtin, { fetchImpl: ai.fetchImpl }).catch(() => null);
+    if (!stored && scan.kind === "datamatrix") {
+      const crpt = await lookupChestnyZnak(scan.raw, { fetchImpl: ai.fetchImpl });
+      if (crpt && !product) product = { ...crpt, volume: "", image: "", caffeineMg: 0, kcal: 0, sugarG: 0 };
+    }
+
+    const myTier = (slug) =>
+      db
+        .prepare(
+          "SELECT r.tier_id AS tier FROM ratings r JOIN drinks d ON d.id = r.drink_id WHERE d.slug = ? AND r.user_id = ?",
+        )
+        .get(slug, req.user.id)?.tier || null;
+    const similar = stored
+      ? [
+          {
+            slug: stored.slug,
+            brand: stored.brand,
+            name: stored.name,
+            flavor: stored.flavor,
+            image: stored.image_path || "assets/favicon.svg",
+            score: 1,
+            confidence: "high",
+            reason: "штрих-код совпал",
+            hidden: false,
+            myTier: myTier(stored.slug),
+          },
+        ]
+      : product
+        ? findSimilarDrinks(db, product, { limit: 3, min: 0.6 }).map((drink) => ({ ...drink, myTier: myTier(drink.slug) }))
+        : [];
+
+    const payload = {
+      code: scan.gtin,
+      kind: scan.kind,
+      inIndex: stored ? { slug: stored.slug, brand: stored.brand, name: stored.name, flavor: stored.flavor } : null,
+      product,
+      similar,
+    };
+    barcodeCache.set(scan.gtin, { expiresAt: Date.now() + BARCODE_CACHE_MS, payload });
+    if (barcodeCache.size > BARCODE_CACHE_MAX) barcodeCache.delete(barcodeCache.keys().next().value);
+    res.json(payload);
+  });
+
   router.post("/ai/transcribe", async (req, res) => {
     checkAiLimit(req.user.id);
     const mimeType = str(req.body?.mimeType, "Тип аудио", { max: 100 });
@@ -331,6 +420,28 @@ module.exports = (db, auth, config) => {
       },
     });
     res.json({ text });
+  });
+
+  // Фото полки → список банок от Gemini → матчинг с базой (фото и карточка).
+  router.post("/ai/assortment", async (req, res) => {
+    checkAiLimit(req.user.id);
+    const imageDataUrl = str(req.body?.imageDataUrl ?? "", "Фото", { max: 12 * 1024 * 1024 });
+    const ai = aiSettings(db);
+    const { items, usage } = await recognizeAssortment(imageDataUrl, {
+      key: ai.geminiKey,
+      model: ai.geminiVisionModel,
+      fetchImpl: ai.fetchImpl,
+    });
+    recordAiUsage(db, req.user.id, "vision", ai.geminiVisionModel, {
+      ...usage,
+      costUsd: usage.costUsd || estimateCostUsd(ai.geminiVisionModel, usage),
+    });
+    res.json({
+      items: items.map((item) => {
+        const match = findSimilarDrinks(db, item, { limit: 1, min: 0.6 })[0];
+        return { ...item, slug: match?.slug || "", image: match?.image || "" };
+      }),
+    });
   });
 
   // Поиск фото дёргается на каждую правку полей — свой лимит и короткий кэш,

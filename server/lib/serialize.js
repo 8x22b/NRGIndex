@@ -81,6 +81,7 @@ function drinkToAdmin(row, ratings, relatedIds) {
     name: row.name,
     flavor: row.flavor,
     edition: row.edition,
+    barcode: row.barcode || "",
     image: row.image_path,
     ...drinkImage(row),
     sourceLabel: row.source_label,
