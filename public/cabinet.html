@@ -83,7 +83,8 @@
           <span class="voice-status" id="voice-status"></span>
         </div>
         <div class="barcode-row">
-          <label class="btn btn--ghost btn--file">🏷 Скан штрих-кода
+          <button class="btn" type="button" id="btn-barcode-live">📷 Сканировать камерой</button>
+          <label class="btn btn--ghost btn--file">🏷 Снять фото
             <input id="smart-barcode" type="file" accept="image/*" capture="environment" hidden>
           </label>
           <input id="smart-barcode-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="или цифры / код Честного знака">
@@ -267,6 +268,19 @@
             <button class="btn" type="button" id="op-save">Сохранить</button>
             <button class="btn btn--ghost" type="button" id="op-cancel">Отмена</button>
             <span class="form-status" id="op-status" aria-live="polite"></span>
+          </div>
+        </div>
+      </dialog>
+
+      <!-- ЖИВОЕ СКАНИРОВАНИЕ ШТРИХ-КОДА -->
+      <dialog class="scan-dialog" id="scan-dialog" aria-label="Сканирование штрих-кода">
+        <div class="scan-dialog__inner">
+          <video id="scan-video" playsinline muted></video>
+          <div class="scan-frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+          <p class="scan-status" id="scan-status" aria-live="polite">наведи камеру на штрих-код</p>
+          <div class="scan-actions">
+            <button class="btn btn--ghost" type="button" id="scan-torch" hidden>🔦 Подсветка</button>
+            <button class="btn btn--ghost" type="button" id="scan-close">Закрыть</button>
           </div>
         </div>
       </dialog>

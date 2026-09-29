@@ -893,3 +893,18 @@ a.reviewer:hover b { text-decoration: underline; }
 .avatar-zoom { width: 100%; color: var(--muted); font-size: .55rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .avatar-zoom input { width: 100%; margin-top: .35rem; accent-color: var(--orange); }
 .avatar-dialog__actions { align-items: center; width: 100%; }
+
+/* --- живое сканирование штрих-кода --- */
+.scan-dialog { width: min(30rem, calc(100% - 1.6rem)); padding: 0; border: 1px solid var(--line); border-radius: 1rem; background: #100e0d; color: var(--paper); overflow: hidden; }
+.scan-dialog::backdrop { background: rgba(6, 5, 4, .85); backdrop-filter: blur(10px); }
+.scan-dialog__inner { position: relative; display: grid; }
+.scan-dialog video { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: #000; }
+.scan-frame { position: absolute; top: 50%; left: 50%; width: 78%; height: 38%; transform: translate(-50%, -58%); pointer-events: none; }
+.scan-frame i { position: absolute; width: 1.4rem; height: 1.4rem; border: 2px solid var(--acid); border-radius: .2rem; }
+.scan-frame i:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.scan-frame i:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.scan-frame i:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.scan-frame i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+.scan-status { margin: 0; padding: .8rem 1rem .2rem; color: var(--muted); font-size: .62rem; letter-spacing: .06em; text-align: center; }
+.scan-actions { display: flex; gap: .6rem; justify-content: center; padding: .6rem 1rem 1rem; }
+.scan-actions .btn { padding: .5rem .8rem; font-size: .62rem; }
