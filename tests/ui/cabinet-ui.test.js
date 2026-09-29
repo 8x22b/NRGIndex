@@ -8,6 +8,14 @@ const cabinetHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "
 const cabinetRoutes = fs.readFileSync(path.join(__dirname, "..", "..", "server", "routes", "cabinet.js"), "utf8");
 const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 
+test("кабинет: скан штрих-кода работает и без BarcodeDetector (серверный фолбэк)", () => {
+  assert.match(cabinetHtml, /id="smart-barcode"/);
+  assert.match(cabinetSource, /decodeBarcodeNatively/);
+  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode-scan"/);
+  assert.match(cabinetSource, /barcodeImageDataUrl/);
+  assert.doesNotMatch(cabinetSource, /сканирование камерой тут не поддерживается/);
+});
+
 test("кабинет показывает красную кнопку удаления оценки", () => {
   assert.match(cabinetSource, /<button class=\"btn btn--danger\" type=\"button\" data-m-del-rating>удалить<\/button>/);
   assert.doesNotMatch(cabinetSource, /data-m-del-rating>− оценка<\/button>/);
