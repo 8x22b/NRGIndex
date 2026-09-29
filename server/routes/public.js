@@ -103,7 +103,7 @@ module.exports = (db) => {
   router.get("/profile/:username", (req, res) => {
     const user = db
       .prepare(
-        `SELECT id, username, display_name, initials, title, color, avatar_path, created_at
+        `SELECT id, username, display_name, initials, title, color, avatar_path, created_at, role
          FROM users WHERE username = ? AND is_active = 1 AND is_public = 1`,
       )
       .get(String(req.params.username || "").slice(0, 64));
@@ -243,21 +243,26 @@ module.exports = (db) => {
     const topMonth = monthTotals.reduce((best, month) => (month.count > (best?.count || 0) ? month : best), null);
 
     const placeholders = PROFILE_HISTORY_ACTIONS.map(() => "?").join(", ");
-    const history = db
-      .prepare(
-        `SELECT action, entity, entity_id AS slug, summary, details, created_at
-         FROM audit_log
-         WHERE user_id = ? AND action IN (${placeholders})
-         ORDER BY id DESC LIMIT ?`,
-      )
-      .all(user.id, ...PROFILE_HISTORY_ACTIONS, PROFILE_HISTORY_LIMIT)
-      .map((row) => ({
-        action: row.action,
-        entity: row.entity,
-        slug: row.entity === "drink" || row.entity === "rating" ? row.slug : "",
-        summary: String(row.summary || row.details || "").slice(0, 300),
-        at: row.created_at,
-      }));
+    // История действий — закрытая штука: только сотрудник на профиле сотрудника.
+    // Гостям и обычным участникам блок не показываем (клиент скрывает пустой).
+    const isStaff = (row) => Boolean(row) && ["admin", "editor"].includes(row.role);
+    const history = isStaff(req.user) && isStaff(user)
+      ? db
+          .prepare(
+            `SELECT action, entity, entity_id AS slug, summary, details, created_at
+             FROM audit_log
+             WHERE user_id = ? AND action IN (${placeholders})
+             ORDER BY id DESC LIMIT ?`,
+          )
+          .all(user.id, ...PROFILE_HISTORY_ACTIONS, PROFILE_HISTORY_LIMIT)
+          .map((row) => ({
+            action: row.action,
+            entity: row.entity,
+            slug: row.entity === "drink" || row.entity === "rating" ? row.slug : "",
+            summary: String(row.summary || row.details || "").slice(0, 300),
+            at: row.created_at,
+          }))
+      : [];
 
     res.json({
       profile: {

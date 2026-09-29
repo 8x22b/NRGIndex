@@ -5,7 +5,6 @@ const os = require("node:os");
 const path = require("node:path");
 const {
   redrawCanOnTransparent,
-  templateDataUrl,
   templateDataUrlFromUpload,
   DEFAULT_OPENROUTER_IMAGE_MODEL,
 } = require("../../server/lib/openrouter-image");
@@ -13,7 +12,7 @@ const {
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const DATA_URL = `data:image/png;base64,${PNG_1X1}`;
 
-test("redrawCanOnTransparent: шлёт исходник и шаблон, возвращает прозрачный PNG и цену", async () => {
+test("redrawCanOnTransparent: по умолчанию шлёт только исходник и ракурс словами", async () => {
   const seen = [];
   const fetchImpl = async (url, init) => {
     seen.push({ url, init });
@@ -39,15 +38,13 @@ test("redrawCanOnTransparent: шлёт исходник и шаблон, воз�
   assert.equal(body.quality, "low");
   assert.equal(body.background, "transparent");
   assert.equal(body.output_format, "png");
+  assert.match(body.prompt, /straight-on/i);
   assert.match(body.prompt, /transparent/i);
   assert.match(body.prompt, /no glossy highlights/i);
-  assert.match(body.prompt, /template/i);
+  assert.doesNotMatch(body.prompt, /second reference image/i);
 
-  assert.equal(body.input_references.length, 2);
+  assert.equal(body.input_references.length, 1);
   assert.ok(body.input_references[0].image_url.url.startsWith("data:image/png;base64,"));
-  assert.ok(body.input_references[1].image_url.url.startsWith("data:image/jpeg;base64,"));
-  assert.ok(body.input_references[1].image_url.url.length > 1000);
-  assert.equal(body.input_references[1].image_url.url, templateDataUrl());
 
   assert.ok(imageDataUrl.startsWith("data:image/png;base64,"));
   assert.equal(usage.costUsd, 0.04174);
@@ -80,7 +77,10 @@ test("redrawCanOnTransparent: кастомный шаблон идёт втор�
   };
   await redrawCanOnTransparent(DATA_URL, { key: "k", template: "data:image/webp;base64,AAAA", fetchImpl });
   const body = JSON.parse(captured.init.body);
+  assert.equal(body.input_references.length, 2);
   assert.equal(body.input_references[1].image_url.url, "data:image/webp;base64,AAAA");
+  assert.match(body.prompt, /second reference image/i);
+  assert.match(body.prompt, /camera angle/i);
 });
 
 test("templateDataUrlFromUpload: читает файл и отсекает чужое", () => {

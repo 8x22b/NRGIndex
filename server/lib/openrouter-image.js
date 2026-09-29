@@ -9,34 +9,21 @@ const DEFAULT_OPENROUTER_IMAGE_MODEL = "openai/gpt-image-2.5-sunburst";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const IMAGE_TIMEOUT_MS = 180_000;
 const MAX_SOURCE_BYTES = 7 * 1024 * 1024;
-const TEMPLATE_PATH = path.join(__dirname, "..", "assets", "can-template.jpg");
 
-// Шаблон — эталон ракурса и композиции: у модели меняется только рисунок,
-// блики и засветы запрещены, фон сразу альфа.
+// Рисуем по словам: форму и пропорции берём из исходного фото, ракурс — строго сбоку.
+// Шаблон не обязателен: если админ загрузил свой, добавим отдельную инструкцию.
 const REDRAW_PROMPT = [
-  "Redraw the energy drink can from the first reference image as a clean studio packshot.",
-  "Use the second reference image as the exact template for the camera angle and composition:",
-  "straight-on eye-level front view, can vertical and centered, filling most of the frame, same proportions and rim shape.",
-  "Replace only the can artwork with the design from the first image:",
-  "keep its logo, colors and all text exact, readable and undistorted.",
-  "Matte surface: no glossy highlights, no specular reflections, no glare, no light streaks.",
+  "Redraw the energy drink can from the reference image as a clean 2D illustration in one consistent drawn style.",
+  "Keep the can itself exactly as on the reference: same proportions, shape and rim, same artwork, logo, colors and all text, readable and undistorted.",
+  "Perfectly straight-on side view: camera axis horizontal at the can's mid-height, no tilt up or down, no perspective distortion, no visible top or bottom — the whole label faces the camera.",
+  "Can vertical and centered, filling most of the frame.",
+  "Style: flat vector-like illustration, clean bold outlines, simple cel shading, crisp edges, matte finish; no photorealism, no glossy highlights, no specular reflections, no glare, no light streaks, no photographic texture.",
   "Output the can cut out on a fully transparent background (alpha), with no shadow and no backdrop.",
 ].join(" ");
 
-let templateCache = null;
-
-function templateDataUrl() {
-  if (!templateCache) {
-    let buffer;
-    try {
-      buffer = fs.readFileSync(TEMPLATE_PATH);
-    } catch {
-      throw new ApiError(503, "Шаблон перерисовки не найден на сервере (server/assets/can-template.jpg)", "template_missing");
-    }
-    templateCache = `data:image/jpeg;base64,${buffer.toString("base64")}`;
-  }
-  return templateCache;
-}
+const TEMPLATE_HINT =
+  "Use the second reference image as the exact template for the camera angle and composition: " +
+  "straight-on eye-level front view, can vertical and centered, same proportions and rim shape.";
 
 const TEMPLATE_MIME = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 
@@ -80,6 +67,7 @@ async function redrawCanOnTransparent(imageDataUrl, { key, model = DEFAULT_OPENR
   }
   const { mime, buffer } = imageFromDataUrl(imageDataUrl, { maxBytes: MAX_SOURCE_BYTES });
   const startedAt = Date.now();
+  const effectivePrompt = [prompt || REDRAW_PROMPT, template ? TEMPLATE_HINT : ""].filter(Boolean).join(" ");
   let res;
   try {
     res = await fetchImpl(`${baseUrl}/images`, {
@@ -91,14 +79,14 @@ async function redrawCanOnTransparent(imageDataUrl, { key, model = DEFAULT_OPENR
       },
       body: JSON.stringify({
         model,
-        prompt: prompt || REDRAW_PROMPT,
+        prompt: effectivePrompt,
         aspect_ratio: "9:16",
         quality: "low",
         background: "transparent",
         output_format: "png",
         input_references: [
           { type: "image_url", image_url: { url: `data:${mime};base64,${buffer.toString("base64")}` } },
-          { type: "image_url", image_url: { url: template || templateDataUrl() } },
+          ...(template ? [{ type: "image_url", image_url: { url: template } }] : []),
         ],
       }),
       signal: AbortSignal.timeout(IMAGE_TIMEOUT_MS),
@@ -141,6 +129,5 @@ module.exports = {
   OPENROUTER_BASE_URL,
   REDRAW_PROMPT,
   redrawCanOnTransparent,
-  templateDataUrl,
   templateDataUrlFromUpload,
 };
