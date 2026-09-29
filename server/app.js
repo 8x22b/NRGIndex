@@ -127,9 +127,7 @@ function createApp({ db, config }) {
         } else if (filePath.includes(`${path.sep}fonts${path.sep}`)) {
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         } else if (/\.(css|js)$/.test(filePath)) {
-          // Ревалидируем: после деплоя браузер сразу получает новую версию,
-          // а не живёт 10 минут со старым кодом (ловили на скане штрих-кодов).
-          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Cache-Control", "public, max-age=600");
         }
       },
     }),
