@@ -9,7 +9,7 @@ const cabinetRoutes = fs.readFileSync(path.join(__dirname, "..", "..", "server",
 const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 
 test("кабинет: скан штрих-кода работает и без BarcodeDetector (серверный фолбэк)", () => {
-  assert.match(cabinetHtml, /id="smart-barcode"/);
+  assert.match(cabinetHtml, /id="btn-barcode-digits"/);
   assert.match(cabinetSource, /decodeBarcodeNatively/);
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode-scan"/);
   assert.match(cabinetSource, /barcodeImageDataUrl/);
@@ -85,17 +85,24 @@ test("OpenRouter-перерисовку кабинет не режет и сох
 });
 
 test("штрих-код: сканер, ручной ввод и сохранение кода", () => {
-  assert.match(cabinetHtml, /id="smart-barcode"/);
+  assert.match(cabinetHtml, /id="barcode-manual"[^>]*hidden/);
   assert.match(cabinetHtml, /id="smart-barcode-code"/);
   assert.match(cabinetHtml, /id="btn-barcode-lookup"/);
   assert.match(cabinetHtml, /id="barcode-status"/);
+  assert.match(cabinetHtml, /id="smart-photo"/);
   assert.match(cabinetSource, /BarcodeDetector/);
   assert.match(cabinetSource, /data_matrix/);
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode", \{ code \}\)/);
   assert.match(cabinetSource, /pending\.barcode/);
   assert.match(cabinetSource, /body\.barcode = pending\.barcode/);
+  // Одно поле на всё: фото банки и фото штрих-кода разбираются одним инпутом
+  assert.match(cabinetSource, /const readBarcodeFromFile/);
+  assert.match(cabinetSource, /smart-photo"\)\.addEventListener/);
+  assert.doesNotMatch(cabinetHtml, /id="smart-barcode"/);
+  assert.doesNotMatch(cabinetSource, /smart-barcode"\)\.addEventListener/);
   assert.match(cabinetRoutes, /router\.post\("\/ai\/barcode"/);
-  assert.match(stylesSource, /\.barcode-row/);
+  assert.match(stylesSource, /\.smart-tools/);
+  assert.match(stylesSource, /\.barcode-manual/);
 });
 
 test("рулетка по ассортименту: фото, распознавание и общий барабан", () => {

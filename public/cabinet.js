@@ -1814,28 +1814,12 @@
   // Firefox и Safari не умеют BarcodeDetector — там фото уходит на сервер,
   // который читает код сам (повороты, контраст, инверсия).
   let barcodeScanBusy = false;
-  const scanBarcodeImage = async (file) => {
-    if (barcodeScanBusy) return;
-    barcodeScanBusy = true;
-    try {
-      setBarcodeStatus("читаю код с фото…");
-      const { dataUrl, canvas } = await barcodeImageDataUrl(file);
-      let code = await decodeBarcodeNatively(canvas);
-      if (!code) {
-        setBarcodeStatus("всматриваюсь внимательнее…");
-        const result = await api("POST", "api/cabinet/ai/barcode-scan", { imageDataUrl: dataUrl });
-        if (result.found) code = result.code;
-      }
-      if (!code) {
-        setBarcodeStatus("код не распознан. Сфотографируй ближе и целиком, без бликов — или введи цифры вручную", true);
-        return;
-      }
-      await lookupBarcode(code);
-    } catch (error) {
-      setBarcodeStatus(error.message || "не удалось прочитать код", true);
-    } finally {
-      barcodeScanBusy = false;
-    }
+  const readBarcodeFromFile = async (file) => {
+    const { dataUrl, canvas } = await barcodeImageDataUrl(file);
+    const local = await decodeBarcodeNatively(canvas);
+    if (local) return local;
+    const result = await api("POST", "api/cabinet/ai/barcode-scan", { imageDataUrl: dataUrl });
+    return result.found ? result.code : "";
   };
 
   /* ---------- живое сканирование камерой ---------- */
@@ -2059,11 +2043,11 @@
   };
   window.addEventListener("pagehide", () => stopLiveBarcode());
 
-  $("smart-barcode").addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) await scanBarcodeImage(file);
-  });
+  $("btn-barcode-digits").onclick = () => {
+    const box = $("barcode-manual");
+    box.hidden = !box.hidden;
+    if (!box.hidden) $("smart-barcode-code").focus();
+  };
 
   $("btn-barcode-lookup").onclick = () => {
     const code = $("smart-barcode-code").value.trim();
@@ -2203,9 +2187,22 @@
     });
   }
 
+  // Одно поле на всё: если на фото есть штрих-код — ищем по коду, иначе это фото банки.
   $("smart-photo").addEventListener("change", async (event) => {
     const file = event.target.files[0];
+    event.target.value = "";
     if (!file) return;
+    $("smart-status").textContent = "Смотрю фото…";
+    try {
+      const code = await readBarcodeFromFile(file);
+      if (code) {
+        navigator.vibrate?.(80);
+        await lookupBarcode(code);
+        return;
+      }
+    } catch {
+      /* код не нашёлся — считаем это фото банки */
+    }
     $("smart-status").textContent = "Режу фон…";
     const objectUrl = URL.createObjectURL(file);
     try {
@@ -2224,7 +2221,6 @@
       $("smart-status").textContent = "Не смог прочитать файл.";
     } finally {
       URL.revokeObjectURL(objectUrl);
-      event.target.value = "";
     }
   });
 
