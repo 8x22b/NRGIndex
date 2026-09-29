@@ -71,25 +71,21 @@
 
       <form class="cabinet-form smart-form" id="smart-form" autocomplete="off">
         <h3>Новый энергос</h3>
-        <p class="hint">Опиши банку своими словами или надиктуй войсом — нейросеть разложит по полям бренд, вкус и издание, а отзыв и тир возьмёт только из того, что ты сам сказал. Фото можно найти отдельно.</p>
+        <p class="hint">Опиши банку своими словами или надиктуй войсом — нейросеть разложит по полям бренд, вкус и издание, а отзыв и тир возьмёт только из того, что ты сам сказал. Фото банки или штрих-кода, живой скан камерой и ручные цифры — кнопками ниже.</p>
         <label>Что за энергос?
           <textarea id="smart-input" rows="3" placeholder="Например: Burn тропический микс, кисло-сладкий, жахнул бодро, тир А"></textarea>
         </label>
-        <div class="voice-row">
-          <button class="btn" type="button" id="btn-record">● Войс вместо текста</button>
-          <label class="btn btn--ghost btn--file">📷 Приложить фото
-            <input id="smart-photo" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+        <div class="smart-tools">
+          <button class="btn btn--ghost smart-tool" type="button" id="btn-record" title="Продиктовать голосом">🎤 Голос</button>
+          <label class="btn btn--ghost smart-tool" title="Фото банки или фото штрих-кода — код прочитаю сам">📷 Фото
+            <input id="smart-photo" type="file" accept="image/*" hidden>
           </label>
-          <span class="voice-status" id="voice-status"></span>
+          <button class="btn btn--ghost smart-tool" type="button" id="btn-barcode-live" title="Сканировать штрих-код камерой">🎥 Код камерой</button>
+          <button class="btn btn--ghost smart-tool" type="button" id="btn-barcode-digits" title="Ввести цифры или код Честного знака вручную">⌨️ Цифры</button>
         </div>
-        <div class="barcode-row">
-          <button class="btn" type="button" id="btn-barcode-live">📷 Сканировать камерой</button>
-          <label class="btn btn--ghost btn--file">🏷 Снять фото
-            <input id="smart-barcode" type="file" accept="image/*" capture="environment" hidden>
-          </label>
-          <input id="smart-barcode-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="или цифры / код Честного знака">
+        <div class="barcode-manual" id="barcode-manual" hidden>
+          <input id="smart-barcode-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="цифры или код Честного знака">
           <button class="btn btn--ghost" type="button" id="btn-barcode-lookup">Найти</button>
-          <span class="voice-status" id="barcode-status" aria-live="polite"></span>
         </div>
         <div class="voice-player" id="voice-player" hidden>
           <audio id="voice-audio" controls preload="metadata"></audio>
@@ -97,6 +93,8 @@
           <button class="btn btn--ghost" type="button" id="btn-voice-retry" hidden>Распознать ещё раз</button>
           <button class="btn btn--ghost" type="button" id="btn-voice-clear" aria-label="Убрать запись">×</button>
         </div>
+        <p class="voice-status smart-status" id="voice-status" aria-live="polite"></p>
+        <p class="voice-status smart-status" id="barcode-status" aria-live="polite"></p>
         <button class="btn btn--big" type="submit" id="btn-smart">✦ Распознать и добавить</button>
         <p class="form-status" id="smart-status" aria-live="polite"></p>
 
@@ -177,11 +175,11 @@
         <div class="unrated-grid" id="find-results"></div>
       </div>
 
-      <div class="cabinet-mine" id="assortment-block">
-        <div class="cabinet-mine__head">
-          <h3>Рулетка по ассортименту</h3>
+      <details class="cabinet-mine roulette-block" id="assortment-block">
+        <summary class="cabinet-mine__head">
+          <h3>🎲 Рулетка: что взять сегодня</h3>
           <span class="hint" id="assortment-count"></span>
-        </div>
+        </summary>
         <p class="hint">Сфоткай полку с энергетиками — Gemini распознает банки и вкусы, а рулетка выберет, что взять сегодня. Знакомую банку можно сразу оценить.</p>
         <div class="assortment-actions">
           <label class="btn btn--ghost btn--file">📷 Сфоткать ассортимент
@@ -198,7 +196,7 @@
           <div class="roulette__result" id="assortment-result" aria-live="polite"></div>
           <button class="btn roulette__spin" type="button" id="assortment-spin">Крутить</button>
         </div>
-      </div>
+      </details>
 
       <div class="cabinet-mine">
         <div class="cabinet-mine__head">
