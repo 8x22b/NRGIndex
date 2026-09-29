@@ -1779,30 +1779,62 @@
     }
   };
 
-  const scanBarcodeImage = async (file) => {
-    if (!("BarcodeDetector" in window)) {
-      setBarcodeStatus("сканирование камерой тут не поддерживается — введи цифры вручную", true);
-      return;
-    }
+  // Фото → canvas (≤1600px, jpeg): маленький размер для загрузки, EXIF-поворот
+  // браузер применяет сам при отрисовке.
+  const barcodeImageDataUrl = async (file, maxSide = 1600) => {
+    const objectUrl = URL.createObjectURL(file);
     try {
-      setBarcodeStatus("читаю код с фото…");
+      const img = await loadImage(objectUrl);
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      return { dataUrl: canvas.toDataURL("image/jpeg", 0.92), canvas };
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  };
+
+  // Если браузер умеет BarcodeDetector (Chrome/Edge) — читаем сразу на месте.
+  const decodeBarcodeNatively = async (canvas) => {
+    if (!("BarcodeDetector" in window)) return "";
+    try {
       const supported = await window.BarcodeDetector.getSupportedFormats();
       const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
-      if (!formats.length) {
-        setBarcodeStatus("этот браузер не умеет читать коды — введи вручную", true);
-        return;
-      }
+      if (!formats.length) return "";
       const detector = new window.BarcodeDetector({ formats });
-      const bitmap = await createImageBitmap(file);
-      const found = await detector.detect(bitmap);
-      bitmap.close?.();
-      if (!found.length) {
-        setBarcodeStatus("код не распознан — попробуй ближе и без бликов", true);
+      const found = await detector.detect(canvas);
+      return found?.[0]?.rawValue || "";
+    } catch {
+      return "";
+    }
+  };
+
+  // Firefox и Safari не умеют BarcodeDetector — там фото уходит на сервер,
+  // который читает код сам (повороты, контраст, инверсия).
+  let barcodeScanBusy = false;
+  const scanBarcodeImage = async (file) => {
+    if (barcodeScanBusy) return;
+    barcodeScanBusy = true;
+    try {
+      setBarcodeStatus("читаю код с фото…");
+      const { dataUrl, canvas } = await barcodeImageDataUrl(file);
+      let code = await decodeBarcodeNatively(canvas);
+      if (!code) {
+        setBarcodeStatus("всматриваюсь внимательнее…");
+        const result = await api("POST", "api/cabinet/ai/barcode-scan", { imageDataUrl: dataUrl });
+        if (result.found) code = result.code;
+      }
+      if (!code) {
+        setBarcodeStatus("код не распознан. Сфотографируй ближе и целиком, без бликов — или введи цифры вручную", true);
         return;
       }
-      await lookupBarcode(found[0].rawValue);
+      await lookupBarcode(code);
     } catch (error) {
       setBarcodeStatus(error.message || "не удалось прочитать код", true);
+    } finally {
+      barcodeScanBusy = false;
     }
   };
 
