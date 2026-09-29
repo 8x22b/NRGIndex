@@ -16,6 +16,26 @@ test("кабинет: скан штрих-кода работает и без Ba
   assert.doesNotMatch(cabinetSource, /сканирование камерой тут не поддерживается/);
 });
 
+test("живое сканирование: камера, ZXing-вендор и оверлей", () => {
+  assert.match(cabinetHtml, /id="btn-barcode-live"/);
+  assert.match(cabinetHtml, /id="scan-dialog"/);
+  assert.match(cabinetHtml, /id="scan-video"/);
+  assert.match(cabinetHtml, /id="scan-torch"/);
+  assert.match(cabinetSource, /getUserMedia/);
+  assert.match(cabinetSource, /vendor\/zxing\.min\.js/);
+  assert.match(cabinetSource, /PlanarYUVLuminanceSource/);
+  assert.match(cabinetSource, /requestAnimationFrame\(scanLoop\)/);
+  assert.match(cabinetSource, /stopLiveBarcode/);
+});
+
+test("вендор ZXing лежит с лицензией", () => {
+  const vendor = path.join(__dirname, "..", "..", "public", "vendor");
+  const lib = path.join(vendor, "zxing.min.js");
+  assert.ok(fs.existsSync(lib), "нужен public/vendor/zxing.min.js");
+  assert.ok(fs.existsSync(path.join(vendor, "zxing.LICENSE")), "нужна лицензия ZXing");
+  assert.match(fs.readFileSync(lib, "utf8"), /ZXing/);
+});
+
 test("кабинет показывает красную кнопку удаления оценки", () => {
   assert.match(cabinetSource, /<button class=\"btn btn--danger\" type=\"button\" data-m-del-rating>удалить<\/button>/);
   assert.doesNotMatch(cabinetSource, /data-m-del-rating>− оценка<\/button>/);

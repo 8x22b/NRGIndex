@@ -1838,6 +1838,227 @@
     }
   };
 
+  /* ---------- живое сканирование камерой ---------- */
+  // Камера через getUserMedia, кадры разбираем на месте: нативный BarcodeDetector,
+  // а где его нет (Firefox/Safari) — ZXing из vendor (грузится только при старте).
+  const SCAN_FRAME_MS = 120;
+  const scan = {
+    stream: null,
+    raf: 0,
+    reader: null,
+    detector: null,
+    zxing: null,
+    running: false,
+    lastAt: 0,
+    torch: false,
+    torchTrack: null,
+    canvas: null,
+    context: null,
+  };
+
+  const setScanStatus = (text, isError = false) => {
+    const node = $("scan-status");
+    if (!node) return;
+    node.textContent = text;
+    node.style.color = isError ? "#ff8a8a" : "";
+  };
+
+  const loadZXing = () =>
+    new Promise((resolve, reject) => {
+      if (window.ZXing) return resolve(window.ZXing);
+      const script = document.createElement("script");
+      script.src = "vendor/zxing.min.js";
+      script.onload = () => (window.ZXing ? resolve(window.ZXing) : reject(new Error("сканер не инициализировался")));
+      script.onerror = () => reject(new Error("сканер не загрузился"));
+      document.head.appendChild(script);
+    });
+
+  const stopLiveBarcode = () => {
+    scan.running = false;
+    if (scan.raf) cancelAnimationFrame(scan.raf);
+    scan.raf = 0;
+    scan.stream?.getTracks().forEach((track) => track.stop());
+    scan.stream = null;
+    scan.torch = false;
+    scan.torchTrack = null;
+    const video = $("scan-video");
+    if (video) {
+      video.pause?.();
+      video.srcObject = null;
+    }
+    const dialog = $("scan-dialog");
+    if (dialog?.open) dialog.close();
+    document.body.classList.remove("is-dialog-open");
+  };
+
+  const finishLiveScan = (code) => {
+    stopLiveBarcode();
+    navigator.vibrate?.(120);
+    setBarcodeStatus("код найден ✓");
+    lookupBarcode(code);
+  };
+
+  // Читаем центральную часть кадра — туда просим навести рамку: и быстрее, и точнее.
+  const SCAN_CROP = { x: 0.08, y: 0.28, w: 0.84, h: 0.44 };
+  const scanFrame = () => {
+    const video = $("scan-video");
+    if (!video?.videoWidth) return null;
+    const cropW = video.videoWidth * SCAN_CROP.w;
+    const scale = Math.min(1, 900 / cropW);
+    scan.canvas.width = Math.max(1, Math.round(cropW * scale));
+    scan.canvas.height = Math.max(1, Math.round(video.videoHeight * SCAN_CROP.h * scale));
+    scan.context.drawImage(
+      video,
+      video.videoWidth * SCAN_CROP.x,
+      video.videoHeight * SCAN_CROP.y,
+      cropW,
+      video.videoHeight * SCAN_CROP.h,
+      0,
+      0,
+      scan.canvas.width,
+      scan.canvas.height,
+    );
+    return scan.context.getImageData(0, 0, scan.canvas.width, scan.canvas.height);
+  };
+
+  // ZXing ждёт яркость (Y), считаем её сами из RGBA кадра.
+  const frameLuminance = (image) => {
+    const gray = new Uint8ClampedArray(image.width * image.height);
+    for (let i = 0, j = 0; i < image.data.length; i += 4, j++) {
+      gray[j] = (image.data[i] * 299 + image.data[i + 1] * 587 + image.data[i + 2] * 114) / 1000;
+    }
+    return gray;
+  };
+
+  const decodeFrame = (image) => {
+    if (scan.detector) {
+      return scan.detector.detect(scan.canvas).then((found) => found?.[0]?.rawValue || "");
+    }
+    const zx = scan.zxing;
+    const source = new zx.PlanarYUVLuminanceSource(
+      frameLuminance(image),
+      image.width,
+      image.height,
+      0,
+      0,
+      image.width,
+      image.height,
+      false,
+    );
+    try {
+      const result = scan.reader.decodeWithState(new zx.BinaryBitmap(new zx.HybridBinarizer(source)));
+      return Promise.resolve(result?.getText() || "");
+    } catch {
+      return Promise.resolve("");
+    } finally {
+      scan.reader.reset();
+    }
+  };
+
+  const scanLoop = () => {
+    if (!scan.running) return;
+    scan.raf = requestAnimationFrame(scanLoop);
+    const now = performance.now();
+    if (now - scan.lastAt < SCAN_FRAME_MS) return;
+    scan.lastAt = now;
+    const image = scanFrame();
+    if (!image) return;
+    decodeFrame(image)
+      .then((code) => {
+        if (code && scan.running) finishLiveScan(code);
+      })
+      .catch(() => {});
+  };
+
+  const startLiveBarcode = async () => {
+    if (scan.running) return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setBarcodeStatus("этот браузер не умеет включать камеру — сними фото или введи цифры", true);
+      return;
+    }
+    setBarcodeStatus("включаю камеру…");
+    try {
+      scan.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
+    } catch (error) {
+      setBarcodeStatus(
+        error?.name === "NotAllowedError"
+          ? "нет доступа к камере — разреши его в настройках браузера"
+          : "камера не открылась — сними фото или введи цифры",
+        true,
+      );
+      return;
+    }
+
+    const video = $("scan-video");
+    video.srcObject = scan.stream;
+    await video.play().catch(() => {});
+    $("scan-dialog").showModal();
+    document.body.classList.add("is-dialog-open");
+
+    const track = scan.stream.getVideoTracks()[0];
+    scan.torchTrack = track?.getCapabilities?.().torch ? track : null;
+    scan.torch = false;
+    $("scan-torch").hidden = !scan.torchTrack;
+
+    scan.detector = null;
+    if ("BarcodeDetector" in window) {
+      try {
+        const supported = await window.BarcodeDetector.getSupportedFormats();
+        const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
+        if (formats.length) scan.detector = new window.BarcodeDetector({ formats });
+      } catch {
+        scan.detector = null;
+      }
+    }
+    if (!scan.detector) {
+      setScanStatus("загружаю сканер…");
+      try {
+        scan.zxing = await loadZXing();
+        const hints = new Map();
+        hints.set(scan.zxing.DecodeHintType.POSSIBLE_FORMATS, [
+          scan.zxing.BarcodeFormat.EAN_13,
+          scan.zxing.BarcodeFormat.EAN_8,
+          scan.zxing.BarcodeFormat.UPC_A,
+          scan.zxing.BarcodeFormat.UPC_E,
+          scan.zxing.BarcodeFormat.CODE_128,
+          scan.zxing.BarcodeFormat.DATA_MATRIX,
+        ]);
+        hints.set(scan.zxing.DecodeHintType.TRY_HARDER, true);
+        scan.reader = new scan.zxing.MultiFormatReader();
+        scan.reader.setHints(hints);
+      } catch {
+        stopLiveBarcode();
+        setBarcodeStatus("не удалось загрузить сканер — сними фото или введи цифры", true);
+        return;
+      }
+    }
+
+    scan.canvas = document.createElement("canvas");
+    scan.context = scan.canvas.getContext("2d", { willReadFrequently: true });
+    scan.running = true;
+    scan.lastAt = 0;
+    setScanStatus("наведи на штрих-код — читаю сам");
+    scanLoop();
+  };
+
+  $("btn-barcode-live").onclick = () => startLiveBarcode();
+  $("scan-close").onclick = () => stopLiveBarcode();
+  $("scan-dialog").addEventListener("close", () => stopLiveBarcode());
+  $("scan-torch").onclick = async () => {
+    if (!scan.torchTrack) return;
+    scan.torch = !scan.torch;
+    try {
+      await scan.torchTrack.applyConstraints({ advanced: [{ torch: scan.torch }] });
+      setScanStatus(scan.torch ? "подсветка включена" : "наведи на штрих-код — читаю сам");
+    } catch {
+      setScanStatus("подсветка не поддалась", true);
+    }
+  };
+  window.addEventListener("pagehide", () => stopLiveBarcode());
+
   $("smart-barcode").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
