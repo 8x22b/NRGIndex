@@ -911,6 +911,15 @@ test("API-ответы помечены no-store, страницы — нет", 
   assert.notEqual(page.headers.get("cache-control"), "no-store");
 });
 
+test("css/js ревалидируются — после деплоя браузер не держит старый код", async () => {
+  for (const file of ["/cabinet.js", "/styles.css"]) {
+    const res = await fetch(ctx.base + file);
+    assert.equal(res.status, 200, file);
+    assert.equal(res.headers.get("cache-control"), "no-cache", `${file}: нужен no-cache`);
+    assert.ok(res.headers.get("etag"), `${file}: нужен ETag для 304-ревалидации`);
+  }
+});
+
 test("спуф X-Forwarded-For не обходит лимит логина", async () => {
   for (let i = 0; i < 5; i++) {
     await request(ctx.base, "POST", "/api/auth/login", {
