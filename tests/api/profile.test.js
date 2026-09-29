@@ -24,6 +24,7 @@ before(async () => {
   const kira = await createUser(ctx.db, { username: "kira", password: "kira-pass-123", displayName: "Кира" });
   const ghost = await createUser(ctx.db, { username: "ghost", password: "ghost-pass-123", displayName: "Призрак" });
   ctx.db.prepare("UPDATE users SET is_public = 0 WHERE id = ?").run(ghost.id);
+  await createUser(ctx.db, { username: "mod", password: "mod-pass-123", role: "editor", displayName: "Модератор" });
 
   const burn = addDrink(ctx.db, "burn-apple-kiwi", "Burn", "Burn Apple Kiwi", "яблоко киви", sanya.id);
   const monster = addDrink(ctx.db, "monster-white", "Monster", "Monster Ultra White", "цитрус", kira.id);
@@ -165,25 +166,43 @@ test("findSimilarDrinks: скрытые банки не попадают к юз
   assert.equal(hidden.hidden, true);
 });
 
-test("профиль: история изменений из действий, свежие сверху", async () => {
+test("профиль: история видна только сотруднику на профиле сотрудника", async () => {
+  const { cookie: editorCookie } = await login(ctx.base, "mod", "mod-pass-123");
   const rated = await request(ctx.base, "PUT", "/api/cabinet/ratings/volt-original", {
-    cookie: sanyaCookie,
+    cookie: editorCookie,
     body: { tier: "A", review: "Нормально" },
   });
   assert.equal(rated.status, 200);
   const created = await request(ctx.base, "POST", "/api/cabinet/drinks", {
-    cookie: sanyaCookie,
+    cookie: editorCookie,
     body: { brand: "Adrenaline", name: "Adrenaline Test", flavor: "Тест", tier: "B" },
   });
   assert.equal(created.status, 201);
+  const editorRating = await request(ctx.base, "PUT", "/api/cabinet/ratings/burn-apple-kiwi", {
+    cookie: editorCookie,
+    body: { tier: "S", review: "Огонь" },
+  });
+  assert.equal(editorRating.status, 200);
 
-  const res = await request(ctx.base, "GET", "/api/public/profile/sanya");
+  // гости и обычные участники истории не видят нигде
+  assert.deepEqual((await request(ctx.base, "GET", "/api/public/profile/mod")).json.history, []);
+  assert.deepEqual(
+    (await request(ctx.base, "GET", "/api/public/profile/mod", { cookie: sanyaCookie })).json.history,
+    [],
+  );
+  assert.deepEqual(
+    (await request(ctx.base, "GET", "/api/public/profile/sanya", { cookie: editorCookie })).json.history,
+    [],
+  );
+
+  // сотрудник на профиле сотрудника — видит
+  const res = await request(ctx.base, "GET", "/api/public/profile/mod", { cookie: editorCookie });
   assert.equal(res.status, 200);
   const history = res.json.history;
-  assert.ok(Array.isArray(history) && history.length >= 2);
-  assert.equal(history[0].action, "drink.create");
-  assert.equal(history[0].slug, created.json.drink.slug);
-  assert.match(history[0].at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  assert.ok(Array.isArray(history) && history.length >= 3);
+  const createdEntry = history.find((item) => item.action === "drink.create");
+  assert.equal(createdEntry.slug, created.json.drink.slug);
+  assert.match(createdEntry.at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   assert.ok(history.some((item) => item.action === "rating.set" && item.slug === "volt-original"));
   for (const item of history) {
     assert.ok(!item.action.includes("settings"), item.action);
@@ -192,11 +211,17 @@ test("профиль: история изменений из действий, �
 });
 
 test("профиль: история не смешивается между участниками", async () => {
-  await createUser(ctx.db, { username: "histempty", password: "histempty-123", displayName: "Пустой" });
-  const kira = await request(ctx.base, "GET", "/api/public/profile/kira");
-  assert.deepEqual(kira.json.history, []);
-  const empty = await request(ctx.base, "GET", "/api/public/profile/histempty");
+  const { cookie: editorCookie } = await login(ctx.base, "mod", "mod-pass-123");
+  await createUser(ctx.db, {
+    username: "histempty",
+    password: "histempty-123",
+    role: "editor",
+    displayName: "Пустой",
+  });
+  const empty = await request(ctx.base, "GET", "/api/public/profile/histempty", { cookie: editorCookie });
   assert.deepEqual(empty.json.history, []);
+  const mod = await request(ctx.base, "GET", "/api/public/profile/mod", { cookie: editorCookie });
+  assert.ok(mod.json.history.length > 0);
 });
 
 test("профиль: модерация и настройки в публичную историю не попадают", async () => {
@@ -218,7 +243,7 @@ test("профиль: модерация и настройки в публичн
     body: { title: "тест" },
   });
   assert.equal(patched.status, 200);
-  const res = await request(ctx.base, "GET", "/api/public/profile/auditor");
+  const res = await request(ctx.base, "GET", "/api/public/profile/auditor", { cookie });
   assert.equal(res.status, 200);
   assert.deepEqual(res.json.history, []);
 });
@@ -230,7 +255,8 @@ test("профиль: история ограничена 30 записями", 
      VALUES (?, 'rating.set', 'rating', 'burn-apple-kiwi', '', 'Поставил свою оценку B')`,
   );
   for (let i = 0; i < 35; i++) insert.run(user.id);
-  const res = await request(ctx.base, "GET", "/api/public/profile/histempty");
+  const { cookie: editorCookie } = await login(ctx.base, "mod", "mod-pass-123");
+  const res = await request(ctx.base, "GET", "/api/public/profile/histempty", { cookie: editorCookie });
   assert.equal(res.json.history.length, 30);
 });
 

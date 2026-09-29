@@ -1058,7 +1058,7 @@
   $("btn-template-clear").onclick = async () => {
     const ok = await window.nrgConfirm({
       title: "Сбросить шаблон?",
-      message: "Вернётся встроенный фото-шаблон перерисовки.",
+      message: "Генерация пойдёт без фото-шаблона: форму и ракурс опишет промпт.",
       confirmText: "Сбросить",
     });
     if (!ok) return;
