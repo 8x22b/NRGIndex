@@ -457,7 +457,7 @@ img { display: block; max-width: 100%; }
 @keyframes rec-pulse { 50% { opacity: .7; } }
 .voice-row { display: flex; align-items: center; gap: .6rem; margin: .4rem 0 .7rem; flex-wrap: wrap; }
 .smart-tools { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0 .2rem; }
-.smart-tool { flex: 1 1 7rem; padding: .55rem .7rem; font-size: .62rem; text-align: center; white-space: nowrap; }
+.smart-tool { flex: 1 1 6rem; padding: .55rem .7rem; font-size: .62rem; text-align: center; white-space: nowrap; }
 .barcode-manual { display: flex; align-items: center; gap: .6rem; margin: .5rem 0 .2rem; }
 .barcode-manual input[type="text"] { flex: 1 1 14rem; min-width: 0; }
 .smart-status { margin: .35rem 0 0; }
@@ -465,11 +465,12 @@ img { display: block; max-width: 100%; }
 .barcode-row { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; margin-top: .6rem; }
 .barcode-row input[type="text"] { flex: 1 1 14rem; min-width: 0; }
 .barcode-row .voice-status { flex-basis: 100%; }
-.roulette-block > summary { cursor: pointer; list-style: none; }
-.roulette-block > summary::-webkit-details-marker { display: none; }
-.roulette-block > summary::after { content: "▾"; color: var(--muted); font-size: .8rem; transition: transform .2s var(--ease); }
-.roulette-block[open] > summary::after { content: "▴"; }
-.roulette-block[open] > summary { margin-bottom: 1rem; }
+/* --- вкладки кабинета --- */
+.cab-tabs { display: flex; flex-wrap: wrap; gap: .45rem; margin: 1.2rem 0 1.4rem; }
+.cab-tab { padding: .5rem .95rem; font-size: .62rem; color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 999px; }
+.cab-tab:hover { color: var(--paper); border-color: var(--paper); }
+.cab-tab.is-active { color: var(--ink); background: var(--paper); border-color: transparent; }
+.account-links { display: flex; flex-wrap: wrap; gap: .6rem; margin-bottom: 1rem; }
 .voice-status { color: var(--muted); font-size: .62rem; }
 .image-block { margin: 0 0 .8rem; padding: 1rem; border: 1px dashed rgba(255,255,255,.15); border-radius: .7rem; }
 .image-block legend { padding: 0 .5rem; color: var(--muted); font-size: .55rem; letter-spacing: .12em; text-transform: uppercase; }
