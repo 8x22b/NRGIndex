@@ -1,6 +1,6 @@
 const express = require("express");
 const { notFound, tooMany, badRequest } = require("../lib/errors");
-const { str, oneOf, imageFromDataUrl } = require("../lib/validate");
+const { str, oneOf } = require("../lib/validate");
 const {
   parseDrinkText,
   parseRatingText,
@@ -14,7 +14,7 @@ const {
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
 const { redrawCanOnWhite, recognizeAssortment } = require("../lib/gemini");
 const { redrawCanOnTransparent, templateDataUrlFromUpload } = require("../lib/openrouter-image");
-const { parseScanCode, barcodeField, lookupOpenFoodFacts, lookupChestnyZnak, decodeBarcodeImage } = require("../lib/barcode");
+const { parseScanCode, barcodeField, lookupOpenFoodFacts, lookupChestnyZnak } = require("../lib/barcode");
 const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
 const {
@@ -402,16 +402,6 @@ module.exports = (db, auth, config) => {
     barcodeCache.set(scan.gtin, { expiresAt: Date.now() + BARCODE_CACHE_MS, payload });
     if (barcodeCache.size > BARCODE_CACHE_MAX) barcodeCache.delete(barcodeCache.keys().next().value);
     res.json(payload);
-  });
-
-  // Распознавание кода с фото на сервере: работает в любом браузере (в Firefox
-  // и Safari нет BarcodeDetector), переживает повороты, блики и тени.
-  router.post("/ai/barcode-scan", async (req, res) => {
-    checkBarcodeLimit(req.user.id);
-    const { buffer } = imageFromDataUrl(req.body?.imageDataUrl, { maxBytes: config.maxUploadBytes });
-    const found = await decodeBarcodeImage(buffer);
-    if (!found?.code) return res.json({ found: false });
-    res.json({ found: true, code: found.code, format: found.format });
   });
 
   router.post("/ai/transcribe", async (req, res) => {

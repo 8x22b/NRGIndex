@@ -7,21 +7,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
-const SOURCES = [path.join(ROOT, "public"), path.join(ROOT, "admin")];
+const PUBLIC = path.join(ROOT, "public");
 const OUT = path.join(__dirname, "font-charset.txt");
 const dumpPath = process.argv[2] || "";
 
 const files = [];
-function walk(dir) {
+(function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "vendor") continue; // вендорные библиотеки наши шрифты не рисуют
-      walk(full);
-    } else if (/\.(js|html|css)$/.test(entry.name)) files.push(full);
+    if (entry.isDirectory()) walk(full);
+    else if (/\.(js|html|css)$/.test(entry.name)) files.push(full);
   }
-}
-for (const dir of SOURCES) walk(dir);
+})(PUBLIC);
 
 const chars = new Set();
 for (const file of files) {
@@ -35,7 +32,7 @@ if (dumpPath && fs.existsSync(dumpPath)) {
 const base =
   " АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя" +
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" +
-  ".,:;!?()[]{}<>@#$%^&*+-=_/|~`\"'«»„“”‘’—–−…·•№°±×÷≤≥≠∅∞→←↑↓↔↻✦✓✗◆◇★☆●○■□▸©®™€₽‰\t";
+  ".,:;!?()[]{}<>@#$%^&*+-=_/|~`\"'«»„“”‘’—–−…·•№°±×÷→←↑↓✦✓✗↻★☆●○■□▸©®™€₽‰\t";
 for (const ch of base) chars.add(ch);
 
 const list = [...chars].filter((ch) => ch.codePointAt(0) >= 32).sort();

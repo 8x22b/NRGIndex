@@ -72,6 +72,19 @@
     barcode: "",
   };
 
+  const setSmartStep = (step, text, error = false) => {
+    const steps = $("smart-steps");
+    steps?.querySelectorAll("li").forEach((node) => node.classList.toggle("is-active", node.dataset.step === step));
+    steps?.classList.toggle("is-error", error);
+    if (text !== undefined) $("smart-status").textContent = text;
+  };
+
+  const updateSmartAvailability = () => {
+    const hasText = Boolean($("smart-input").value.trim());
+    const hasInput = hasText || Boolean(pending.barcode) || Boolean($("smart-barcode-code")?.value.trim());
+    $("btn-smart").disabled = !hasInput;
+  };
+
   /* ---------- views ---------- */
   const showAuth = () => {
     $("auth-view").hidden = false;
@@ -84,37 +97,11 @@
     $("cab-view").hidden = true;
   };
 
-  // Вкладки кабинета: вместо одной длинной простыни — разделы.
-  const CAB_SECTIONS = ["add", "ratings", "find", "roulette", "account"];
-  const switchCabTab = (name) => {
-    if (!CAB_SECTIONS.includes(name)) name = "add";
-    document.querySelectorAll("#cab-tabs [data-cab]").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.cab === name);
-    });
-    for (const section of CAB_SECTIONS) $(`cab-${section}`).hidden = section !== name;
-    try {
-      localStorage.setItem("cab-tab", name);
-    } catch {
-      /* приватный режим — не страшно */
-    }
-  };
-  $("cab-tabs").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-cab]");
-    if (button) switchCabTab(button.dataset.cab);
-  });
-
   const enterCabinet = async () => {
     $("auth-view").hidden = true;
     $("password-view").hidden = true;
     $("cab-view").hidden = false;
     renderAvatars();
-    let savedTab = "add";
-    try {
-      savedTab = localStorage.getItem("cab-tab") || "add";
-    } catch {
-      /* приватный режим — не страшно */
-    }
-    switchCabTab(savedTab);
     $("me-name").textContent = state.me.displayName;
     $("me-role").textContent = state.me.title || state.me.role;
     if (state.me.role === "admin") $("admin-button").hidden = false;
@@ -1375,15 +1362,12 @@
     const parsed = pending.parsed;
     if (!parsed) return;
     $("smart-preview").hidden = false;
-    $("parsed-title").textContent = `${parsed.brand} — ${parsed.name}`;
-    $("parsed-sub").textContent = [parsed.flavor, parsed.edition].filter(Boolean).join(" · ");
-    $("parsed-review").textContent =
-      parsed.review || "Отзыва в сообщении не было — допиши вручную ниже, если хочешь.";
-    $("parsed-tier").textContent = parsed.tier;
-    $("parsed-tier").title = parsed.tierGuessed
-      ? "Тир не был назван — стоит B по умолчанию, поправь ниже"
-      : "Тир из твоего сообщения";
-    $("parsed-tier").style.opacity = parsed.tierGuessed ? ".55" : "";
+    $("parsed-brand").value = parsed.brand || "";
+    $("parsed-name").value = parsed.name || "";
+    $("parsed-flavor").value = parsed.flavor || "";
+    $("parsed-edition").value = parsed.edition || "";
+    $("parsed-tier").value = TIERS.includes(parsed.tier) ? parsed.tier : "B";
+    $("parsed-review").value = parsed.review || "";
     fillManual(parsed);
     updatePreviewImage();
     $("smart-preview").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1699,9 +1683,11 @@
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
     $("smart-barcode-code").value = "";
+    $("camera-preview").hidden = true;
     setBarcodeStatus("");
     renderSimilar([]);
     clearVoice("smart");
+    updateSmartAvailability();
   };
 
   // Если ИИ распознал банку, которая уже есть в индексе, — предлагаем оценить её,
@@ -1755,6 +1741,7 @@
   const lookupBarcode = async (code) => {
     if (barcodeBusy || !code) return;
     barcodeBusy = true;
+    setSmartStep("barcode", "Ищу данные по штрих-коду…");
     setBarcodeStatus("ищу по коду…");
     try {
       const data = await api("POST", "api/cabinet/ai/barcode", { code });
@@ -1794,312 +1781,48 @@
             updatePreviewImage();
           });
       }
-      setBarcodeStatus(barcodeNote(data));
+       setBarcodeStatus(barcodeNote(data));
+       setSmartStep("barcode", "Штрих-код прочитан ✓");
       showPreview();
       refreshPhotos();
       if (data.inIndex) $("smart-status").textContent = "уже в индексе — жми «Оценить эту» выше";
     } catch (error) {
       setBarcodeStatus(error.message, true);
+      setSmartStep("barcode", `Не удалось прочитать код: ${error.message}`, true);
     } finally {
       barcodeBusy = false;
     }
   };
 
-  // Фото → canvas (≤1600px, jpeg): маленький размер для загрузки, EXIF-поворот
-  // браузер применяет сам при отрисовке.
-  const barcodeImageDataUrl = async (file, maxSide = 1600) => {
-    const objectUrl = URL.createObjectURL(file);
-    try {
-      const img = await loadImage(objectUrl);
-      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
-      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      return { dataUrl: canvas.toDataURL("image/jpeg", 0.92), canvas };
-    } finally {
-      URL.revokeObjectURL(objectUrl);
+  const scanBarcodeImage = async (file) => {
+    if (!("BarcodeDetector" in window)) {
+      setBarcodeStatus("сканирование камерой тут не поддерживается — введи цифры вручную", true);
+      setSmartStep("barcode", "Сканирование недоступно — введи код вручную", true);
+      return;
     }
-  };
-
-  // Если браузер умеет BarcodeDetector (Chrome/Edge) — читаем сразу на месте.
-  const decodeBarcodeNatively = async (canvas) => {
-    if (!("BarcodeDetector" in window)) return "";
     try {
+      setBarcodeStatus("читаю код с фото…");
       const supported = await window.BarcodeDetector.getSupportedFormats();
       const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
-      if (!formats.length) return "";
-      const detector = new window.BarcodeDetector({ formats });
-      const found = await detector.detect(canvas);
-      return found?.[0]?.rawValue || "";
-    } catch {
-      return "";
-    }
-  };
-
-  // Firefox и Safari не умеют BarcodeDetector — там фото уходит на сервер,
-  // который читает код сам (повороты, контраст, инверсия).
-  let barcodeScanBusy = false;
-  const readBarcodeFromFile = async (file) => {
-    const { dataUrl, canvas } = await barcodeImageDataUrl(file);
-    const local = await decodeBarcodeNatively(canvas);
-    if (local) return local;
-    const result = await api("POST", "api/cabinet/ai/barcode-scan", { imageDataUrl: dataUrl });
-    return result.found ? result.code : "";
-  };
-
-  /* ---------- живое сканирование камерой ---------- */
-  // Камера через getUserMedia, кадры разбираем на месте: нативный BarcodeDetector,
-  // а где его нет (Firefox/Safari) — ZXing из vendor (грузится только при старте).
-  const SCAN_FRAME_MS = 120;
-  const scan = {
-    stream: null,
-    raf: 0,
-    reader: null,
-    detector: null,
-    zxing: null,
-    running: false,
-    lastAt: 0,
-    torch: false,
-    torchTrack: null,
-    canvas: null,
-    context: null,
-    startedAt: 0,
-    found: false,
-    manualTimer: 0,
-  };
-
-  const setScanStatus = (text, isError = false) => {
-    const node = $("scan-status");
-    if (!node) return;
-    node.textContent = text;
-    node.style.color = isError ? "#ff8a8a" : "";
-  };
-
-  const loadZXing = () =>
-    new Promise((resolve, reject) => {
-      if (window.ZXing) return resolve(window.ZXing);
-      const script = document.createElement("script");
-      script.src = "vendor/zxing.min.js";
-      script.onload = () => (window.ZXing ? resolve(window.ZXing) : reject(new Error("сканер не инициализировался")));
-      script.onerror = () => reject(new Error("сканер не загрузился"));
-      document.head.appendChild(script);
-    });
-
-  const stopLiveBarcode = () => {
-    scan.running = false;
-    if (scan.raf) cancelAnimationFrame(scan.raf);
-    scan.raf = 0;
-    clearTimeout(scan.manualTimer);
-    scan.manualTimer = 0;
-    const manual = $("scan-manual");
-    if (manual) manual.hidden = true;
-    scan.stream?.getTracks().forEach((track) => track.stop());
-    scan.stream = null;
-    scan.torch = false;
-    scan.torchTrack = null;
-    const video = $("scan-video");
-    if (video) {
-      video.pause?.();
-      video.srcObject = null;
-    }
-    const dialog = $("scan-dialog");
-    if (dialog?.open) dialog.close();
-    document.body.classList.remove("is-dialog-open");
-  };
-
-  const finishLiveScan = (code) => {
-    scan.found = true;
-    stopLiveBarcode();
-    navigator.vibrate?.(120);
-    setBarcodeStatus("код найден ✓");
-    lookupBarcode(code);
-  };
-
-  // Читаем центральную часть кадра — туда просим навести рамку: и быстрее, и точнее.
-  const SCAN_CROP = { x: 0.08, y: 0.28, w: 0.84, h: 0.44 };
-  const scanFrame = () => {
-    const video = $("scan-video");
-    if (!video?.videoWidth) return null;
-    const cropW = video.videoWidth * SCAN_CROP.w;
-    const scale = Math.min(1, 900 / cropW);
-    scan.canvas.width = Math.max(1, Math.round(cropW * scale));
-    scan.canvas.height = Math.max(1, Math.round(video.videoHeight * SCAN_CROP.h * scale));
-    scan.context.drawImage(
-      video,
-      video.videoWidth * SCAN_CROP.x,
-      video.videoHeight * SCAN_CROP.y,
-      cropW,
-      video.videoHeight * SCAN_CROP.h,
-      0,
-      0,
-      scan.canvas.width,
-      scan.canvas.height,
-    );
-    return scan.context.getImageData(0, 0, scan.canvas.width, scan.canvas.height);
-  };
-
-  // ZXing ждёт яркость (Y), считаем её сами из RGBA кадра.
-  const frameLuminance = (image) => {
-    const gray = new Uint8ClampedArray(image.width * image.height);
-    for (let i = 0, j = 0; i < image.data.length; i += 4, j++) {
-      gray[j] = (image.data[i] * 299 + image.data[i + 1] * 587 + image.data[i + 2] * 114) / 1000;
-    }
-    return gray;
-  };
-
-  const decodeFrame = (image) => {
-    if (scan.detector) {
-      return scan.detector.detect(scan.canvas).then((found) => found?.[0]?.rawValue || "");
-    }
-    const zx = scan.zxing;
-    const source = new zx.PlanarYUVLuminanceSource(
-      frameLuminance(image),
-      image.width,
-      image.height,
-      0,
-      0,
-      image.width,
-      image.height,
-      false,
-    );
-    try {
-      const result = scan.reader.decodeWithState(new zx.BinaryBitmap(new zx.HybridBinarizer(source)));
-      return Promise.resolve(result?.getText() || "");
-    } catch {
-      return Promise.resolve("");
-    } finally {
-      scan.reader.reset();
-    }
-  };
-
-  const scanLoop = () => {
-    if (!scan.running) return;
-    scan.raf = requestAnimationFrame(scanLoop);
-    const now = performance.now();
-    if (now - scan.lastAt < SCAN_FRAME_MS) return;
-    scan.lastAt = now;
-    const image = scanFrame();
-    if (!image) return;
-    decodeFrame(image)
-      .then((code) => {
-        if (code && scan.running) finishLiveScan(code);
-      })
-      .catch(() => {});
-  };
-
-  const startLiveBarcode = async () => {
-    if (scan.running) return;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      revealBarcodeDigits("этот браузер не умеет включать камеру — введи цифры вручную");
-      return;
-    }
-    setBarcodeStatus("включаю камеру…");
-    try {
-      scan.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
-    } catch (error) {
-      revealBarcodeDigits(
-        error?.name === "NotAllowedError"
-          ? "нет доступа к камере — разреши его в настройках браузера или введи цифры вручную"
-          : "камера не открылась — введи цифры вручную",
-      );
-      return;
-    }
-
-    const video = $("scan-video");
-    video.srcObject = scan.stream;
-    await video.play().catch(() => {});
-    $("scan-dialog").showModal();
-    document.body.classList.add("is-dialog-open");
-
-    // Если за 5 секунд код не поймался — предлагаем ввести цифры.
-    scan.startedAt = Date.now();
-    scan.found = false;
-    clearTimeout(scan.manualTimer);
-    scan.manualTimer = setTimeout(() => {
-      if (scan.running && !scan.found) $("scan-manual").hidden = false;
-    }, 5000);
-
-    const track = scan.stream.getVideoTracks()[0];
-    scan.torchTrack = track?.getCapabilities?.().torch ? track : null;
-    scan.torch = false;
-    $("scan-torch").hidden = !scan.torchTrack;
-
-    scan.detector = null;
-    if ("BarcodeDetector" in window) {
-      try {
-        const supported = await window.BarcodeDetector.getSupportedFormats();
-        const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
-        if (formats.length) scan.detector = new window.BarcodeDetector({ formats });
-      } catch {
-        scan.detector = null;
-      }
-    }
-    if (!scan.detector) {
-      setScanStatus("загружаю сканер…");
-      try {
-        scan.zxing = await loadZXing();
-        const hints = new Map();
-        hints.set(scan.zxing.DecodeHintType.POSSIBLE_FORMATS, [
-          scan.zxing.BarcodeFormat.EAN_13,
-          scan.zxing.BarcodeFormat.EAN_8,
-          scan.zxing.BarcodeFormat.UPC_A,
-          scan.zxing.BarcodeFormat.UPC_E,
-          scan.zxing.BarcodeFormat.CODE_128,
-          scan.zxing.BarcodeFormat.DATA_MATRIX,
-        ]);
-        hints.set(scan.zxing.DecodeHintType.TRY_HARDER, true);
-        scan.reader = new scan.zxing.MultiFormatReader();
-        scan.reader.setHints(hints);
-      } catch {
-        stopLiveBarcode();
-        setBarcodeStatus("не удалось загрузить сканер — сними фото или введи цифры", true);
+      if (!formats.length) {
+        setBarcodeStatus("этот браузер не умеет читать коды — введи вручную", true);
+        setSmartStep("barcode", "Сканирование недоступно — введи код вручную", true);
         return;
       }
+      const detector = new window.BarcodeDetector({ formats });
+      const bitmap = await createImageBitmap(file);
+      const found = await detector.detect(bitmap);
+      bitmap.close?.();
+      if (!found.length) {
+        setBarcodeStatus("код не распознан — попробуй ближе и без бликов", true);
+        setSmartStep("barcode", "Код не распознан — попробуй ближе и без бликов", true);
+        return;
+      }
+      await lookupBarcode(found[0].rawValue);
+    } catch (error) {
+      setBarcodeStatus(error.message || "не удалось прочитать код", true);
+      setSmartStep("barcode", error.message || "Не удалось прочитать код", true);
     }
-
-    scan.canvas = document.createElement("canvas");
-    scan.context = scan.canvas.getContext("2d", { willReadFrequently: true });
-    scan.running = true;
-    scan.lastAt = 0;
-    setScanStatus("наведи на штрих-код — читаю сам");
-    scanLoop();
-  };
-
-  $("btn-barcode-live").onclick = () => startLiveBarcode();
-  $("scan-close").onclick = () => stopLiveBarcode();
-  $("scan-dialog").addEventListener("close", () => {
-    // Закрыли, а код так и не поймался — показываем ручной ввод.
-    const failed = scan.startedAt && !scan.found && Date.now() - scan.startedAt > 3000;
-    stopLiveBarcode();
-    if (failed) revealBarcodeDigits("камерой не получилось — введи цифры с упаковки");
-  });
-  $("scan-manual").onclick = () => {
-    stopLiveBarcode();
-    revealBarcodeDigits("введи цифры с упаковки");
-  };
-  $("scan-torch").onclick = async () => {
-    if (!scan.torchTrack) return;
-    scan.torch = !scan.torch;
-    try {
-      await scan.torchTrack.applyConstraints({ advanced: [{ torch: scan.torch }] });
-      setScanStatus(scan.torch ? "подсветка включена" : "наведи на штрих-код — читаю сам");
-    } catch {
-      setScanStatus("подсветка не поддалась", true);
-    }
-  };
-  window.addEventListener("pagehide", () => stopLiveBarcode());
-
-  // Запасной путь для пробития: показываем ввод цифр только когда основной
-  // инструмент (камера или фото) не сработал.
-  const revealBarcodeDigits = (message) => {
-    const box = $("barcode-manual");
-    box.hidden = false;
-    if (message) setBarcodeStatus(message, true);
-    $("smart-barcode-code").focus();
   };
 
   $("btn-barcode-lookup").onclick = () => {
@@ -2112,6 +1835,13 @@
     event.preventDefault();
     const code = $("smart-barcode-code").value.trim();
     if (code) lookupBarcode(code);
+  });
+
+  $("smart-barcode").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) await scanBarcodeImage(file);
+    updateSmartAvailability();
   });
 
   // Разбор ИИ не сохраняем молча: открываем редактор с готовым тиром и отзывом —
@@ -2139,17 +1869,28 @@
   const submitSmart = async (event) => {
     event.preventDefault();
     const text = $("smart-input").value.trim();
-    if (!text) {
-      $("smart-status").textContent = "Напиши хоть пару слов или надиктуй войсом.";
+    const barcodeCode = $("smart-barcode-code").value.trim();
+    if (!text && !pending.barcode && barcodeCode) {
+      await lookupBarcode(barcodeCode);
+      updateSmartAvailability();
+      return;
+    }
+    if (!text && !pending.barcode) {
+      $("smart-status").textContent = pending.image
+        ? "Фото приложено. Добавь описание банки или отсканируй штрих-код."
+        : "Добавь описание банки или отсканируй штрих-код.";
+      updateSmartAvailability();
       return;
     }
     if ($("btn-smart").disabled) return;
-    $("smart-status").textContent = "Нейросеть разбирает…";
+    setSmartStep("card", "Собираю карточку…");
     $("btn-smart").disabled = true;
     try {
-      const { parsed, similar } = await api("POST", "api/cabinet/ai/parse", { text });
-      pending.parsed = parsed;
-      renderSimilar(similar || []);
+      if (text) {
+        const { parsed, similar } = await api("POST", "api/cabinet/ai/parse", { text });
+        pending.parsed = parsed;
+        renderSimilar(similar || []);
+      }
       if (!pending.userPhoto) {
         pending.image = null;
         pending.original = null;
@@ -2157,16 +1898,17 @@
         pending.photoNote = "ищу фото…";
       }
       showPreview();
-      $("smart-status").textContent = "";
+      setSmartStep("ready", "Готово к проверке — поправь поля и подтверди.");
       refreshPhotos();
     } catch (error) {
-      $("smart-status").textContent = `${error.message}. Заполни вручную ниже.`;
+      setSmartStep("card", `${error.message}. Заполни вручную ниже.`, true);
       document.querySelector("details.cabinet-ai").open = true;
     } finally {
-      $("btn-smart").disabled = false;
+      updateSmartAvailability();
     }
   };
 
+  $("smart-input").addEventListener("input", updateSmartAvailability);
   $("smart-input").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -2211,52 +1953,32 @@
   $("btn-manual-save").onclick = submitManual;
 
   for (const [id, field] of [
-    ["m-brand", "brand"],
-    ["m-name", "name"],
-    ["m-flavor", "flavor"],
-    ["m-edition", "edition"],
-    ["m-tier", "tier"],
-    ["m-review", "review"],
+    ["m-brand", "brand"], ["m-name", "name"], ["m-flavor", "flavor"], ["m-edition", "edition"], ["m-tier", "tier"], ["m-review", "review"],
+    ["parsed-brand", "brand"], ["parsed-name", "name"], ["parsed-flavor", "flavor"], ["parsed-edition", "edition"], ["parsed-tier", "tier"], ["parsed-review", "review"],
   ]) {
     $(id).addEventListener("input", (event) => {
       if (pending.parsed) {
         pending.parsed[field] = event.target.value;
         if (field === "tier") {
           pending.parsed.tierGuessed = false;
-          $("parsed-tier").textContent = event.target.value;
-          $("parsed-tier").style.opacity = "";
-          $("parsed-tier").title = "Тир выбран вручную";
           updatePreviewImage();
         }
         if (field === "review") {
-          $("parsed-review").textContent = event.target.value || "Отзыва нет.";
+          if (id.startsWith("m-")) $("parsed-review").value = event.target.value;
         }
-        $("parsed-title").textContent = `${pending.parsed.brand} — ${pending.parsed.name}`;
-        $("parsed-sub").textContent = [pending.parsed.flavor, pending.parsed.edition]
-          .filter(Boolean)
-          .join(" · ");
+        if (id.startsWith("m-")) showPreview();
       }
       if (["brand", "name", "flavor"].includes(field)) schedulePhotos();
     });
   }
 
-  // Одно поле на всё: если на фото есть штрих-код — ищем по коду, иначе это фото банки.
   $("smart-photo").addEventListener("change", async (event) => {
     const file = event.target.files[0];
-    event.target.value = "";
     if (!file) return;
-    $("smart-status").textContent = "Смотрю фото…";
-    try {
-      const code = await readBarcodeFromFile(file);
-      if (code) {
-        navigator.vibrate?.(80);
-        await lookupBarcode(code);
-        return;
-      }
-    } catch {
-      /* код не нашёлся — считаем это фото банки */
-    }
-    $("smart-status").textContent = "Режу фон…";
+    setSmartStep("photo", "Обрабатываю фото…");
+    const cameraPreview = $("camera-preview");
+    cameraPreview.src = URL.createObjectURL(file);
+    cameraPreview.hidden = false;
     const objectUrl = URL.createObjectURL(file);
     try {
       const img = await loadImage(objectUrl);
@@ -2268,14 +1990,23 @@
       pending.photoNote = cut ? "твоё фото · фон вырезан ✓" : "твоё фото ✓";
       strip.selected = -1;
       markSelected();
-      $("smart-status").textContent = "Фото приложено ✓";
+      setSmartStep("photo", "Фото готово ✓");
       updatePreviewImage();
+      cameraPreview.src = pending.image;
+      await scanBarcodeImage(file);
+      if (!pending.parsed) {
+        setSmartStep("photo", "Фото приложено. Добавь описание банки или отсканируй штрих-код.");
+      }
+      updateSmartAvailability();
     } catch {
-      $("smart-status").textContent = "Не смог прочитать файл.";
+      setSmartStep("photo", "Не смог прочитать файл.", true);
     } finally {
       URL.revokeObjectURL(objectUrl);
+      event.target.value = "";
     }
   });
+
+  $("smart-barcode-code").addEventListener("input", updateSmartAvailability);
 
   $("btn-manual-url").onclick = async () => {
     const url = $("m-image-url").value.trim();
@@ -2445,6 +2176,7 @@
     $(ui.button).disabled = true;
     $(ui.retry).hidden = true;
     status.textContent = "Распознаю голос…";
+    if (ui.input === "smart-input") setSmartStep("voice", "Распознаю голос…");
     try {
       const audio = await blobToBase64(voice.blob);
       const { text } = await api("POST", "api/cabinet/ai/transcribe", {
@@ -2453,7 +2185,11 @@
       });
       const area = $(ui.input);
       area.value = (area.value.trim() ? `${area.value.trim()} ` : "") + text;
-      status.textContent = ui.done;
+       status.textContent = ui.done;
+       if (ui.input === "smart-input") {
+         setSmartStep("voice", "Голос добавлен ✓");
+         updateSmartAvailability();
+       }
       autoGrow(area);
       area.focus();
     } catch (error) {
@@ -2462,6 +2198,7 @@
         .filter(Boolean)
         .join(" · ");
       status.textContent = `${detail}. Можно повторить или вписать текст руками.`;
+      if (ui.input === "smart-input") setSmartStep("voice", status.textContent, true);
       $(ui.retry).hidden = false;
     } finally {
       voice.busy = false;
