@@ -1,0 +1,54 @@
+const { test, before, after } = require("node:test");
+const assert = require("node:assert/strict");
+const sharp = require("sharp");
+const { startServer, createUser, request, login } = require("../helpers");
+const { ean13Png } = require("../helpers/ean13");
+
+let ctx;
+let userCookie;
+
+before(async () => {
+  ctx = await startServer();
+  await createUser(ctx.db, { username: "sanya", password: "sanya-pass-123", displayName: "Саша" });
+  userCookie = (await login(ctx.base, "sanya", "sanya-pass-123")).cookie;
+});
+
+after(async () => {
+  await ctx.close();
+});
+
+const scan = (cookie, body) =>
+  request(ctx.base, "POST", "/api/cabinet/ai/barcode-scan", { cookie, body });
+
+test("скан фото: сервер сам читает код снимка (фолбэк для Firefox/Safari)", async () => {
+  const png = await ean13Png("468003691262");
+  const sideways = await sharp(png).rotate(90).toBuffer();
+  const res = await scan(userCookie, {
+    imageDataUrl: `data:image/png;base64,${sideways.toString("base64")}`,
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.json, { found: true, code: "4680036912629", format: "ean_13" });
+});
+
+test("скан фото: без кода — found:false, а не ошибка", async () => {
+  const blank = await sharp({
+    create: { width: 640, height: 480, channels: 3, background: { r: 240, g: 240, b: 240 } },
+  })
+    .png()
+    .toBuffer();
+  const res = await scan(userCookie, { imageDataUrl: `data:image/png;base64,${blank.toString("base64")}` });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.found, false);
+});
+
+test("скан фото: аноним — 401, мусор — 400", async () => {
+  const png = await ean13Png("468003691262");
+  const anon = await scan("", { imageDataUrl: `data:image/png;base64,${png.toString("base64")}` });
+  assert.equal(anon.status, 401);
+
+  const html = await scan(userCookie, { imageDataUrl: "data:text/html;base64,PGI+SGk8L2I+" });
+  assert.equal(html.status, 400);
+
+  const empty = await scan(userCookie, {});
+  assert.equal(empty.status, 400);
+});
