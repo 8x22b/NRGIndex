@@ -115,19 +115,24 @@ test("форма напитка: все способы замены фото в 
   assert.match(adminJs, /\$\("d-image-open"\)\.onclick/);
 
   const toolsStart = adminHtml.indexOf('id="d-image-tools"');
-  const tools = adminHtml.slice(toolsStart, adminHtml.indexOf("</form>", toolsStart));
+  const quickStart = adminHtml.indexOf('class="admin-photo__quick"', toolsStart);
+  assert.ok(toolsStart !== -1 && quickStart > toolsStart, "после панели фото идёт отдельный ряд с перерисовкой");
+  const tools = adminHtml.slice(toolsStart, quickStart);
   for (const id of [
     "d-image-file",
     "d-image-url",
     "btn-drink-image-url",
     "d-photo-query",
     "btn-drink-photo-search",
-    "btn-drink-redraw",
     "btn-drink-image-clear",
     "d-photo-strip",
   ]) {
     assert.ok(tools.includes(`id="${id}"`), `${id} должен быть в панели фото`);
   }
+
+  assert.match(adminHtml.slice(quickStart), /id="btn-drink-redraw"/);
+  assert.match(adminHtml.slice(quickStart), /Перерисовать текущее фото/);
+  assert.doesNotMatch(tools, /btn-drink-redraw/, "кнопка перерисовки не прячется в панели");
 
   const formStart = adminHtml.indexOf('id="drink-form"');
   const form = adminHtml.slice(formStart, adminHtml.indexOf("</form>", formStart));

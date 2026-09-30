@@ -457,6 +457,8 @@
   });
 
   $("d-image-path").addEventListener("input", () => {
+    // Путь поправили руками — старый «оригинал» уже не от этой картинки.
+    adminOriginal = null;
     const preview = $("d-image-preview");
     const value = $("d-image-path").value.trim();
     if (value) {

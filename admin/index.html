@@ -45,6 +45,7 @@
     .admin-photo__tools .admin-actions { flex-wrap: wrap; }
     .admin-photo__tools .admin-image-url-row { margin: 0; }
     .admin-photo__tools .photo-strip { margin: 0; }
+    .admin-photo__quick { margin-top: 10px; }
     .stats-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 14px; }
     .stats-period { display: flex; gap: 6px; }
     .stats-period .btn { padding: 6px 12px; font-size: 12px; }
@@ -273,7 +274,6 @@
               <label class="btn btn--ghost btn--file">Свой файл
                 <input id="d-image-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
               </label>
-              <button class="btn btn--ghost" type="button" id="btn-drink-redraw" title="Перерисовать через Nano Banana: в модель идёт исходник до вырезания фона, строго JPEG">🍌 Перерисовать</button>
               <button class="btn btn--ghost" type="button" id="btn-drink-image-clear">Убрать фото</button>
             </div>
             <div class="form-row admin-image-url-row">
@@ -293,6 +293,9 @@
             </div>
             <p class="admin-hint">Фон вырезается автоматически, акценты подбираются по банке. 🍌 — если ракурс плохой или фон удалился криво.</p>
           </div>
+        </div>
+        <div class="admin-photo__quick">
+          <button class="btn btn--ghost" type="button" id="btn-drink-redraw" title="Перерисовать через Nano Banana: в модель идёт исходник до вырезания фона, строго JPEG. Работает и для уже сохранённой картинки">🍌 Перерисовать текущее фото</button>
         </div>
         <label class="admin-hint"><input id="d-published" type="checkbox" checked> Опубликован</label>
         <div class="admin-actions">
