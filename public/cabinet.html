@@ -64,39 +64,58 @@
           <small id="me-role">—</small>
         </div>
         <div class="cab-profile__meta"><b id="me-count">0</b><span id="me-count-label">оценок</span></div>
-        <a class="btn btn--ghost" id="profile-link" href="profile.html">Мой профиль</a>
-        <a class="btn" id="admin-button" href="/admin" hidden>Админ-панель</a>
-        <button class="btn btn--ghost" type="button" id="btn-logout">Выйти</button>
       </div>
 
+      <nav class="cab-tabs" id="cab-tabs" aria-label="Разделы кабинета">
+        <button class="btn cab-tab is-active" type="button" data-cab="add">Добавить</button>
+        <button class="btn cab-tab" type="button" data-cab="ratings">Оценки</button>
+        <button class="btn cab-tab" type="button" data-cab="find">Найти</button>
+        <button class="btn cab-tab" type="button" data-cab="roulette">Рулетка</button>
+        <button class="btn cab-tab" type="button" data-cab="account">Аккаунт</button>
+      </nav>
+
+      <div class="cab-pane" id="cab-add">
       <form class="cabinet-form smart-form" id="smart-form" autocomplete="off">
         <h3>Новый энергос</h3>
-        <p class="hint">Опиши банку своими словами или надиктуй войсом — нейросеть разложит по полям бренд, вкус и издание, а отзыв и тир возьмёт только из того, что ты сам сказал. Фото можно найти отдельно.</p>
+        <p class="hint">Сфоткай банку или опиши её словами. Если в кадре есть штрих-код, попробуем найти данные по нему. Отзыв и тир — только с твоих слов. Перед сохранением всё можно поправить в карточке.</p>
+        <div class="camera-control">
+          <label class="btn btn--big btn--file camera-control__action">📷 Сфоткать банку / выбрать фото
+            <input id="smart-photo" type="file" accept="image/*" capture="environment" aria-describedby="camera-guide">
+          </label>
+          <div class="camera-guide" id="camera-guide">
+            <span class="camera-guide__frame" aria-hidden="true">[ ]</span>
+            <span>Банка целиком, прямо и без бликов. Название и вкус должны быть видны; для поиска по коду поверни банку штрих-кодом к камере.</span>
+          </div>
+          <img class="camera-preview" id="camera-preview" alt="Выбранное фото банки" hidden>
+        </div>
         <label>Что за энергос?
           <textarea id="smart-input" rows="3" placeholder="Например: Burn тропический микс, кисло-сладкий, жахнул бодро, тир А"></textarea>
         </label>
         <div class="voice-row">
-          <button class="btn" type="button" id="btn-record">● Войс вместо текста</button>
-          <label class="btn btn--ghost btn--file">📷 Приложить фото
-            <input id="smart-photo" type="file" accept="image/png,image/jpeg,image/webp" hidden>
-          </label>
+          <button class="btn btn--ghost" type="button" id="btn-record">● Надиктовать (необязательно)</button>
           <span class="voice-status" id="voice-status"></span>
         </div>
-        <div class="barcode-row">
-          <label class="btn btn--ghost btn--file">🏷 Скан штрих-кода
-            <input id="smart-barcode" type="file" accept="image/*" capture="environment" hidden>
-          </label>
-          <input id="smart-barcode-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="или цифры / код Честного знака">
+        <details class="barcode-manual">
+          <summary>Ввести штрих-код вручную</summary>
+          <div class="barcode-row">
+            <label class="btn btn--ghost btn--file">Фото кода
+              <input id="smart-barcode" type="file" accept="image/*" capture="environment" hidden>
+            </label>
+            <input id="smart-barcode-code" type="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="или цифры / код Честного знака">
           <button class="btn btn--ghost" type="button" id="btn-barcode-lookup">Найти</button>
           <span class="voice-status" id="barcode-status" aria-live="polite"></span>
-        </div>
+          </div>
+        </details>
         <div class="voice-player" id="voice-player" hidden>
           <audio id="voice-audio" controls preload="metadata"></audio>
           <span class="voice-player__time" id="voice-duration">0:00</span>
           <button class="btn btn--ghost" type="button" id="btn-voice-retry" hidden>Распознать ещё раз</button>
           <button class="btn btn--ghost" type="button" id="btn-voice-clear" aria-label="Убрать запись">×</button>
         </div>
-        <button class="btn btn--big" type="submit" id="btn-smart">✦ Распознать и добавить</button>
+        <button class="btn btn--big" type="submit" id="btn-smart" disabled>✦ Подготовить карточку</button>
+        <ol class="smart-steps" id="smart-steps" aria-label="Этапы подготовки">
+          <li data-step="voice">Голос</li><li data-step="barcode">Штрих-код</li><li data-step="photo">Фото</li><li data-step="card">Карточка</li><li data-step="ready">Проверка</li>
+        </ol>
         <p class="form-status" id="smart-status" aria-live="polite"></p>
 
         <div class="similar-box" id="similar-box" hidden>
@@ -111,13 +130,18 @@
         <div class="parsed-card" id="smart-preview" hidden>
           <img id="parsed-img" alt="Фото банки">
           <div class="parsed-card__main">
-            <b id="parsed-title">—</b>
-            <small id="parsed-sub">—</small>
-            <p id="parsed-review">—</p>
+            <p class="hint">Проверь и поправь прямо здесь</p>
+            <div class="parsed-fields">
+              <label>Бренд<input id="parsed-brand" type="text" maxlength="80"></label>
+              <label>Название<input id="parsed-name" type="text" maxlength="120"></label>
+              <label>Вкус<input id="parsed-flavor" type="text" maxlength="160"></label>
+              <label>Издание<input id="parsed-edition" type="text" maxlength="120"></label>
+              <label>Тир<select id="parsed-tier"><option>S</option><option>A</option><option>B</option><option>C</option><option>D</option></select></label>
+              <label class="parsed-fields__review">Отзыв<textarea id="parsed-review" rows="3" maxlength="1000" placeholder="Что думаешь об этой банке?"></textarea></label>
+            </div>
             <p class="hint" id="parsed-photo-note">фото найдено автоматически ✓</p>
           </div>
           <div class="parsed-card__actions">
-            <span class="parsed-tier" id="parsed-tier">A</span>
             <button class="btn" type="button" id="btn-confirm">В индекс ✓</button>
             <button class="btn btn--ghost" type="button" id="btn-retry-photo">Следующее фото</button>
             <button class="btn btn--ghost" type="button" id="btn-redraw" title="Перерисовать банку через Gemini: прямой ракурс, ровный фон. Жмите, если ракурс плохой или фон удалился криво">🍌 Перерисовать</button>
@@ -162,7 +186,29 @@
           <button class="btn btn--big" type="button" id="btn-manual-save">Добавить вручную из этих полей</button>
         </details>
       </form>
+      </div>
 
+      <div class="cab-pane" id="cab-ratings" hidden>
+      <div class="cabinet-mine">
+        <div class="cabinet-mine__head">
+          <h3>Мои оценки</h3>
+          <input id="mine-filter" type="search" placeholder="фильтр по названию" autocomplete="off">
+        </div>
+        <div id="cabinet-my-ratings"></div>
+      </div>
+
+      <div class="cabinet-mine" id="unrated-block" hidden>
+        <div class="cabinet-mine__head">
+          <h3>Ещё не оценил</h3>
+          <span class="hint" id="unrated-count"></span>
+        </div>
+        <p class="hint">Банки, которые завели другие. Жми тир — откроется редактор: там можно проверить тир, написать или надиктовать отзыв (ИИ разложит), поправить фото и сохранить.</p>
+        <div class="unrated-grid" id="unrated-list"></div>
+        <button class="btn btn--ghost" type="button" id="unrated-more" hidden>Показать ещё</button>
+      </div>
+      </div>
+
+      <div class="cab-pane" id="cab-find" hidden>
       <div class="cabinet-mine" id="find-block">
         <div class="cabinet-mine__head">
           <h3>Найти энергос</h3>
@@ -175,7 +221,9 @@
         </label>
         <div class="unrated-grid" id="find-results"></div>
       </div>
+      </div>
 
+      <div class="cab-pane" id="cab-roulette" hidden>
       <div class="cabinet-mine" id="assortment-block">
         <div class="cabinet-mine__head">
           <h3>Рулетка по ассортименту</h3>
@@ -198,13 +246,6 @@
           <button class="btn roulette__spin" type="button" id="assortment-spin">Крутить</button>
         </div>
       </div>
-
-      <div class="cabinet-mine">
-        <div class="cabinet-mine__head">
-          <h3>Мои оценки</h3>
-          <input id="mine-filter" type="search" placeholder="фильтр по названию" autocomplete="off">
-        </div>
-        <div id="cabinet-my-ratings"></div>
       </div>
 
       <!-- РЕДАКТОР СВОЕГО МНЕНИЯ -->
@@ -271,31 +312,28 @@
         </div>
       </dialog>
 
-      <div class="cabinet-mine" id="unrated-block" hidden>
-        <div class="cabinet-mine__head">
-          <h3>Ещё не оценил</h3>
-          <span class="hint" id="unrated-count"></span>
+      <div class="cab-pane" id="cab-account" hidden>
+        <div class="cabinet-mine">
+          <div class="cabinet-mine__head"><h3>Аккаунт</h3></div>
+          <div class="account-links">
+            <a class="btn btn--ghost" id="profile-link" href="profile.html">Мой профиль</a>
+            <a class="btn" id="admin-button" href="/admin" hidden>Админ-панель</a>
+            <button class="btn btn--ghost" type="button" id="btn-logout">Выйти</button>
+          </div>
+          <div class="avatar-editor">
+            <span class="avatar-editor__preview" id="avatar-preview" style="--person-color:#fff">?</span>
+            <button class="btn btn--ghost" type="button" id="btn-avatar-change">Аватар</button>
+            <button class="btn btn--ghost" type="button" id="btn-avatar-remove" hidden>Убрать</button>
+          </div>
+          <p class="form-status" id="avatar-status" aria-live="polite"></p>
+          <div class="form-row">
+            <input id="old-pass" type="password" placeholder="текущий пароль" autocomplete="current-password">
+            <input id="change-pass" type="password" placeholder="новый пароль" autocomplete="new-password">
+            <button class="btn btn--ghost" type="button" id="btn-change-pass">Сменить пароль</button>
+          </div>
+          <p class="form-status" id="sync-status" aria-live="polite"></p>
         </div>
-        <p class="hint">Банки, которые завели другие. Жми тир — откроется редактор: там можно проверить тир, написать или надиктовать отзыв (ИИ разложит), поправить фото и сохранить.</p>
-        <div class="unrated-grid" id="unrated-list"></div>
-        <button class="btn btn--ghost" type="button" id="unrated-more" hidden>Показать ещё</button>
       </div>
-
-      <details class="cabinet-ai">
-        <summary>Аккаунт</summary>
-        <div class="avatar-editor">
-          <span class="avatar-editor__preview" id="avatar-preview" style="--person-color:#fff">?</span>
-          <button class="btn btn--ghost" type="button" id="btn-avatar-change">Аватар</button>
-          <button class="btn btn--ghost" type="button" id="btn-avatar-remove" hidden>Убрать</button>
-        </div>
-        <p class="form-status" id="avatar-status" aria-live="polite"></p>
-        <div class="form-row">
-          <input id="old-pass" type="password" placeholder="текущий пароль" autocomplete="current-password">
-          <input id="change-pass" type="password" placeholder="новый пароль" autocomplete="new-password">
-          <button class="btn btn--ghost" type="button" id="btn-change-pass">Сменить пароль</button>
-        </div>
-        <p class="form-status" id="sync-status" aria-live="polite"></p>
-      </details>
 
       <dialog class="drink-dialog avatar-dialog" id="avatar-dialog" aria-label="Аватар">
         <div class="avatar-dialog__inner">

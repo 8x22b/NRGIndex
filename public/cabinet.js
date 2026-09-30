@@ -72,6 +72,19 @@
     barcode: "",
   };
 
+  const setSmartStep = (step, text, error = false) => {
+    const steps = $("smart-steps");
+    steps?.querySelectorAll("li").forEach((node) => node.classList.toggle("is-active", node.dataset.step === step));
+    steps?.classList.toggle("is-error", error);
+    if (text !== undefined) $("smart-status").textContent = text;
+  };
+
+  const updateSmartAvailability = () => {
+    const hasText = Boolean($("smart-input").value.trim());
+    const hasInput = hasText || Boolean(pending.barcode) || Boolean($("smart-barcode-code")?.value.trim());
+    $("btn-smart").disabled = !hasInput;
+  };
+
   /* ---------- views ---------- */
   const showAuth = () => {
     $("auth-view").hidden = false;
@@ -84,11 +97,37 @@
     $("cab-view").hidden = true;
   };
 
+  // Вкладки кабинета: вместо одной длинной простыни — разделы.
+  const CAB_SECTIONS = ["add", "ratings", "find", "roulette", "account"];
+  const switchCabTab = (name) => {
+    if (!CAB_SECTIONS.includes(name)) name = "add";
+    document.querySelectorAll("#cab-tabs [data-cab]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.cab === name);
+    });
+    for (const section of CAB_SECTIONS) $(`cab-${section}`).hidden = section !== name;
+    try {
+      localStorage.setItem("cab-tab", name);
+    } catch {
+      /* приватный режим — не страшно */
+    }
+  };
+  $("cab-tabs").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cab]");
+    if (button) switchCabTab(button.dataset.cab);
+  });
+
   const enterCabinet = async () => {
     $("auth-view").hidden = true;
     $("password-view").hidden = true;
     $("cab-view").hidden = false;
     renderAvatars();
+    let savedTab = "add";
+    try {
+      savedTab = localStorage.getItem("cab-tab") || "add";
+    } catch {
+      /* приватный режим — не страшно */
+    }
+    switchCabTab(savedTab);
     $("me-name").textContent = state.me.displayName;
     $("me-role").textContent = state.me.title || state.me.role;
     if (state.me.role === "admin") $("admin-button").hidden = false;
@@ -1349,15 +1388,12 @@
     const parsed = pending.parsed;
     if (!parsed) return;
     $("smart-preview").hidden = false;
-    $("parsed-title").textContent = `${parsed.brand} — ${parsed.name}`;
-    $("parsed-sub").textContent = [parsed.flavor, parsed.edition].filter(Boolean).join(" · ");
-    $("parsed-review").textContent =
-      parsed.review || "Отзыва в сообщении не было — допиши вручную ниже, если хочешь.";
-    $("parsed-tier").textContent = parsed.tier;
-    $("parsed-tier").title = parsed.tierGuessed
-      ? "Тир не был назван — стоит B по умолчанию, поправь ниже"
-      : "Тир из твоего сообщения";
-    $("parsed-tier").style.opacity = parsed.tierGuessed ? ".55" : "";
+    $("parsed-brand").value = parsed.brand || "";
+    $("parsed-name").value = parsed.name || "";
+    $("parsed-flavor").value = parsed.flavor || "";
+    $("parsed-edition").value = parsed.edition || "";
+    $("parsed-tier").value = TIERS.includes(parsed.tier) ? parsed.tier : "B";
+    $("parsed-review").value = parsed.review || "";
     fillManual(parsed);
     updatePreviewImage();
     $("smart-preview").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1673,9 +1709,11 @@
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
     $("smart-barcode-code").value = "";
+    $("camera-preview").hidden = true;
     setBarcodeStatus("");
     renderSimilar([]);
     clearVoice("smart");
+    updateSmartAvailability();
   };
 
   // Если ИИ распознал банку, которая уже есть в индексе, — предлагаем оценить её,
@@ -1729,6 +1767,7 @@
   const lookupBarcode = async (code) => {
     if (barcodeBusy || !code) return;
     barcodeBusy = true;
+    setSmartStep("barcode", "Ищу данные по штрих-коду…");
     setBarcodeStatus("ищу по коду…");
     try {
       const data = await api("POST", "api/cabinet/ai/barcode", { code });
@@ -1768,12 +1807,14 @@
             updatePreviewImage();
           });
       }
-      setBarcodeStatus(barcodeNote(data));
+       setBarcodeStatus(barcodeNote(data));
+       setSmartStep("barcode", "Штрих-код прочитан ✓");
       showPreview();
       refreshPhotos();
       if (data.inIndex) $("smart-status").textContent = "уже в индексе — жми «Оценить эту» выше";
     } catch (error) {
       setBarcodeStatus(error.message, true);
+      setSmartStep("barcode", `Не удалось прочитать код: ${error.message}`, true);
     } finally {
       barcodeBusy = false;
     }
@@ -1782,6 +1823,7 @@
   const scanBarcodeImage = async (file) => {
     if (!("BarcodeDetector" in window)) {
       setBarcodeStatus("сканирование камерой тут не поддерживается — введи цифры вручную", true);
+      setSmartStep("barcode", "Сканирование недоступно — введи код вручную", true);
       return;
     }
     try {
@@ -1790,6 +1832,7 @@
       const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
       if (!formats.length) {
         setBarcodeStatus("этот браузер не умеет читать коды — введи вручную", true);
+        setSmartStep("barcode", "Сканирование недоступно — введи код вручную", true);
         return;
       }
       const detector = new window.BarcodeDetector({ formats });
@@ -1798,19 +1841,15 @@
       bitmap.close?.();
       if (!found.length) {
         setBarcodeStatus("код не распознан — попробуй ближе и без бликов", true);
+        setSmartStep("barcode", "Код не распознан — попробуй ближе и без бликов", true);
         return;
       }
       await lookupBarcode(found[0].rawValue);
     } catch (error) {
       setBarcodeStatus(error.message || "не удалось прочитать код", true);
+      setSmartStep("barcode", error.message || "Не удалось прочитать код", true);
     }
   };
-
-  $("smart-barcode").addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) await scanBarcodeImage(file);
-  });
 
   $("btn-barcode-lookup").onclick = () => {
     const code = $("smart-barcode-code").value.trim();
@@ -1822,6 +1861,13 @@
     event.preventDefault();
     const code = $("smart-barcode-code").value.trim();
     if (code) lookupBarcode(code);
+  });
+
+  $("smart-barcode").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) await scanBarcodeImage(file);
+    updateSmartAvailability();
   });
 
   // Разбор ИИ не сохраняем молча: открываем редактор с готовым тиром и отзывом —
@@ -1849,17 +1895,28 @@
   const submitSmart = async (event) => {
     event.preventDefault();
     const text = $("smart-input").value.trim();
-    if (!text) {
-      $("smart-status").textContent = "Напиши хоть пару слов или надиктуй войсом.";
+    const barcodeCode = $("smart-barcode-code").value.trim();
+    if (!text && !pending.barcode && barcodeCode) {
+      await lookupBarcode(barcodeCode);
+      updateSmartAvailability();
+      return;
+    }
+    if (!text && !pending.barcode) {
+      $("smart-status").textContent = pending.image
+        ? "Фото приложено. Добавь описание банки или отсканируй штрих-код."
+        : "Добавь описание банки или отсканируй штрих-код.";
+      updateSmartAvailability();
       return;
     }
     if ($("btn-smart").disabled) return;
-    $("smart-status").textContent = "Нейросеть разбирает…";
+    setSmartStep("card", "Собираю карточку…");
     $("btn-smart").disabled = true;
     try {
-      const { parsed, similar } = await api("POST", "api/cabinet/ai/parse", { text });
-      pending.parsed = parsed;
-      renderSimilar(similar || []);
+      if (text) {
+        const { parsed, similar } = await api("POST", "api/cabinet/ai/parse", { text });
+        pending.parsed = parsed;
+        renderSimilar(similar || []);
+      }
       if (!pending.userPhoto) {
         pending.image = null;
         pending.original = null;
@@ -1867,16 +1924,17 @@
         pending.photoNote = "ищу фото…";
       }
       showPreview();
-      $("smart-status").textContent = "";
+      setSmartStep("ready", "Готово к проверке — поправь поля и подтверди.");
       refreshPhotos();
     } catch (error) {
-      $("smart-status").textContent = `${error.message}. Заполни вручную ниже.`;
+      setSmartStep("card", `${error.message}. Заполни вручную ниже.`, true);
       document.querySelector("details.cabinet-ai").open = true;
     } finally {
-      $("btn-smart").disabled = false;
+      updateSmartAvailability();
     }
   };
 
+  $("smart-input").addEventListener("input", updateSmartAvailability);
   $("smart-input").addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -1921,30 +1979,20 @@
   $("btn-manual-save").onclick = submitManual;
 
   for (const [id, field] of [
-    ["m-brand", "brand"],
-    ["m-name", "name"],
-    ["m-flavor", "flavor"],
-    ["m-edition", "edition"],
-    ["m-tier", "tier"],
-    ["m-review", "review"],
+    ["m-brand", "brand"], ["m-name", "name"], ["m-flavor", "flavor"], ["m-edition", "edition"], ["m-tier", "tier"], ["m-review", "review"],
+    ["parsed-brand", "brand"], ["parsed-name", "name"], ["parsed-flavor", "flavor"], ["parsed-edition", "edition"], ["parsed-tier", "tier"], ["parsed-review", "review"],
   ]) {
     $(id).addEventListener("input", (event) => {
       if (pending.parsed) {
         pending.parsed[field] = event.target.value;
         if (field === "tier") {
           pending.parsed.tierGuessed = false;
-          $("parsed-tier").textContent = event.target.value;
-          $("parsed-tier").style.opacity = "";
-          $("parsed-tier").title = "Тир выбран вручную";
           updatePreviewImage();
         }
         if (field === "review") {
-          $("parsed-review").textContent = event.target.value || "Отзыва нет.";
+          if (id.startsWith("m-")) $("parsed-review").value = event.target.value;
         }
-        $("parsed-title").textContent = `${pending.parsed.brand} — ${pending.parsed.name}`;
-        $("parsed-sub").textContent = [pending.parsed.flavor, pending.parsed.edition]
-          .filter(Boolean)
-          .join(" · ");
+        if (id.startsWith("m-")) showPreview();
       }
       if (["brand", "name", "flavor"].includes(field)) schedulePhotos();
     });
@@ -1953,7 +2001,10 @@
   $("smart-photo").addEventListener("change", async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    $("smart-status").textContent = "Режу фон…";
+    setSmartStep("photo", "Обрабатываю фото…");
+    const cameraPreview = $("camera-preview");
+    cameraPreview.src = URL.createObjectURL(file);
+    cameraPreview.hidden = false;
     const objectUrl = URL.createObjectURL(file);
     try {
       const img = await loadImage(objectUrl);
@@ -1965,15 +2016,23 @@
       pending.photoNote = cut ? "твоё фото · фон вырезан ✓" : "твоё фото ✓";
       strip.selected = -1;
       markSelected();
-      $("smart-status").textContent = "Фото приложено ✓";
+      setSmartStep("photo", "Фото готово ✓");
       updatePreviewImage();
+      cameraPreview.src = pending.image;
+      await scanBarcodeImage(file);
+      if (!pending.parsed) {
+        setSmartStep("photo", "Фото приложено. Добавь описание банки или отсканируй штрих-код.");
+      }
+      updateSmartAvailability();
     } catch {
-      $("smart-status").textContent = "Не смог прочитать файл.";
+      setSmartStep("photo", "Не смог прочитать файл.", true);
     } finally {
       URL.revokeObjectURL(objectUrl);
       event.target.value = "";
     }
   });
+
+  $("smart-barcode-code").addEventListener("input", updateSmartAvailability);
 
   $("btn-manual-url").onclick = async () => {
     const url = $("m-image-url").value.trim();
@@ -2143,6 +2202,7 @@
     $(ui.button).disabled = true;
     $(ui.retry).hidden = true;
     status.textContent = "Распознаю голос…";
+    if (ui.input === "smart-input") setSmartStep("voice", "Распознаю голос…");
     try {
       const audio = await blobToBase64(voice.blob);
       const { text } = await api("POST", "api/cabinet/ai/transcribe", {
@@ -2151,7 +2211,11 @@
       });
       const area = $(ui.input);
       area.value = (area.value.trim() ? `${area.value.trim()} ` : "") + text;
-      status.textContent = ui.done;
+       status.textContent = ui.done;
+       if (ui.input === "smart-input") {
+         setSmartStep("voice", "Голос добавлен ✓");
+         updateSmartAvailability();
+       }
       autoGrow(area);
       area.focus();
     } catch (error) {
@@ -2160,6 +2224,7 @@
         .filter(Boolean)
         .join(" · ");
       status.textContent = `${detail}. Можно повторить или вписать текст руками.`;
+      if (ui.input === "smart-input") setSmartStep("voice", status.textContent, true);
       $(ui.retry).hidden = false;
     } finally {
       voice.busy = false;
