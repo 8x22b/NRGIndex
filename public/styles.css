@@ -577,7 +577,7 @@ img { display: block; max-width: 100%; }
 @media (prefers-reduced-motion: reduce) { .photo-tile.is-loading { animation: none; } }
 
 #cab-view .cabinet-mine { border: 1px solid var(--line); border-radius: 1.1rem; background: #151311; padding: 1.6rem 1.4rem; margin-bottom: 1.2rem; }
-#cab-view .cabinet-ai { margin-bottom: 1.2rem; background: #151311; }
+#cab-view .cabinet-ai { margin: 1.2rem 0; background: #151311; }
 #cab-view .cabinet-ai .btn--big { width: 100%; margin-top: .8rem; }
 @media (max-width: 720px) {
   .cab-page { padding: 6rem 1rem 4rem; }
@@ -893,10 +893,8 @@ a.reviewer:hover b { text-decoration: underline; }
 .camera-view { position: relative; width: 100%; aspect-ratio: 3 / 4; overflow: hidden; border-radius: .9rem; background: #0d0b0a; }
 .camera-view video { display: block; width: 100%; height: 100%; object-fit: cover; }
 .camera-stencil { position: absolute; inset: 0; pointer-events: none; }
-.camera-stencil__can, .camera-stencil__code { position: absolute; border: 2px dashed rgba(239,238,135,.9); box-shadow: 0 0 0 999px rgba(5,4,3,.45); }
-.camera-stencil__can { left: 50%; top: 7%; width: 46%; height: 80%; border-radius: 40% 40% 18% 18% / 10% 10% 5% 5%; transform: translateX(-50%); }
-.camera-stencil__code { left: 10%; right: 10%; top: 42%; height: 18%; border-radius: .4rem; }
-.camera-stencil[data-mode="can"] .camera-stencil__code { display: none; }
+.camera-stencil__can { position: absolute; border: 2px dashed rgba(239,238,135,.9); box-shadow: 0 0 0 999px rgba(5,4,3,.45); }
+.camera-stencil__can { left: 50%; top: 7%; width: 42%; height: 80%; border-radius: 40% 40% 18% 18% / 10% 10% 5% 5%; transform: translateX(-50%); }
 .camera-stencil[data-mode="code"] .camera-stencil__can { display: none; }
 .camera-hint { position: absolute; left: 50%; bottom: .6rem; transform: translateX(-50%); margin: 0; padding: .25rem .7rem; border-radius: 999px; color: var(--paper); background: rgba(5,4,3,.6); font-size: .6rem; white-space: nowrap; }
 .camera-manual { display: flex; align-items: center; gap: .6rem; }
@@ -905,3 +903,4 @@ a.reviewer:hover b { text-decoration: underline; }
 .camera-manual__hint { color: var(--muted); font-size: .55rem; }
 .camera-actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
 .camera-status { flex: 1 1 100%; margin: 0; }
+#camera-torch.is-active { color: var(--ink); background: var(--acid); border-color: var(--acid); }

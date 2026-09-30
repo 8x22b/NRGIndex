@@ -80,7 +80,6 @@ test("камера: одна кнопка вместо фото, скана и �
 
 test("кадр камеры обрезается по трафарету с учётом object-fit: cover", () => {
   assert.match(cabinetSource, /camera-stencil__can/);
-  assert.match(cabinetSource, /camera-stencil__code/);
   assert.match(cabinetSource, /getBoundingClientRect/);
   assert.match(cabinetSource, /Math\.max\(view\.width \/ vw, view\.height \/ vh\)/);
   assert.match(cabinetSource, /drawImage\(/);
@@ -252,4 +251,31 @@ test("статусы называют процесс: голос, фото, те
   assert.match(cabinetSource, /Обрабатываю голос/);
   assert.match(cabinetSource, /Обрабатываю фото/);
   assert.match(cabinetSource, /Обрабатываю текст/);
+});
+
+test("режим «Код» сканирует автоматически и без трафарета", () => {
+  assert.doesNotMatch(cabinetHtml, /camera-stencil__code/);
+  assert.doesNotMatch(stylesSource, /\.camera-stencil__code/);
+  assert.match(cabinetSource, /const startAutoScan = async \(\) =>/);
+  assert.match(cabinetSource, /const stopAutoScan = \(\) =>/);
+  assert.match(cabinetSource, /detector\.detect\(video\)/);
+  assert.match(cabinetSource, /startAutoScan\(\)/);
+  assert.match(cabinetSource, /stopAutoScan\(\)/);
+  assert.match(stylesSource, /\.camera-stencil\[data-mode="code"\] \.camera-stencil__can \{ display: none; \}/);
+});
+
+test("форма входа не мелькает, пока идёт проверка сессии", () => {
+  assert.match(cabinetHtml, /id="auth-view"[^>]*hidden/);
+  assert.match(cabinetHtml, /id="boot-view"/);
+  assert.match(cabinetHtml, /Проверяю вход/);
+  const hides = cabinetSource.match(/\$\("boot-view"\)\.hidden = true/g) || [];
+  assert.ok(hides.length >= 3, "boot-экран прячется при входе, смене пароля и в кабинете");
+});
+
+test("в камере есть фонарик, а блок «Фото по ссылке» отделён от превью", () => {
+  assert.match(cabinetHtml, /id="camera-torch"/);
+  assert.match(cabinetSource, /getCapabilities/);
+  assert.match(cabinetSource, /applyConstraints/);
+  assert.match(cabinetSource, /torch/);
+  assert.match(stylesSource, /#cab-view \.cabinet-ai \{ margin: 1\.2rem 0;/);
 });

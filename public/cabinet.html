@@ -26,8 +26,15 @@
   </header>
 
   <main class="cab-page">
+    <!-- ПРОВЕРКА ВХОДА -->
+    <section class="auth-card" id="boot-view" aria-live="polite">
+      <p class="eyebrow">Restricted area</p>
+      <h1>Проверяю вход…</h1>
+      <p class="hint">Секунду — смотрю сессию.</p>
+    </section>
+
     <!-- ВХОД -->
-    <section class="auth-card" id="auth-view">
+    <section class="auth-card" id="auth-view" hidden>
       <p class="eyebrow">Restricted area</p>
       <h1>Вход</h1>
       <p class="hint">Логин и пароль выдаёт админ.</p>
@@ -328,7 +335,6 @@
             <video id="camera-video" playsinline autoplay muted></video>
             <div class="camera-stencil" id="camera-stencil" data-mode="can" aria-hidden="true">
               <span class="camera-stencil__can"></span>
-              <span class="camera-stencil__code"></span>
             </div>
             <p class="camera-hint" id="camera-hint">Наведи банку по контуру и жми «Снять»</p>
           </div>
@@ -341,6 +347,7 @@
             <label class="btn btn--ghost btn--file">Из галереи
               <input id="camera-file" type="file" accept="image/*" hidden>
             </label>
+            <button class="btn btn--ghost" type="button" id="camera-torch" hidden>🔦 Фонарик</button>
             <span class="form-status camera-status" id="camera-status" aria-live="polite"></span>
           </div>
         </div>

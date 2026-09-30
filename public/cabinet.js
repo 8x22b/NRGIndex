@@ -74,17 +74,20 @@
 
   /* ---------- views ---------- */
   const showAuth = () => {
+    $("boot-view").hidden = true;
     $("auth-view").hidden = false;
     $("password-view").hidden = true;
     $("cab-view").hidden = true;
   };
   const showPasswordChange = () => {
+    $("boot-view").hidden = true;
     $("auth-view").hidden = true;
     $("password-view").hidden = false;
     $("cab-view").hidden = true;
   };
 
   const enterCabinet = async () => {
+    $("boot-view").hidden = true;
     $("auth-view").hidden = true;
     $("password-view").hidden = true;
     $("cab-view").hidden = false;
@@ -1817,10 +1820,19 @@
     }
   };
 
+  // Форматы, которые реально умеет браузер; пусто — BarcodeDetector недоступен.
+  const barcodeFormats = async () => {
+    if (!("BarcodeDetector" in window)) return [];
+    try {
+      const supported = await window.BarcodeDetector.getSupportedFormats();
+      return BARCODE_FORMATS.filter((format) => supported.includes(format));
+    } catch {
+      return [];
+    }
+  };
+
   const detectBarcode = async (source) => {
-    if (!("BarcodeDetector" in window)) return "";
-    const supported = await window.BarcodeDetector.getSupportedFormats();
-    const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
+    const formats = await barcodeFormats();
     if (!formats.length) return "";
     const detector = new window.BarcodeDetector({ formats });
     const found = await detector.detect(source);
@@ -1828,12 +1840,88 @@
   };
 
   /* ---------- камера ---------- */
-  const camera = { stream: null, mode: "can", busy: false };
+  const camera = { stream: null, mode: "can", busy: false, torch: false };
+
+  let autoScanTimer = null;
+  let autoScanGen = 0;
+
+  const stopAutoScan = () => {
+    autoScanGen++;
+    clearTimeout(autoScanTimer);
+    autoScanTimer = null;
+  };
+
+  // Живой скан: пока открыт режим «Код», сами крутим BarcodeDetector по видео.
+  const startAutoScan = async () => {
+    stopAutoScan();
+    if (camera.mode !== "code") return;
+    const formats = await barcodeFormats();
+    if (camera.mode !== "code" || !$("camera-dialog").open) return;
+    if (!formats.length) {
+      setCameraStatus("Этот браузер не умеет читать коды — введи цифры вручную.", true);
+      $("camera-code").focus();
+      return;
+    }
+    const gen = autoScanGen;
+    const detector = new window.BarcodeDetector({ formats });
+    setCameraStatus("🔎 Ищу код — просто наведи камеру");
+    const tick = async () => {
+      if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open || camera.busy) return;
+      const video = $("camera-video");
+      if (!video.videoWidth) {
+        autoScanTimer = setTimeout(tick, 300);
+        return;
+      }
+      let code = "";
+      try {
+        const found = await detector.detect(video);
+        code = found[0]?.rawValue || "";
+      } catch {
+        /* кадр не готов — просто пробуем снова */
+      }
+      if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
+      if (!code) {
+        autoScanTimer = setTimeout(tick, 600);
+        return;
+      }
+      stopAutoScan();
+      camera.busy = true;
+      try {
+        if (await lookupBarcode(code)) {
+          closeCamera();
+        } else {
+          // Код прочитан, но товара нет — даём шанс переснять.
+          $("btn-camera-shoot").hidden = false;
+          $("btn-camera-shoot").textContent = "↻ Сканировать снова";
+        }
+      } finally {
+        camera.busy = false;
+      }
+    };
+    autoScanTimer = setTimeout(tick, 300);
+  };
 
   const stopCamera = () => {
     camera.stream?.getTracks().forEach((track) => track.stop());
     camera.stream = null;
     $("camera-video").srcObject = null;
+  };
+
+  // Фонарик (torch) есть не на каждой камере: включаем только если трек умеет.
+  const setCameraTorch = async (on) => {
+    const track = camera.stream?.getVideoTracks?.()[0];
+    if (!track) return false;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: on }] });
+      camera.torch = on;
+      const button = $("camera-torch");
+      button.classList.toggle("is-active", on);
+      button.textContent = on ? "🔦 Фонарик вкл" : "🔦 Фонарик";
+      return true;
+    } catch {
+      setCameraStatus("Фонарик здесь не включается.", true);
+      return false;
+    }
   };
 
   const setCameraMode = (mode) => {
@@ -1846,8 +1934,15 @@
     $("camera-stencil").dataset.mode = mode;
     $("camera-manual").hidden = mode !== "code";
     $("camera-hint").textContent =
-      mode === "code" ? "Наведи код в рамку и жми «Снять»" : "Наведи банку по контуру и жми «Снять»";
-    $("btn-camera-shoot").textContent = mode === "code" ? "● Сканировать" : "● Снять";
+      mode === "code" ? "Наведи камеру на код — распознается сам" : "Наведи банку по контуру и жми «Снять»";
+    const shoot = $("btn-camera-shoot");
+    shoot.hidden = mode === "code";
+    shoot.textContent = "● Снять";
+    if (mode === "code") startAutoScan();
+    else {
+      stopAutoScan();
+      setCameraStatus("");
+    }
   };
 
   const startCamera = async () => {
@@ -1864,6 +1959,8 @@
       const video = $("camera-video");
       video.srcObject = camera.stream;
       await video.play().catch(() => {});
+      const track = camera.stream.getVideoTracks()[0];
+      $("camera-torch").hidden = !track?.getCapabilities?.()?.torch;
       $("btn-camera-shoot").disabled = false;
     } catch {
       setCameraStatus("Нет доступа к камере — выбери фото из галереи.", true);
@@ -1875,6 +1972,10 @@
     setCameraMode("can");
     $("camera-code").value = "";
     setCameraStatus("");
+    camera.torch = false;
+    $("camera-torch").hidden = true;
+    $("camera-torch").classList.remove("is-active");
+    $("camera-torch").textContent = "🔦 Фонарик";
     $("camera-dialog").showModal();
     document.body.classList.add("is-dialog-open");
     await startCamera();
@@ -1907,28 +2008,21 @@
 
   $("btn-camera-shoot").onclick = async () => {
     if (camera.busy) return;
+    if (camera.mode === "code") {
+      $("btn-camera-shoot").hidden = true;
+      startAutoScan();
+      return;
+    }
     const video = $("camera-video");
     if (!video.videoWidth || !video.videoHeight) {
       setCameraStatus("Кадр ещё не готов — подожди секунду.");
       return;
     }
-    const frame =
-      camera.mode === "code"
-        ? document.querySelector(".camera-stencil__code")
-        : document.querySelector(".camera-stencil__can");
+    const frame = document.querySelector(".camera-stencil__can");
     camera.busy = true;
     $("btn-camera-shoot").disabled = true;
     try {
       const canvas = cropToStencil(frame);
-      if (camera.mode === "code") {
-        const code = await detectBarcode(canvas);
-        if (!code) {
-          setCameraStatus("Код не распознан — попробуй ближе и без бликов.", true);
-          return;
-        }
-        if (await lookupBarcode(code)) closeCamera();
-        return;
-      }
       setCameraStatus("📷 Обрабатываю фото…");
       const img = await loadImage(canvas.toDataURL("image/jpeg", 0.92));
       pending.original = shrinkOnly(img);
@@ -1997,6 +2091,16 @@
     if (code && (await lookupBarcode(code))) closeCamera();
   });
 
+  $("camera-torch").onclick = async () => {
+    const button = $("camera-torch");
+    button.disabled = true;
+    try {
+      await setCameraTorch(!camera.torch);
+    } finally {
+      button.disabled = false;
+    }
+  };
+
   document.querySelectorAll("[data-camera-mode]").forEach((button) => {
     button.addEventListener("click", () => setCameraMode(button.dataset.cameraMode));
   });
@@ -2007,6 +2111,7 @@
   });
   $("camera-dialog").addEventListener("close", () => {
     document.body.classList.remove("is-dialog-open");
+    stopAutoScan();
     stopCamera();
   });
   $("btn-camera").onclick = openCamera;
