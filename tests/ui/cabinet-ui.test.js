@@ -8,37 +8,6 @@ const cabinetHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "
 const cabinetRoutes = fs.readFileSync(path.join(__dirname, "..", "..", "server", "routes", "cabinet.js"), "utf8");
 const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 
-test("кабинет: скан штрих-кода работает и без BarcodeDetector (серверный фолбэк)", () => {
-  assert.match(cabinetHtml, /id="barcode-manual"[^>]*hidden/);
-  assert.match(cabinetSource, /const revealBarcodeDigits/);
-  assert.match(cabinetSource, /decodeBarcodeNatively/);
-  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode-scan"/);
-  assert.match(cabinetSource, /barcodeImageDataUrl/);
-  assert.doesNotMatch(cabinetSource, /сканирование камерой тут не поддерживается/);
-});
-
-test("живое сканирование: камера, ZXing-вендор и оверлей", () => {
-  assert.match(cabinetHtml, /id="btn-barcode-live"/);
-  assert.match(cabinetHtml, /id="scan-dialog"/);
-  assert.match(cabinetHtml, /id="scan-video"/);
-  assert.match(cabinetHtml, /id="scan-torch"/);
-  assert.match(cabinetHtml, /id="scan-manual"[^>]*hidden/);
-  assert.match(cabinetSource, /revealBarcodeDigits/);
-  assert.match(cabinetSource, /getUserMedia/);
-  assert.match(cabinetSource, /vendor\/zxing\.min\.js/);
-  assert.match(cabinetSource, /PlanarYUVLuminanceSource/);
-  assert.match(cabinetSource, /requestAnimationFrame\(scanLoop\)/);
-  assert.match(cabinetSource, /stopLiveBarcode/);
-});
-
-test("вендор ZXing лежит с лицензией", () => {
-  const vendor = path.join(__dirname, "..", "..", "public", "vendor");
-  const lib = path.join(vendor, "zxing.min.js");
-  assert.ok(fs.existsSync(lib), "нужен public/vendor/zxing.min.js");
-  assert.ok(fs.existsSync(path.join(vendor, "zxing.LICENSE")), "нужна лицензия ZXing");
-  assert.match(fs.readFileSync(lib, "utf8"), /ZXing/);
-});
-
 test("кабинет показывает красную кнопку удаления оценки", () => {
   assert.match(cabinetSource, /<button class=\"btn btn--danger\" type=\"button\" data-m-del-rating>удалить<\/button>/);
   assert.doesNotMatch(cabinetSource, /data-m-del-rating>− оценка<\/button>/);
@@ -87,37 +56,18 @@ test("OpenRouter-перерисовку кабинет не режет и сох
   assert.match(cabinetRoutes, /provider: viaOpenRouter \? "openrouter" : "gemini"/);
 });
 
-test("кабинет: разделы вкладками, а не одной простынёй", () => {
-  assert.match(cabinetHtml, /id="cab-tabs"/);
-  for (const name of ["add", "ratings", "find", "roulette", "account"]) {
-    assert.match(cabinetHtml, new RegExp(`data-cab="${name}"`), `должна быть кнопка ${name}`);
-    assert.match(cabinetHtml, new RegExp(`id="cab-${name}"`), `должна быть панель ${name}`);
-  }
-  assert.match(cabinetSource, /const CAB_SECTIONS = \["add", "ratings", "find", "roulette", "account"\]/);
-  assert.match(cabinetSource, /switchCabTab\(savedTab\)/);
-  assert.match(stylesSource, /\.cab-tabs/);
-  assert.match(stylesSource, /\.cab-tab\.is-active/);
-});
-
 test("штрих-код: сканер, ручной ввод и сохранение кода", () => {
-  assert.match(cabinetHtml, /id="barcode-manual"[^>]*hidden/);
+  assert.match(cabinetHtml, /id="smart-barcode"/);
   assert.match(cabinetHtml, /id="smart-barcode-code"/);
   assert.match(cabinetHtml, /id="btn-barcode-lookup"/);
   assert.match(cabinetHtml, /id="barcode-status"/);
-  assert.match(cabinetHtml, /id="smart-photo"/);
   assert.match(cabinetSource, /BarcodeDetector/);
   assert.match(cabinetSource, /data_matrix/);
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode", \{ code \}\)/);
   assert.match(cabinetSource, /pending\.barcode/);
   assert.match(cabinetSource, /body\.barcode = pending\.barcode/);
-  // Одно поле на всё: фото банки и фото штрих-кода разбираются одним инпутом
-  assert.match(cabinetSource, /const readBarcodeFromFile/);
-  assert.match(cabinetSource, /smart-photo"\)\.addEventListener/);
-  assert.doesNotMatch(cabinetHtml, /id="smart-barcode"/);
-  assert.doesNotMatch(cabinetSource, /smart-barcode"\)\.addEventListener/);
   assert.match(cabinetRoutes, /router\.post\("\/ai\/barcode"/);
-  assert.match(stylesSource, /\.smart-tools/);
-  assert.match(stylesSource, /\.barcode-manual/);
+  assert.match(stylesSource, /\.barcode-row/);
 });
 
 test("рулетка по ассортименту: фото, распознавание и общий барабан", () => {

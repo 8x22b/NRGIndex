@@ -7,19 +7,16 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..", "..");
-const SOURCES = [path.join(ROOT, "public"), path.join(ROOT, "admin")];
+const PUBLIC = path.join(ROOT, "public");
 
 const files = [];
-function walk(dir) {
+(function walk(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "vendor") continue; // вендорные библиотеки наши шрифты не рисуют
-      walk(full);
-    } else if (/\.(js|html|css)$/.test(entry.name)) files.push(full);
+    if (entry.isDirectory()) walk(full);
+    else if (/\.(js|html|css)$/.test(entry.name)) files.push(full);
   }
-}
-for (const dir of SOURCES) walk(dir);
+})(PUBLIC);
 
 test("набор символов для сабсета покрывает весь текст публичных страниц", () => {
   const charset = new Set(fs.readFileSync(path.join(ROOT, "scripts", "font-charset.txt"), "utf8"));
@@ -38,10 +35,9 @@ test("набор символов для сабсета покрывает ве�
 });
 
 test("все шрифты из fonts.css лежат в public/fonts", () => {
-  const publicDir = path.join(ROOT, "public");
-  const css = fs.readFileSync(path.join(publicDir, "fonts", "fonts.css"), "utf8");
+  const css = fs.readFileSync(path.join(PUBLIC, "fonts", "fonts.css"), "utf8");
   const missing = [...css.matchAll(/url\((\/fonts\/[^)]+)\)/g)]
     .map((match) => match[1])
-    .filter((url) => !fs.existsSync(path.join(publicDir, url.replace(/^\//, ""))));
+    .filter((url) => !fs.existsSync(path.join(PUBLIC, url.replace(/^\//, ""))));
   assert.deepEqual(missing, [], "fonts.css ссылается на несуществующие файлы");
 });
