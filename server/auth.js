@@ -44,6 +44,9 @@ const hashToken = (token) => crypto.createHash("sha256").update(token).digest("h
 function createAuth(db, config) {
   const ttlMs = config.sessionTtlDays * 24 * 60 * 60 * 1000;
   const idleDays = Number(config.sessionIdleDays) || 30;
+  // Куку переставляем при возврате пользователя: не чаще раза в сутки и не позже
+  // четверти TTL — так активная сессия не умирает от Max-Age куки.
+  const cookieRefreshMs = Math.min(24 * 60 * 60 * 1000, ttlMs / 4);
 
   // 'YYYY-MM-DD HH:MM:SS' из SQLite (UTC) → timestamp
   const parseDbDate = (value) => Date.parse(String(value || "").replace(" ", "T") + "Z") || 0;
@@ -56,7 +59,7 @@ function createAuth(db, config) {
     deleteUserSessions: db.prepare("DELETE FROM sessions WHERE user_id = ?"),
     findSession: db.prepare(`
       SELECT u.id, u.username, u.display_name, u.role, u.title, u.is_active,
-             u.must_change_password, u.initials, u.color, u.avatar_path, u.is_public, s.expires_at
+             u.must_change_password, u.initials, u.color, u.avatar_path, u.is_public, s.last_seen_at
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > datetime('now')
@@ -107,10 +110,11 @@ function createAuth(db, config) {
     const tokenHash = hashToken(token);
     const row = stmt.findSession.get(tokenHash, `-${idleDays} days`);
     if (!row || !row.is_active) return null;
-    // Скользящая сессия: активность продлевает запись в базе, а кука
-    // переставляется, когда от срока остаётся меньше половины.
+    const seenAt = parseDbDate(row.last_seen_at);
     stmt.touchSession.run(`+${config.sessionTtlDays} days`, tokenHash);
-    if (res && parseDbDate(row.expires_at) - Date.now() < ttlMs / 2) {
+    // Скользящая сессия: активность продлевает и БД-запись, и куку в браузере.
+    // Без перестановки куки браузер выкинул бы её через TTL после входа.
+    if (res && Date.now() - seenAt > cookieRefreshMs) {
       setSessionCookie(res, req, token);
     }
     return {

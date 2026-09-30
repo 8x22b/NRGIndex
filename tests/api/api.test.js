@@ -864,12 +864,13 @@ test("вход со второго устройства не выкидывае�
   editorCookie = second.cookie;
 });
 
-test("сессия продлевается активностью, кука переставляется надолго", async () => {
+test("сессия и кука продлеваются активностью, но не дёргаются на каждый запрос", async () => {
   await createUser(ctx.db, { username: "slide-user", password: "slide-pass-123" });
   const { cookie } = await login(ctx.base, "slide-user", "slide-pass-123");
+  // Эмулируем возврат пользователя спустя двое суток простоя.
   ctx.db
     .prepare(
-      "UPDATE sessions SET expires_at = datetime('now', '+2 hours') WHERE user_id = (SELECT id FROM users WHERE username = 'slide-user')",
+      "UPDATE sessions SET last_seen_at = datetime('now', '-2 days') WHERE user_id = (SELECT id FROM users WHERE username = 'slide-user')",
     )
     .run();
 
@@ -885,6 +886,12 @@ test("сессия продлевается активностью, кука п�
   const cookies = (me.setCookie || []).join("; ");
   assert.match(cookies, /nrg_session=/);
   assert.match(cookies, /Max-Age=\d+/i);
+
+  // Сразу следующий запрос куку не переставляет — Set-Cookie не сыпется на каждый чих.
+  const again = await request(ctx.base, "GET", "/api/auth/me", { cookie });
+  assert.equal(again.json.user.username, "slide-user");
+  const repeated = (again.setCookie || []).filter((c) => c.startsWith("nrg_session="));
+  assert.equal(repeated.length, 0);
 });
 
 test("смена пароля сбрасывает сессии со всех устройств", async () => {
