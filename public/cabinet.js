@@ -84,11 +84,37 @@
     $("cab-view").hidden = true;
   };
 
+  // Вкладки кабинета: вместо одной длинной простыни — разделы.
+  const CAB_SECTIONS = ["add", "ratings", "find", "roulette", "account"];
+  const switchCabTab = (name) => {
+    if (!CAB_SECTIONS.includes(name)) name = "add";
+    document.querySelectorAll("#cab-tabs [data-cab]").forEach((button) => {
+      button.classList.toggle("is-active", button.dataset.cab === name);
+    });
+    for (const section of CAB_SECTIONS) $(`cab-${section}`).hidden = section !== name;
+    try {
+      localStorage.setItem("cab-tab", name);
+    } catch {
+      /* приватный режим — не страшно */
+    }
+  };
+  $("cab-tabs").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cab]");
+    if (button) switchCabTab(button.dataset.cab);
+  });
+
   const enterCabinet = async () => {
     $("auth-view").hidden = true;
     $("password-view").hidden = true;
     $("cab-view").hidden = false;
     renderAvatars();
+    let savedTab = "add";
+    try {
+      savedTab = localStorage.getItem("cab-tab") || "add";
+    } catch {
+      /* приватный режим — не страшно */
+    }
+    switchCabTab(savedTab);
     $("me-name").textContent = state.me.displayName;
     $("me-role").textContent = state.me.title || state.me.role;
     if (state.me.role === "admin") $("admin-button").hidden = false;
@@ -1838,6 +1864,9 @@
     torchTrack: null,
     canvas: null,
     context: null,
+    startedAt: 0,
+    found: false,
+    manualTimer: 0,
   };
 
   const setScanStatus = (text, isError = false) => {
@@ -1861,6 +1890,10 @@
     scan.running = false;
     if (scan.raf) cancelAnimationFrame(scan.raf);
     scan.raf = 0;
+    clearTimeout(scan.manualTimer);
+    scan.manualTimer = 0;
+    const manual = $("scan-manual");
+    if (manual) manual.hidden = true;
     scan.stream?.getTracks().forEach((track) => track.stop());
     scan.stream = null;
     scan.torch = false;
@@ -1876,6 +1909,7 @@
   };
 
   const finishLiveScan = (code) => {
+    scan.found = true;
     stopLiveBarcode();
     navigator.vibrate?.(120);
     setBarcodeStatus("код найден ✓");
@@ -1957,7 +1991,7 @@
   const startLiveBarcode = async () => {
     if (scan.running) return;
     if (!navigator.mediaDevices?.getUserMedia) {
-      setBarcodeStatus("этот браузер не умеет включать камеру — сними фото или введи цифры", true);
+      revealBarcodeDigits("этот браузер не умеет включать камеру — введи цифры вручную");
       return;
     }
     setBarcodeStatus("включаю камеру…");
@@ -1967,11 +2001,10 @@
         audio: false,
       });
     } catch (error) {
-      setBarcodeStatus(
+      revealBarcodeDigits(
         error?.name === "NotAllowedError"
-          ? "нет доступа к камере — разреши его в настройках браузера"
-          : "камера не открылась — сними фото или введи цифры",
-        true,
+          ? "нет доступа к камере — разреши его в настройках браузера или введи цифры вручную"
+          : "камера не открылась — введи цифры вручную",
       );
       return;
     }
@@ -1981,6 +2014,14 @@
     await video.play().catch(() => {});
     $("scan-dialog").showModal();
     document.body.classList.add("is-dialog-open");
+
+    // Если за 5 секунд код не поймался — предлагаем ввести цифры.
+    scan.startedAt = Date.now();
+    scan.found = false;
+    clearTimeout(scan.manualTimer);
+    scan.manualTimer = setTimeout(() => {
+      if (scan.running && !scan.found) $("scan-manual").hidden = false;
+    }, 5000);
 
     const track = scan.stream.getVideoTracks()[0];
     scan.torchTrack = track?.getCapabilities?.().torch ? track : null;
@@ -2030,7 +2071,16 @@
 
   $("btn-barcode-live").onclick = () => startLiveBarcode();
   $("scan-close").onclick = () => stopLiveBarcode();
-  $("scan-dialog").addEventListener("close", () => stopLiveBarcode());
+  $("scan-dialog").addEventListener("close", () => {
+    // Закрыли, а код так и не поймался — показываем ручной ввод.
+    const failed = scan.startedAt && !scan.found && Date.now() - scan.startedAt > 3000;
+    stopLiveBarcode();
+    if (failed) revealBarcodeDigits("камерой не получилось — введи цифры с упаковки");
+  });
+  $("scan-manual").onclick = () => {
+    stopLiveBarcode();
+    revealBarcodeDigits("введи цифры с упаковки");
+  };
   $("scan-torch").onclick = async () => {
     if (!scan.torchTrack) return;
     scan.torch = !scan.torch;
@@ -2043,10 +2093,13 @@
   };
   window.addEventListener("pagehide", () => stopLiveBarcode());
 
-  $("btn-barcode-digits").onclick = () => {
+  // Запасной путь для пробития: показываем ввод цифр только когда основной
+  // инструмент (камера или фото) не сработал.
+  const revealBarcodeDigits = (message) => {
     const box = $("barcode-manual");
-    box.hidden = !box.hidden;
-    if (!box.hidden) $("smart-barcode-code").focus();
+    box.hidden = false;
+    if (message) setBarcodeStatus(message, true);
+    $("smart-barcode-code").focus();
   };
 
   $("btn-barcode-lookup").onclick = () => {

@@ -9,7 +9,8 @@ const cabinetRoutes = fs.readFileSync(path.join(__dirname, "..", "..", "server",
 const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 
 test("кабинет: скан штрих-кода работает и без BarcodeDetector (серверный фолбэк)", () => {
-  assert.match(cabinetHtml, /id="btn-barcode-digits"/);
+  assert.match(cabinetHtml, /id="barcode-manual"[^>]*hidden/);
+  assert.match(cabinetSource, /const revealBarcodeDigits/);
   assert.match(cabinetSource, /decodeBarcodeNatively/);
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode-scan"/);
   assert.match(cabinetSource, /barcodeImageDataUrl/);
@@ -21,6 +22,8 @@ test("живое сканирование: камера, ZXing-вендор и �
   assert.match(cabinetHtml, /id="scan-dialog"/);
   assert.match(cabinetHtml, /id="scan-video"/);
   assert.match(cabinetHtml, /id="scan-torch"/);
+  assert.match(cabinetHtml, /id="scan-manual"[^>]*hidden/);
+  assert.match(cabinetSource, /revealBarcodeDigits/);
   assert.match(cabinetSource, /getUserMedia/);
   assert.match(cabinetSource, /vendor\/zxing\.min\.js/);
   assert.match(cabinetSource, /PlanarYUVLuminanceSource/);
@@ -82,6 +85,18 @@ test("OpenRouter-перерисовку кабинет не режет и сох
   assert.match(cabinetSource, /прозрачный фон/);
   assert.match(cabinetRoutes, /redrawCanOnTransparent/);
   assert.match(cabinetRoutes, /provider: viaOpenRouter \? "openrouter" : "gemini"/);
+});
+
+test("кабинет: разделы вкладками, а не одной простынёй", () => {
+  assert.match(cabinetHtml, /id="cab-tabs"/);
+  for (const name of ["add", "ratings", "find", "roulette", "account"]) {
+    assert.match(cabinetHtml, new RegExp(`data-cab="${name}"`), `должна быть кнопка ${name}`);
+    assert.match(cabinetHtml, new RegExp(`id="cab-${name}"`), `должна быть панель ${name}`);
+  }
+  assert.match(cabinetSource, /const CAB_SECTIONS = \["add", "ratings", "find", "roulette", "account"\]/);
+  assert.match(cabinetSource, /switchCabTab\(savedTab\)/);
+  assert.match(stylesSource, /\.cab-tabs/);
+  assert.match(stylesSource, /\.cab-tab\.is-active/);
 });
 
 test("штрих-код: сканер, ручной ввод и сохранение кода", () => {
