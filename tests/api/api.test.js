@@ -911,6 +911,17 @@ test("API-ответы помечены no-store, страницы — нет", 
   assert.notEqual(page.headers.get("cache-control"), "no-store");
 });
 
+test("css/js кешируются 10 минут, страницы — без кеша", async () => {
+  for (const file of ["/cabinet.js", "/styles.css"]) {
+    const res = await fetch(ctx.base + file);
+    assert.equal(res.status, 200, file);
+    assert.equal(res.headers.get("cache-control"), "public, max-age=600", `${file}: ждём 10-минутный кеш`);
+    assert.ok(res.headers.get("etag"), `${file}: нужен ETag`);
+  }
+  const page = await fetch(`${ctx.base}/cabinet.html`);
+  assert.equal(page.headers.get("cache-control"), "no-cache");
+});
+
 test("спуф X-Forwarded-For не обходит лимит логина", async () => {
   for (let i = 0; i < 5; i++) {
     await request(ctx.base, "POST", "/api/auth/login", {
