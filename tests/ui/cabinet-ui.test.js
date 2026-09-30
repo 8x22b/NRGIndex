@@ -56,18 +56,34 @@ test("OpenRouter-перерисовку кабинет не режет и сох
   assert.match(cabinetRoutes, /provider: viaOpenRouter \? "openrouter" : "gemini"/);
 });
 
-test("штрих-код: сканер, ручной ввод и сохранение кода", () => {
-  assert.match(cabinetHtml, /id="smart-barcode"/);
-  assert.match(cabinetHtml, /id="smart-barcode-code"/);
-  assert.match(cabinetHtml, /id="btn-barcode-lookup"/);
-  assert.match(cabinetHtml, /id="barcode-status"/);
+test("камера: одна кнопка вместо фото, скана и поиска, режимы и ручной код", () => {
+  assert.match(cabinetHtml, /id="btn-camera"/);
+  assert.doesNotMatch(cabinetHtml, /id="smart-photo"/);
+  assert.doesNotMatch(cabinetHtml, /id="smart-barcode"/);
+  assert.doesNotMatch(cabinetHtml, /id="btn-barcode-lookup"/);
+  assert.match(cabinetHtml, /id="camera-dialog"/);
+  assert.match(cabinetHtml, /data-camera-mode="can"/);
+  assert.match(cabinetHtml, /data-camera-mode="code"/);
+  assert.match(cabinetHtml, /id="camera-code"/);
+  assert.match(cabinetHtml, /id="camera-file"/);
+  assert.match(cabinetSource, /getUserMedia/);
   assert.match(cabinetSource, /BarcodeDetector/);
   assert.match(cabinetSource, /data_matrix/);
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode", \{ code \}\)/);
   assert.match(cabinetSource, /pending\.barcode/);
   assert.match(cabinetSource, /body\.barcode = pending\.barcode/);
   assert.match(cabinetRoutes, /router\.post\("\/ai\/barcode"/);
-  assert.match(stylesSource, /\.barcode-row/);
+  assert.match(stylesSource, /\.camera-view/);
+  assert.match(stylesSource, /\.camera-stencil/);
+  assert.doesNotMatch(stylesSource, /\.barcode-row/);
+});
+
+test("кадр камеры обрезается по трафарету с учётом object-fit: cover", () => {
+  assert.match(cabinetSource, /camera-stencil__can/);
+  assert.match(cabinetSource, /camera-stencil__code/);
+  assert.match(cabinetSource, /getBoundingClientRect/);
+  assert.match(cabinetSource, /Math\.max\(view\.width \/ vw, view\.height \/ vh\)/);
+  assert.match(cabinetSource, /drawImage\(/);
 });
 
 test("рулетка по ассортименту: фото, распознавание и общий барабан", () => {
@@ -198,4 +214,42 @@ test("мои оценки: перерисовка не теряет текст, 
 test("перед сохранением сказано, что уйдут и текст, и фото", () => {
   assert.match(cabinetHtml, /id="parsed-save-note"/);
   assert.match(cabinetHtml, /тир, отзыв и фото/);
+});
+
+test("кабинет разделён на вкладки «Добавить» и «Моё»", () => {
+  assert.match(cabinetHtml, /data-cab-tab="add"/);
+  assert.match(cabinetHtml, /data-cab-tab="mine"/);
+  assert.match(cabinetHtml, /id="cab-panel-add"/);
+  assert.match(cabinetHtml, /id="cab-panel-mine"[^>]*hidden/);
+  assert.match(cabinetSource, /const switchCabTab = \(tab\) =>/);
+  assert.match(cabinetSource, /switchCabTab\("add"\)/);
+  assert.match(stylesSource, /\.cab-tabs \{/);
+});
+
+test("превью карточки правится вручную", () => {
+  for (const id of ["parsed-brand", "parsed-name", "parsed-flavor", "parsed-edition", "parsed-tier", "parsed-review"]) {
+    assert.match(cabinetHtml, new RegExp(`id="${id}"`));
+  }
+  assert.doesNotMatch(cabinetHtml, /id="m-brand"/);
+  assert.doesNotMatch(cabinetHtml, /id="btn-manual-save"/);
+  assert.doesNotMatch(cabinetSource, /const fillManual/);
+  assert.match(cabinetSource, /const readPreviewFields = \(\) =>/);
+  assert.match(cabinetSource, /const applyParsedToPreview = \(parsed\) =>/);
+  assert.match(cabinetSource, /Заполни поля в карточке и жми «В индекс ✓»/);
+});
+
+test("кнопка «Обработать» недоступна при пустом поле", () => {
+  assert.match(cabinetHtml, /id="btn-smart"[^>]*disabled/);
+  assert.match(cabinetHtml, /✦ Обработать/);
+  assert.match(cabinetSource, /const updateSmartButton = \(\) =>/);
+  assert.match(cabinetSource, /disabled = smartBusy \|\| !\$\("smart-input"\)\.value\.trim\(\)/);
+  assert.match(cabinetSource, /\$\("smart-input"\)\.addEventListener\("input", updateSmartButton\)/);
+  assert.match(cabinetSource, /const updateOpButton = \(\) =>/);
+  assert.match(cabinetSource, /disabled = !\$\("op-ai-text"\)\.value\.trim\(\)/);
+});
+
+test("статусы называют процесс: голос, фото, текст", () => {
+  assert.match(cabinetSource, /Обрабатываю голос/);
+  assert.match(cabinetSource, /Обрабатываю фото/);
+  assert.match(cabinetSource, /Обрабатываю текст/);
 });

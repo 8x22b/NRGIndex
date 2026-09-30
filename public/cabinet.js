@@ -104,6 +104,21 @@
     }
   };
 
+  /* ---------- вкладки кабинета ---------- */
+  const switchCabTab = (tab) => {
+    document.querySelectorAll("[data-cab-tab]").forEach((button) => {
+      const active = button.dataset.cabTab === tab;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    $("cab-panel-add").hidden = tab !== "add";
+    $("cab-panel-mine").hidden = tab !== "mine";
+  };
+
+  document.querySelectorAll("[data-cab-tab]").forEach((button) => {
+    button.addEventListener("click", () => switchCabTab(button.dataset.cabTab));
+  });
+
   // Аватар в кабинете: кроп с зумом и сдвигом делаем на клиенте, сервер всё равно
   // приводит к 256×256. Превью — и в карточке профиля, и в блоке «Аккаунт».
   const setAvatarNode = (node, user) => {
@@ -570,6 +585,7 @@
     $("opinion-editor").showModal();
     document.body.classList.add("is-dialog-open");
     autoGrow($("op-ai-text"), 160);
+    updateOpButton();
     autoGrow($("op-review"));
   };
 
@@ -587,6 +603,11 @@
     }
   };
 
+  const updateOpButton = () => {
+    $("op-ai-parse").disabled = !$("op-ai-text").value.trim();
+  };
+  $("op-ai-text").addEventListener("input", updateOpButton);
+
   // ИИ в редакторе отметки: свободный текст → тир и отзыв, всё остаётся правимым.
   const parseOpinionText = async () => {
     const text = $("op-ai-text").value.trim();
@@ -595,7 +616,7 @@
       return;
     }
     $("op-ai-parse").disabled = true;
-    setOpStatus("нейросеть разбирает…");
+    setOpStatus("✦ Обрабатываю текст…");
     try {
       const { parsed } = await api("POST", "api/cabinet/ai/parse", { text, drink: opinion.drink });
       if (TIERS.includes(parsed.tier)) $("op-tier").value = parsed.tier;
@@ -609,7 +630,7 @@
     } catch (error) {
       setOpStatus(error.message, true);
     } finally {
-      $("op-ai-parse").disabled = false;
+      updateOpButton();
     }
   };
   $("op-ai-parse").onclick = parseOpinionText;
@@ -627,7 +648,7 @@
     if (!file) return;
     const objectUrl = URL.createObjectURL(file);
     try {
-      setOpPhotoStatus("режу фон…");
+      setOpPhotoStatus("📷 Обрабатываю фото…");
       const img = await loadImage(objectUrl);
       opinion.original = shrinkOnly(img);
       opinion.originalUrl = null;
@@ -648,7 +669,7 @@
       return;
     }
     try {
-      setOpPhotoStatus("ищу фото…");
+      setOpPhotoStatus("Ищу фото…");
       $("op-photo-strip").hidden = false;
       $("op-photo-track").innerHTML = "";
       const params = new URLSearchParams({ q: query });
@@ -1314,10 +1335,19 @@
     const item = assortment.winner;
     if (!item) return;
     // Незнакомую банку предзаполняем в смарт-форму — проверить и сохранить.
-    fillManual({ brand: item.brand, name: item.name, flavor: item.flavor, edition: "", tier: "B", tierGuessed: true, review: "" });
-    document.querySelector("details.cabinet-ai").open = true;
-    $("smart-form").scrollIntoView({ behavior: "smooth", block: "start" });
-    $("smart-status").textContent = "Проверь поля и жми «Добавить вручную из этих полей»";
+    pending.parsed = {
+      brand: item.brand,
+      name: item.name,
+      flavor: item.flavor,
+      edition: "",
+      tier: "B",
+      tierGuessed: true,
+      review: "",
+    };
+    switchCabTab("add");
+    showPreview();
+    refreshPhotos();
+    $("smart-status").textContent = "Проверь поля и жми «В индекс ✓»";
   });
 
   $("assortment-clear").onclick = () => {
@@ -1335,30 +1365,38 @@
   /* ---------- smart flow ---------- */
   const TIERS = ["S", "A", "B", "C", "D"];
 
-  const fillManual = (parsed) => {
-    if (!parsed) return;
-    $("m-brand").value = parsed.brand || "";
-    $("m-name").value = parsed.name || "";
-    $("m-flavor").value = parsed.flavor || "";
-    $("m-edition").value = parsed.edition || "";
-    $("m-tier").value = TIERS.includes(parsed.tier) ? parsed.tier : "B";
-    $("m-review").value = parsed.review || "";
+  const updateTierNote = () => {
+    $("parsed-tier-note").textContent = pending.parsed?.tierGuessed
+      ? "тир не был назван — стоит B по умолчанию, поправь"
+      : "";
   };
+
+  const applyParsedToPreview = (parsed) => {
+    $("parsed-brand").value = parsed.brand || "";
+    $("parsed-name").value = parsed.name || "";
+    $("parsed-flavor").value = parsed.flavor || "";
+    $("parsed-edition").value = parsed.edition || "";
+    $("parsed-tier").innerHTML = state.summary.tiers
+      .map((tier) => `<option ${tier.id === parsed.tier ? "selected" : ""}>${esc(tier.id)}</option>`)
+      .join("");
+    $("parsed-review").value = parsed.review || "";
+    updateTierNote();
+  };
+
+  const readPreviewFields = () => ({
+    brand: $("parsed-brand").value.trim(),
+    name: $("parsed-name").value.trim(),
+    flavor: $("parsed-flavor").value.trim(),
+    edition: $("parsed-edition").value.trim(),
+    tier: $("parsed-tier").value,
+    review: $("parsed-review").value.trim(),
+  });
 
   const showPreview = () => {
     const parsed = pending.parsed;
     if (!parsed) return;
     $("smart-preview").hidden = false;
-    $("parsed-title").textContent = `${parsed.brand} — ${parsed.name}`;
-    $("parsed-sub").textContent = [parsed.flavor, parsed.edition].filter(Boolean).join(" · ");
-    $("parsed-review").textContent =
-      parsed.review || "Отзыва в сообщении не было — допиши вручную ниже, если хочешь.";
-    $("parsed-tier").textContent = parsed.tier;
-    $("parsed-tier").title = parsed.tierGuessed
-      ? "Тир не был назван — стоит B по умолчанию, поправь ниже"
-      : "Тир из твоего сообщения";
-    $("parsed-tier").style.opacity = parsed.tierGuessed ? ".55" : "";
-    fillManual(parsed);
+    applyParsedToPreview(parsed);
     updatePreviewImage();
     $("smart-preview").scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -1372,9 +1410,9 @@
   const STRIP_DEBOUNCE_MS = 700;
 
   const photoQuery = () => ({
-    brand: $("m-brand").value.trim(),
-    name: $("m-name").value.trim(),
-    flavor: $("m-flavor").value.trim(),
+    brand: $("parsed-brand").value.trim(),
+    name: $("parsed-name").value.trim(),
+    flavor: $("parsed-flavor").value.trim(),
   });
 
   const updatePreviewImage = () => {
@@ -1386,13 +1424,7 @@
       img.removeAttribute("src");
       img.hidden = true;
     }
-    if (!pending.parsed) return;
-    $("parsed-photo-note").textContent = [
-      pending.photoNote,
-      pending.parsed.tierGuessed ? "тир не назван — стоит B по умолчанию" : "",
-    ]
-      .filter(Boolean)
-      .join(" · ");
+    $("parsed-photo-note").textContent = pending.photoNote || "";
   };
 
   const setStripStatus = (text) => {
@@ -1514,7 +1546,7 @@
         }
         if (gen !== strip.gen) return;
         done++;
-        setStripStatus(`режу фон… ${done} / ${strip.items.length}`);
+        setStripStatus(`Обрабатываю фото… ${done} / ${strip.items.length}`);
         renderTile(index);
         // пока пользователь ничего не выбрал: берём первое готовое, а как появится
         // стоковое (белый/прозрачный фон) — переключаемся на него
@@ -1552,7 +1584,7 @@
     strip.selected = -1;
     $("photo-strip").hidden = false;
     $("photo-track").innerHTML = "";
-    setStripStatus("ищу фото…");
+    setStripStatus("Ищу фото…");
 
     const params = new URLSearchParams();
     for (const [field, value] of Object.entries(query)) if (value) params.set(field, value);
@@ -1579,7 +1611,7 @@
     }
     $("photo-track").innerHTML = "";
     $("photo-track").scrollLeft = 0;
-    setStripStatus(`режу фон… 0 / ${strip.items.length}`);
+    setStripStatus(`Обрабатываю фото… 0 / ${strip.items.length}`);
     processStrip(gen);
   };
 
@@ -1667,13 +1699,16 @@
     pending.photoNote = "";
     pending.barcode = "";
     clearStrip();
-    ["m-brand", "m-name", "m-flavor", "m-edition", "m-review", "m-image-url"].forEach((id) => {
+    ["parsed-brand", "parsed-name", "parsed-flavor", "parsed-edition", "parsed-review", "m-image-url"].forEach((id) => {
       $(id).value = "";
     });
+    $("parsed-tier").value = "";
+    $("parsed-tier-note").textContent = "";
     $("smart-preview").hidden = true;
     $("smart-input").value = "";
-    $("smart-barcode-code").value = "";
-    setBarcodeStatus("");
+    updateSmartButton();
+    $("camera-code").value = "";
+    setCameraStatus("");
     renderSimilar([]);
     clearVoice("smart");
   };
@@ -1709,9 +1744,9 @@
   const BARCODE_FORMATS = ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "data_matrix"];
   let barcodeBusy = false;
 
-  const setBarcodeStatus = (text, isError = false) => {
-    $("barcode-status").textContent = text;
-    $("barcode-status").style.color = isError ? "#ff8a8a" : "";
+  const setCameraStatus = (text, isError = false) => {
+    $("camera-status").textContent = text;
+    $("camera-status").style.color = isError ? "#ff8a8a" : "";
   };
 
   const barcodeNote = (data) => {
@@ -1727,15 +1762,15 @@
   };
 
   const lookupBarcode = async (code) => {
-    if (barcodeBusy || !code) return;
+    if (barcodeBusy || !code) return false;
     barcodeBusy = true;
-    setBarcodeStatus("ищу по коду…");
+    setCameraStatus("🔎 Ищу по коду…");
     try {
       const data = await api("POST", "api/cabinet/ai/barcode", { code });
       const product = data.product || data.inIndex;
       if (!product) {
-        setBarcodeStatus("по коду ничего не нашлось — заполни вручную", true);
-        return;
+        setCameraStatus("по коду ничего не нашлось — заполни вручную", true);
+        return false;
       }
       pending.barcode = data.code;
       pending.parsed = {
@@ -1768,61 +1803,213 @@
             updatePreviewImage();
           });
       }
-      setBarcodeStatus(barcodeNote(data));
+      $("smart-status").textContent = data.inIndex
+        ? "уже в индексе — жми «Оценить эту» выше"
+        : barcodeNote(data);
       showPreview();
       refreshPhotos();
-      if (data.inIndex) $("smart-status").textContent = "уже в индексе — жми «Оценить эту» выше";
+      return true;
     } catch (error) {
-      setBarcodeStatus(error.message, true);
+      setCameraStatus(error.message, true);
+      return false;
     } finally {
       barcodeBusy = false;
     }
   };
 
-  const scanBarcodeImage = async (file) => {
-    if (!("BarcodeDetector" in window)) {
-      setBarcodeStatus("сканирование камерой тут не поддерживается — введи цифры вручную", true);
+  const detectBarcode = async (source) => {
+    if (!("BarcodeDetector" in window)) return "";
+    const supported = await window.BarcodeDetector.getSupportedFormats();
+    const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
+    if (!formats.length) return "";
+    const detector = new window.BarcodeDetector({ formats });
+    const found = await detector.detect(source);
+    return found[0]?.rawValue || "";
+  };
+
+  /* ---------- камера ---------- */
+  const camera = { stream: null, mode: "can", busy: false };
+
+  const stopCamera = () => {
+    camera.stream?.getTracks().forEach((track) => track.stop());
+    camera.stream = null;
+    $("camera-video").srcObject = null;
+  };
+
+  const setCameraMode = (mode) => {
+    camera.mode = mode;
+    document.querySelectorAll("[data-camera-mode]").forEach((button) => {
+      const active = button.dataset.cameraMode === mode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    $("camera-stencil").dataset.mode = mode;
+    $("camera-manual").hidden = mode !== "code";
+    $("camera-hint").textContent =
+      mode === "code" ? "Наведи код в рамку и жми «Снять»" : "Наведи банку по контуру и жми «Снять»";
+    $("btn-camera-shoot").textContent = mode === "code" ? "● Сканировать" : "● Снять";
+  };
+
+  const startCamera = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("Камера тут недоступна — выбери фото из галереи.", true);
+      $("btn-camera-shoot").disabled = true;
       return;
     }
     try {
-      setBarcodeStatus("читаю код с фото…");
-      const supported = await window.BarcodeDetector.getSupportedFormats();
-      const formats = BARCODE_FORMATS.filter((format) => supported.includes(format));
-      if (!formats.length) {
-        setBarcodeStatus("этот браузер не умеет читать коды — введи вручную", true);
-        return;
-      }
-      const detector = new window.BarcodeDetector({ formats });
-      const bitmap = await createImageBitmap(file);
-      const found = await detector.detect(bitmap);
-      bitmap.close?.();
-      if (!found.length) {
-        setBarcodeStatus("код не распознан — попробуй ближе и без бликов", true);
-        return;
-      }
-      await lookupBarcode(found[0].rawValue);
-    } catch (error) {
-      setBarcodeStatus(error.message || "не удалось прочитать код", true);
+      camera.stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      const video = $("camera-video");
+      video.srcObject = camera.stream;
+      await video.play().catch(() => {});
+      $("btn-camera-shoot").disabled = false;
+    } catch {
+      setCameraStatus("Нет доступа к камере — выбери фото из галереи.", true);
+      $("btn-camera-shoot").disabled = true;
     }
   };
 
-  $("smart-barcode").addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (file) await scanBarcodeImage(file);
-  });
-
-  $("btn-barcode-lookup").onclick = () => {
-    const code = $("smart-barcode-code").value.trim();
-    if (code) lookupBarcode(code);
+  const openCamera = async () => {
+    setCameraMode("can");
+    $("camera-code").value = "";
+    setCameraStatus("");
+    $("camera-dialog").showModal();
+    document.body.classList.add("is-dialog-open");
+    await startCamera();
   };
 
-  $("smart-barcode-code").addEventListener("keydown", (event) => {
+  const closeCamera = () => {
+    if ($("camera-dialog").open) $("camera-dialog").close();
+  };
+
+  // CSS-трафарет → пиксели кадра: учитываем object-fit: cover и центрирование.
+  const cropToStencil = (frame) => {
+    const video = $("camera-video");
+    const view = $("camera-view").getBoundingClientRect();
+    const rect = frame.getBoundingClientRect();
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const scale = Math.max(view.width / vw, view.height / vh);
+    const offsetX = (view.width - vw * scale) / 2;
+    const offsetY = (view.height - vh * scale) / 2;
+    const sx = Math.min(Math.max(0, (rect.left - view.left - offsetX) / scale), vw);
+    const sy = Math.min(Math.max(0, (rect.top - view.top - offsetY) / scale), vh);
+    const sw = Math.min(vw - sx, rect.width / scale);
+    const sh = Math.min(vh - sy, rect.height / scale);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sw));
+    canvas.height = Math.max(1, Math.round(sh));
+    canvas.getContext("2d").drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  };
+
+  $("btn-camera-shoot").onclick = async () => {
+    if (camera.busy) return;
+    const video = $("camera-video");
+    if (!video.videoWidth || !video.videoHeight) {
+      setCameraStatus("Кадр ещё не готов — подожди секунду.");
+      return;
+    }
+    const frame =
+      camera.mode === "code"
+        ? document.querySelector(".camera-stencil__code")
+        : document.querySelector(".camera-stencil__can");
+    camera.busy = true;
+    $("btn-camera-shoot").disabled = true;
+    try {
+      const canvas = cropToStencil(frame);
+      if (camera.mode === "code") {
+        const code = await detectBarcode(canvas);
+        if (!code) {
+          setCameraStatus("Код не распознан — попробуй ближе и без бликов.", true);
+          return;
+        }
+        if (await lookupBarcode(code)) closeCamera();
+        return;
+      }
+      setCameraStatus("📷 Обрабатываю фото…");
+      const img = await loadImage(canvas.toDataURL("image/jpeg", 0.92));
+      pending.original = shrinkOnly(img);
+      const { dataUrl, cut } = prepareImage(img);
+      pending.image = dataUrl;
+      pending.userPhoto = true;
+      pending.photoSource = "camera";
+      pending.photoNote = cut ? "фото с камеры · фон вырезан ✓" : "фото с камеры ✓";
+      strip.selected = -1;
+      markSelected();
+      updatePreviewImage();
+      closeCamera();
+      $("smart-status").textContent = "Фото с камеры готово ✓";
+    } catch (error) {
+      setCameraStatus(error.message || "Не удалось обработать кадр.", true);
+    } finally {
+      camera.busy = false;
+      $("btn-camera-shoot").disabled = false;
+    }
+  };
+
+  $("camera-file").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (camera.mode === "code") {
+      try {
+        const bitmap = await createImageBitmap(file);
+        const code = await detectBarcode(bitmap);
+        bitmap.close?.();
+        if (!code) {
+          setCameraStatus("Код не распознан — попробуй ближе и без бликов.", true);
+          return;
+        }
+        if (await lookupBarcode(code)) closeCamera();
+      } catch (error) {
+        setCameraStatus(error.message || "не удалось прочитать код", true);
+      }
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await loadImage(objectUrl);
+      pending.original = shrinkOnly(img);
+      const { dataUrl, cut } = prepareImage(img);
+      pending.image = dataUrl;
+      pending.userPhoto = true;
+      pending.photoSource = "camera";
+      pending.photoNote = cut ? "фото из галереи · фон вырезан ✓" : "фото из галереи ✓";
+      strip.selected = -1;
+      markSelected();
+      updatePreviewImage();
+      closeCamera();
+      $("smart-status").textContent = "Фото приложено ✓";
+    } catch {
+      setCameraStatus("Не смог прочитать файл.", true);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  });
+
+  $("camera-code").addEventListener("keydown", async (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    const code = $("smart-barcode-code").value.trim();
-    if (code) lookupBarcode(code);
+    const code = $("camera-code").value.trim();
+    if (code && (await lookupBarcode(code))) closeCamera();
   });
+
+  document.querySelectorAll("[data-camera-mode]").forEach((button) => {
+    button.addEventListener("click", () => setCameraMode(button.dataset.cameraMode));
+  });
+
+  $("camera-close").onclick = closeCamera;
+  $("camera-dialog").addEventListener("click", (event) => {
+    if (event.target === $("camera-dialog")) closeCamera();
+  });
+  $("camera-dialog").addEventListener("close", () => {
+    document.body.classList.remove("is-dialog-open");
+    stopCamera();
+  });
+  $("btn-camera").onclick = openCamera;
 
   // Разбор ИИ не сохраняем молча: открываем редактор с готовым тиром и отзывом —
   // можно поправить текст, приложить фото и только потом опубликовать.
@@ -1846,16 +2033,23 @@
     $("btn-confirm").disabled = !event.target.checked;
   });
 
+  let smartBusy = false;
+  const updateSmartButton = () => {
+    $("btn-smart").disabled = smartBusy || !$("smart-input").value.trim();
+  };
+  $("smart-input").addEventListener("input", updateSmartButton);
+
   const submitSmart = async (event) => {
     event.preventDefault();
+    if (smartBusy) return;
     const text = $("smart-input").value.trim();
     if (!text) {
       $("smart-status").textContent = "Напиши хоть пару слов или надиктуй войсом.";
       return;
     }
-    if ($("btn-smart").disabled) return;
-    $("smart-status").textContent = "Нейросеть разбирает…";
-    $("btn-smart").disabled = true;
+    smartBusy = true;
+    updateSmartButton();
+    $("smart-status").textContent = "✦ Обрабатываю текст…";
     try {
       const { parsed, similar } = await api("POST", "api/cabinet/ai/parse", { text });
       pending.parsed = parsed;
@@ -1864,16 +2058,19 @@
         pending.image = null;
         pending.original = null;
         pending.photoSource = "auto";
-        pending.photoNote = "ищу фото…";
+        pending.photoNote = "Ищу фото…";
       }
       showPreview();
       $("smart-status").textContent = "";
       refreshPhotos();
     } catch (error) {
-      $("smart-status").textContent = `${error.message}. Заполни вручную ниже.`;
-      document.querySelector("details.cabinet-ai").open = true;
+      pending.parsed = { brand: "", name: "", flavor: "", edition: "", tier: "B", tierGuessed: true, review: "" };
+      renderSimilar([]);
+      showPreview();
+      $("smart-status").textContent = `${error.message}. Заполни поля в карточке и жми «В индекс ✓».`;
     } finally {
-      $("btn-smart").disabled = false;
+      smartBusy = false;
+      updateSmartButton();
     }
   };
 
@@ -1884,33 +2081,18 @@
     }
   });
 
-  const submitManual = async () => {
-    const parsed = {
-      brand: $("m-brand").value.trim(),
-      name: $("m-name").value.trim(),
-      flavor: $("m-flavor").value.trim(),
-      edition: $("m-edition").value.trim(),
-      tier: $("m-tier").value,
-      review: $("m-review").value.trim(),
-    };
-    if (!parsed.brand || !parsed.name || !parsed.flavor) {
-      $("smart-status").textContent = "Вручную нужны хотя бы бренд, название и вкус.";
-      return;
-    }
-    try {
-      await saveDrink(parsed);
-    } catch (error) {
-      $("smart-status").textContent = error.message;
-    }
-  };
-
   $("smart-form").addEventListener("submit", submitSmart);
   $("btn-confirm").onclick = async () => {
     if (!pending.parsed || $("btn-confirm").disabled) return;
+    const parsed = readPreviewFields();
+    if (!parsed.brand || !parsed.name) {
+      $("smart-status").textContent = "Нужны хотя бы бренд и название.";
+      return;
+    }
     $("btn-confirm").disabled = true;
     $("smart-status").textContent = "Сохраняю…";
     try {
-      await saveDrink(pending.parsed);
+      await saveDrink(parsed);
     } catch (error) {
       $("smart-status").textContent = error.message;
     } finally {
@@ -1918,62 +2100,23 @@
     }
   };
   $("btn-retry-photo").onclick = retryPhoto;
-  $("btn-manual-save").onclick = submitManual;
 
   for (const [id, field] of [
-    ["m-brand", "brand"],
-    ["m-name", "name"],
-    ["m-flavor", "flavor"],
-    ["m-edition", "edition"],
-    ["m-tier", "tier"],
-    ["m-review", "review"],
+    ["parsed-brand", "brand"],
+    ["parsed-name", "name"],
+    ["parsed-flavor", "flavor"],
+    ["parsed-edition", "edition"],
+    ["parsed-tier", "tier"],
+    ["parsed-review", "review"],
   ]) {
     $(id).addEventListener("input", (event) => {
-      if (pending.parsed) {
-        pending.parsed[field] = event.target.value;
-        if (field === "tier") {
-          pending.parsed.tierGuessed = false;
-          $("parsed-tier").textContent = event.target.value;
-          $("parsed-tier").style.opacity = "";
-          $("parsed-tier").title = "Тир выбран вручную";
-          updatePreviewImage();
-        }
-        if (field === "review") {
-          $("parsed-review").textContent = event.target.value || "Отзыва нет.";
-        }
-        $("parsed-title").textContent = `${pending.parsed.brand} — ${pending.parsed.name}`;
-        $("parsed-sub").textContent = [pending.parsed.flavor, pending.parsed.edition]
-          .filter(Boolean)
-          .join(" · ");
-      }
+      if (!pending.parsed) return;
+      pending.parsed[field] = event.target.value;
+      if (field === "tier") pending.parsed.tierGuessed = false;
+      updateTierNote();
       if (["brand", "name", "flavor"].includes(field)) schedulePhotos();
     });
   }
-
-  $("smart-photo").addEventListener("change", async (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    $("smart-status").textContent = "Режу фон…";
-    const objectUrl = URL.createObjectURL(file);
-    try {
-      const img = await loadImage(objectUrl);
-      pending.original = shrinkOnly(img);
-      const { dataUrl, cut } = prepareImage(img);
-      pending.image = dataUrl;
-      pending.userPhoto = true;
-      pending.photoSource = "user";
-      pending.photoNote = cut ? "твоё фото · фон вырезан ✓" : "твоё фото ✓";
-      strip.selected = -1;
-      markSelected();
-      $("smart-status").textContent = "Фото приложено ✓";
-      updatePreviewImage();
-    } catch {
-      $("smart-status").textContent = "Не смог прочитать файл.";
-    } finally {
-      URL.revokeObjectURL(objectUrl);
-      event.target.value = "";
-    }
-  });
 
   $("btn-manual-url").onclick = async () => {
     const url = $("m-image-url").value.trim();
@@ -2035,8 +2178,8 @@
       retry: "btn-voice-retry",
       clear: "btn-voice-clear",
       input: "smart-input",
-      label: "● Войс вместо текста",
-      done: "Распознано ✓ Проверь текст и жми «Распознать и добавить».",
+      label: "🎙 Голос",
+      done: "Голос распознан ✓ Проверь текст и жми «Обработать».",
     },
     opinion: {
       button: "op-record",
@@ -2047,8 +2190,8 @@
       retry: "op-voice-retry",
       clear: "op-voice-clear",
       input: "op-ai-text",
-      label: "● Голос",
-      done: "Распознано ✓ Проверь текст и жми «Разобрать».",
+      label: "🎙 Голос",
+      done: "Голос распознан ✓ Проверь текст и жми «Разобрать».",
     },
   };
   let voiceTarget = "smart";
@@ -2142,7 +2285,7 @@
     voice.busy = true;
     $(ui.button).disabled = true;
     $(ui.retry).hidden = true;
-    status.textContent = "Распознаю голос…";
+    status.textContent = "🎙 Обрабатываю голос…";
     try {
       const audio = await blobToBase64(voice.blob);
       const { text } = await api("POST", "api/cabinet/ai/transcribe", {
@@ -2153,6 +2296,7 @@
       area.value = (area.value.trim() ? `${area.value.trim()} ` : "") + text;
       status.textContent = ui.done;
       autoGrow(area);
+      voiceTarget === "smart" ? updateSmartButton() : updateOpButton();
       area.focus();
     } catch (error) {
       console.error("[nrgindex] распознавание не удалось:", error);
