@@ -513,7 +513,7 @@
     marqueeTrack.dataset.original = original;
     marqueeTrack.innerHTML = original;
     let copies = 1;
-    while (marqueeTrack.scrollWidth < window.innerWidth * 2 && copies < 10) {
+    while (marqueeTrack.scrollWidth < window.innerWidth * 2 && copies < 20) {
       marqueeTrack.innerHTML += original;
       copies += 1;
     }
@@ -524,6 +524,9 @@
     marqueeResizeTimer = window.setTimeout(setupMarquee, 250);
   });
   setupMarquee();
+
+  // Шрифты догружаются после первого замера — иначе на конце трека остаётся пустота.
+  if (document.fonts?.ready) document.fonts.ready.then(setupMarquee);
 
   // Рулетка «Что выпить сегодня?»: лента банок крутится и тормозит на случайной.
   const reel = document.querySelector("#roulette-reel");
