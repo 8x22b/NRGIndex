@@ -87,3 +87,38 @@ test("lookupChestnyZnak: GTIN из ответа, отказ и ошибка се
     null,
   );
 });
+
+// Заводских энкодеров в zxing-js нет, поэтому рисуем код сами (tests/helpers/ean13.js).
+test("ean13-хелпер: контрольная цифра по спецификации", () => {
+  const { checkDigit } = require("../helpers/ean13");
+  assert.equal(checkDigit("468003691262"), "9");
+});
+
+test("decodeBarcodeImage: читает фото в поворотах, инверсии и смазанное", async () => {
+  const sharp = require("sharp");
+  const { ean13Png } = require("../helpers/ean13");
+  const { decodeBarcodeImage } = require("../../server/lib/barcode");
+
+  const png = await ean13Png("468003691262");
+  const variants = [
+    ["прямо", png],
+    ["вверх ногами", await sharp(png).rotate(180).toBuffer()],
+    ["снято боком", await sharp(png).rotate(90).toBuffer()],
+    ["снято боком 270", await sharp(png).rotate(270).toBuffer()],
+    ["инверсия", await sharp(png).negate().toBuffer()],
+    ["смазанное фото", await sharp(png).blur(1.1).jpeg({ quality: 60 }).toBuffer()],
+    ["тёмное фото", await sharp(png).linear(0.6, -40).toBuffer()],
+  ];
+  for (const [label, buffer] of variants) {
+    const found = await decodeBarcodeImage(buffer);
+    assert.equal(found?.code, "4680036912629", `${label}: код должен читаться`);
+    assert.equal(found?.format, "ean_13");
+  }
+
+  const blank = await sharp({
+    create: { width: 800, height: 240, channels: 3, background: { r: 255, g: 255, b: 255 } },
+  })
+    .png()
+    .toBuffer();
+  assert.equal(await decodeBarcodeImage(blank), null, "пустой кадр ничего не выдумывает");
+});

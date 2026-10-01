@@ -1,3 +1,12 @@
+const sharp = require("sharp");
+const {
+  BarcodeFormat,
+  BinaryBitmap,
+  DecodeHintType,
+  HybridBinarizer,
+  MultiFormatReader,
+  PlanarYUVLuminanceSource,
+} = require("@zxing/library");
 const { badRequest } = require("./errors");
 
 const OFF_BASE = "https://world.openfoodfacts.org/api/v2/product";
@@ -114,6 +123,73 @@ async function lookupChestnyZnak(rawCode, { fetchImpl = fetch } = {}) {
   }
 }
 
+// Читаем код с фото сами: обычный кадр, контрастный и инвертированный, каждый —
+// в четырёх поворотах. Так переживают блики, тени и съёмку «вверх ногами» —
+// то, на чём спотыкается единственная попытка камерного API.
+const DECODE_FORMATS = [
+  BarcodeFormat.EAN_13,
+  BarcodeFormat.EAN_8,
+  BarcodeFormat.UPC_A,
+  BarcodeFormat.UPC_E,
+  BarcodeFormat.CODE_128,
+  BarcodeFormat.DATA_MATRIX,
+];
+const DECODE_MAX_SIDE = 1600;
+
+function decodePrepared(raw, info, hints) {
+  const source = new PlanarYUVLuminanceSource(
+    Uint8ClampedArray.from(raw),
+    info.width,
+    info.height,
+    0,
+    0,
+    info.width,
+    info.height,
+    false,
+  );
+  const reader = new MultiFormatReader();
+  try {
+    reader.setHints(hints);
+    const result = reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
+    return {
+      code: String(result.getText() || "").trim(),
+      format: String(BarcodeFormat[result.getBarcodeFormat()] || "").toLowerCase(),
+    };
+  } catch {
+    return null;
+  } finally {
+    reader.reset();
+  }
+}
+
+async function decodeBarcodeImage(buffer, { maxSide = DECODE_MAX_SIDE } = {}) {
+  // Кадр держим в PNG: повороты raw-буфера sharp делает некорректно.
+  const prepared = await sharp(buffer, { failOn: "error" })
+    .rotate()
+    .resize({ width: maxSide, height: maxSide, fit: "inside", withoutEnlargement: true })
+    .png()
+    .toBuffer();
+
+  const hints = new Map();
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, DECODE_FORMATS);
+  hints.set(DecodeHintType.TRY_HARDER, true);
+
+  for (const rotation of [0, 180, 90, 270]) {
+    const frame = rotation ? await sharp(prepared).rotate(rotation).png().toBuffer() : prepared;
+    const base = () => sharp(frame).grayscale().normalise();
+    const variants = [
+      await base().raw().toBuffer({ resolveWithObject: true }),
+      await base().linear(1.6, -40).sharpen().raw().toBuffer({ resolveWithObject: true }),
+      await base().negate().raw().toBuffer({ resolveWithObject: true }),
+    ];
+    for (const variant of variants) {
+      const found = decodePrepared(variant.data, variant.info, hints);
+      if (found?.code) return found;
+    }
+  }
+  return null;
+}
+
 module.exports = {
   validGtin,
   normalizeGtin,
@@ -122,4 +198,5 @@ module.exports = {
   barcodeField,
   lookupOpenFoodFacts,
   lookupChestnyZnak,
+  decodeBarcodeImage,
 };

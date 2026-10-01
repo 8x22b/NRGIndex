@@ -258,10 +258,29 @@ test("режим «Код» сканирует автоматически и б�
   assert.doesNotMatch(stylesSource, /\.camera-stencil__code/);
   assert.match(cabinetSource, /const startAutoScan = async \(\) =>/);
   assert.match(cabinetSource, /const stopAutoScan = \(\) =>/);
-  assert.match(cabinetSource, /detector\.detect\(video\)/);
+  assert.match(cabinetSource, /const grabScanFrame = \(maxSide = 1280\)/);
+  assert.match(cabinetSource, /detector\.detect\(canvas\)/);
+  assert.match(cabinetSource, /zxingDecode\(canvas\)/);
   assert.match(cabinetSource, /startAutoScan\(\)/);
   assert.match(cabinetSource, /stopAutoScan\(\)/);
   assert.match(stylesSource, /\.camera-stencil\[data-mode="code"\] \.camera-stencil__can \{ display: none; \}/);
+});
+
+test("ZXing из vendor — фолбэк для браузеров без BarcodeDetector", () => {
+  const vendor = path.join(__dirname, "..", "..", "public", "vendor");
+  const lib = path.join(vendor, "zxing.min.js");
+  assert.ok(fs.existsSync(lib), "нужен public/vendor/zxing.min.js");
+  assert.ok(fs.existsSync(path.join(vendor, "zxing.LICENSE")), "нужна лицензия ZXing");
+  assert.match(fs.readFileSync(lib, "utf8"), /ZXing/);
+  assert.match(cabinetSource, /vendor\/zxing\.min\.js/);
+  assert.match(cabinetSource, /ensureZXingReader/);
+  assert.match(cabinetSource, /PlanarYUVLuminanceSource/);
+});
+
+test("фото с кодом уходит на серверный разбор, если клиент не осилил", () => {
+  assert.match(cabinetSource, /const barcodeImageDataUrl = async \(file, maxSide = 1600\)/);
+  assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode-scan", \{ imageDataUrl \}\)/);
+  assert.match(cabinetRoutes, /router\.post\("\/ai\/barcode-scan"/);
 });
 
 test("форма входа не мелькает, пока идёт проверка сессии", () => {
