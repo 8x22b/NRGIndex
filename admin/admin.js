@@ -135,6 +135,7 @@
                 <button class="btn btn--ghost" type="button" data-edit="${drink.id}">Править</button>
                 <button class="btn btn--ghost" type="button" data-toggle="${drink.id}">${drink.published ? "Скрыть" : "Опубликовать"}</button>
                 ${String(drink.image || "").startsWith("/uploads/") ? `<button class="btn btn--ghost" type="button" data-reprocess="${drink.id}">Переобработать</button>` : ""}
+                <button class="btn btn--ghost" type="button" data-merge="${drink.id}">Объединить</button>
                 <button class="btn btn--danger" type="button" data-delete="${drink.id}">Удалить</button>
               </td>
             </tr>`;
@@ -200,6 +201,9 @@
           status("global-status", error.message, true);
         }
       };
+    });
+    container.querySelectorAll("[data-merge]").forEach((button) => {
+      button.onclick = () => openMergeDialog(state.data.drinks.find((item) => item.id === Number(button.dataset.merge)));
     });
     container.querySelectorAll("[data-raters]").forEach((button) => {
       button.onclick = () => openRaters(state.data.drinks.find((item) => item.id === Number(button.dataset.raters)));
@@ -267,6 +271,138 @@
     ratersDialog.showModal();
     ratersDialog.querySelector(".admin-raters__list").scrollTop = 0;
     ratersDialog.querySelector("[data-close]").focus();
+  };
+
+  let mergeDialog = null;
+  let mergeSource = null;
+
+  const renderMergeList = () => {
+    if (!mergeDialog || !mergeSource) return;
+    const query = mergeDialog.querySelector("#merge-search").value.trim().toLowerCase();
+    const items = state.data.drinks
+      .filter((item) => item.id !== mergeSource.id)
+      .filter(
+        (item) =>
+          !query || `${item.brand} ${item.name} ${item.flavor} ${item.edition}`.toLowerCase().includes(query),
+      );
+    const list = mergeDialog.querySelector("#merge-list");
+    const submit = mergeDialog.querySelector("#merge-submit");
+    submit.disabled = true;
+    list.innerHTML = items.length
+      ? items
+          .map((item) => {
+            const votes = Object.keys(item.ratings || {}).length;
+            return `
+          <li class="admin-merge__row">
+            <label>
+              <input type="radio" name="merge-target" value="${item.id}">
+              <span class="admin-merge__name">
+                <b>${esc(item.name)}</b>
+                <small>${esc(item.brand)}${item.flavor ? ` · ${esc(item.flavor)}` : ""}${item.published ? "" : " · скрыт"}</small>
+              </span>
+              <span class="admin-merge__votes">${votes} ${wordForm(votes, ["оценка", "оценки", "оценок"])}</span>
+            </label>
+          </li>`;
+          })
+          .join("")
+      : `<li class="admin-merge__empty">Ничего не найдено — измени запрос.</li>`;
+    list.querySelectorAll('input[name="merge-target"]').forEach((input) => {
+      input.onchange = () => {
+        submit.disabled = false;
+        const target = state.data.drinks.find((item) => item.id === Number(input.value));
+        if (target) {
+          mergeDialog.querySelector("#merge-note").textContent =
+            `Дубль исчезнет: «${mergeSource.name}» → «${target.name}»`;
+        }
+      };
+    });
+  };
+
+  const submitMerge = async () => {
+    if (!mergeDialog || !mergeSource) return;
+    const selected = mergeDialog.querySelector('input[name="merge-target"]:checked');
+    if (!selected) return;
+    const source = mergeSource;
+    const target = state.data.drinks.find((item) => item.id === Number(selected.value));
+    if (!target) return;
+    const votes = Object.keys(source.ratings || {}).length;
+    const ok = await window.nrgConfirm({
+      title: "Объединить напитки?",
+      message: `«${source.brand} ${source.name}» исчезнет, а его оценки и отзывы перейдут в «${target.brand} ${target.name}».`,
+      details: [
+        votes ? `Перенесётся оценок: ${votes}` : "У дубля нет оценок",
+        "Связи «похожих» и пустые поля тоже переедут",
+        state.me.role === "admin" ? "Откатить можно в «Журнале»" : "",
+      ],
+      confirmText: "Объединить",
+    });
+    if (!ok) return;
+    try {
+      const result = await api("POST", `api/admin/drinks/${source.id}/merge`, { targetId: target.id });
+      mergeDialog.close();
+      await refresh();
+      const moved = result.movedRatings ? `, перенесено оценок: ${result.movedRatings}` : "";
+      status("global-status", `«${source.name}» объединён с «${target.name}»${moved}`);
+    } catch (error) {
+      status("global-status", error.message, true);
+    }
+  };
+
+  const openMergeDialog = (source) => {
+    if (!source) return;
+    if (state.data.drinks.length < 2) {
+      status("global-status", "Для объединения нужен ещё хотя бы один напиток", true);
+      return;
+    }
+    mergeSource = source;
+    if (!mergeDialog) {
+      mergeDialog = document.createElement("dialog");
+      mergeDialog.className = "admin-raters admin-merge";
+      mergeDialog.setAttribute("aria-labelledby", "merge-title");
+      mergeDialog.innerHTML = `
+        <div class="admin-raters__body">
+          <header class="admin-raters__head">
+            <div>
+              <p class="eyebrow">Склейка дублей</p>
+              <h2 id="merge-title">Объединить напиток</h2>
+            </div>
+            <button class="admin-raters__close" type="button" data-close aria-label="Закрыть">×</button>
+          </header>
+          <div class="admin-raters__drink"></div>
+          <p class="admin-raters__summary" id="merge-summary"></p>
+          <label class="admin-merge__search">Куда перенести
+            <input id="merge-search" type="search" placeholder="поиск: бренд, название, вкус…" autocomplete="off">
+          </label>
+          <ul class="admin-raters__list admin-merge__list" id="merge-list"></ul>
+          <footer class="admin-raters__foot">
+            <span id="merge-note">Дубль исчезнет: оценки, отзывы и связи перейдут в выбранный напиток.</span>
+            <div class="admin-actions">
+              <button class="btn" type="button" id="merge-submit" disabled>Объединить</button>
+              <button class="btn btn--ghost" type="button" data-close>Отмена</button>
+            </div>
+          </footer>
+        </div>`;
+      mergeDialog.addEventListener("click", (event) => {
+        if (event.target === mergeDialog) mergeDialog.close();
+      });
+      mergeDialog.querySelectorAll("[data-close]").forEach((button) => {
+        button.onclick = () => mergeDialog.close();
+      });
+      mergeDialog.querySelector("#merge-search").oninput = renderMergeList;
+      mergeDialog.querySelector("#merge-submit").onclick = submitMerge;
+      document.body.append(mergeDialog);
+    }
+    const votes = Object.keys(source.ratings || {}).length;
+    mergeDialog.querySelector(".admin-raters__drink").innerHTML = `
+      ${source.image ? `<img src="${esc(source.image)}" alt="">` : ""}
+      <div><span>${esc(source.brand)}</span><h3>${esc(source.name)}</h3><p>${esc([source.flavor, source.edition].filter(Boolean).join(" · "))}</p></div>`;
+    mergeDialog.querySelector("#merge-summary").textContent = `Дубль · оценок: ${votes}`;
+    mergeDialog.querySelector("#merge-search").value = "";
+    mergeDialog.querySelector("#merge-note").textContent =
+      "Дубль исчезнет: оценки, отзывы и связи перейдут в выбранный напиток.";
+    renderMergeList();
+    mergeDialog.showModal();
+    mergeDialog.querySelector("#merge-search").focus();
   };
 
   const openDrinkForm = (id) => {

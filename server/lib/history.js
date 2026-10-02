@@ -9,6 +9,10 @@ const DRINK_COLS = [
   "flavor",
   "edition",
   "image_path",
+  "image_width",
+  "image_height",
+  "image_srcset",
+  "barcode",
   "source_label",
   "accent_a",
   "accent_b",
@@ -176,6 +180,17 @@ function recordDrink(db, actor, action, before, after) {
   });
 }
 
+// Склейка дублей: сохраняем полные снимки обоих напитков, чтобы откат вернул
+// и удалённый дубль с его оценками/связями, и поля оставшегося напитка.
+function recordMerge(db, actor, { source, target, details }) {
+  const back = details.filter(Boolean);
+  return writeAudit(db, actor, "admin.drink.merge", "drink", source.row.slug, back.join("\n"), {
+    summary: `Объединил напиток ${drinkLabel(source.row)} в ${drinkLabel(target.row)}`,
+    targetKey: `drink:${target.row.id}`,
+    undoData: { kind: "drink.merge", source, target },
+  });
+}
+
 function recordRating(db, actor, action, { drink, user, before, after }) {
   const who = actor?.id === user.id ? "свою оценку" : `оценку ${userLabel(user)}`;
   const target = drinkLabel(drink);
@@ -339,6 +354,49 @@ function applyUndo(db, data, { actor, auth }) {
       }
       const lost = restoreRatings(db, ratings);
       if (lost) notes.push(`не восстановлено оценок: ${lost} (нет пользователя или тира)`);
+      break;
+    }
+    case "drink.merge": {
+      const { source, target } = data;
+      if (!db.prepare("SELECT 1 FROM drinks WHERE id = ?").get(target.row.id)) throw conflict("Напиток уже удалён");
+      // Оценки: убираем пришедшие из дубля и возвращаем прежние версии оставшегося напитка.
+      const beforeUsers = new Set((target.ratings || []).map((r) => r.user_id));
+      for (const r of source.ratings || []) {
+        if (!beforeUsers.has(r.user_id)) {
+          db.prepare("DELETE FROM ratings WHERE drink_id = ? AND user_id = ?").run(target.row.id, r.user_id);
+        }
+      }
+      const upsert = db.prepare(
+        `INSERT INTO ratings (drink_id, user_id, tier_id, review, order_index, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(drink_id, user_id) DO UPDATE SET tier_id = excluded.tier_id, review = excluded.review,
+           order_index = excluded.order_index, created_at = excluded.created_at, updated_at = excluded.updated_at`,
+      );
+      for (const r of target.ratings || []) {
+        upsert.run(target.row.id, r.user_id, r.tier_id, r.review, r.order_index, r.created_at, r.updated_at);
+      }
+      // Поля оставшегося напитка — как было до склейки.
+      const cols = DRINK_COLS.filter((c) => !["slug", "created_by", "created_at"].includes(c));
+      db.prepare(`UPDATE drinks SET ${cols.map((c) => `${c} = ?`).join(", ")} WHERE id = ?`).run(
+        ...cols.map((c) => target.row[c]),
+        target.row.id,
+      );
+      // Возвращаем удалённый дубль с его id/slug.
+      if (db.prepare("SELECT 1 FROM drinks WHERE id = ? OR slug = ?").get(source.row.id, source.row.slug)) {
+        throw conflict("Напиток с таким id или slug уже существует");
+      }
+      const creatorOk = source.row.created_by && db.prepare("SELECT 1 FROM users WHERE id = ?").get(source.row.created_by);
+      insertRow(db, "drinks", { ...source.row, created_by: creatorOk ? source.row.created_by : null });
+      // Связи: у оставшегося снимаем всё и восстанавливаем снимок; дублю возвращаем его рёбра.
+      db.prepare("DELETE FROM drink_relations WHERE drink_id = ? OR related_id = ?").run(target.row.id, target.row.id);
+      const insert = db.prepare("INSERT OR IGNORE INTO drink_relations (drink_id, related_id) VALUES (?, ?)");
+      const drinkOk = db.prepare("SELECT 1 FROM drinks WHERE id = ?");
+      for (const id of target.related || []) if (id !== target.row.id && drinkOk.get(id)) insert.run(target.row.id, id);
+      for (const id of target.incoming || []) if (id !== target.row.id && drinkOk.get(id)) insert.run(id, target.row.id);
+      for (const id of source.related || []) if (id !== source.row.id && drinkOk.get(id)) insert.run(source.row.id, id);
+      for (const id of source.incoming || []) if (id !== source.row.id && drinkOk.get(id)) insert.run(id, source.row.id);
+      const lost = restoreRatings(db, source.ratings);
+      if (lost) notes.push(`не восстановлено оценок дубля: ${lost} (нет пользователя или тира)`);
       break;
     }
     case "rating": {
@@ -533,6 +591,7 @@ module.exports = {
   snapTier,
   snapUser,
   recordDrink,
+  recordMerge,
   recordRating,
   recordTier,
   recordUser,

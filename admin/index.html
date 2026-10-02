@@ -154,6 +154,18 @@
     .admin-raters__empty small { max-width: 18rem; font-size: 11px; line-height: 1.5; }
     .admin-raters__foot { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; gap: 10px; margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
     .admin-raters__foot .btn { min-height: 2.75rem; }
+    .admin-merge__search { display: grid; gap: 6px; margin: .25rem 0 .75rem; color: var(--muted); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+    .admin-merge__search input { padding: 10px 12px; border: 1px solid var(--line); border-radius: .6rem; color: var(--paper); background: rgba(0,0,0,.25); font: 500 1rem/1.3 var(--sans, sans-serif); letter-spacing: normal; text-transform: none; }
+    .admin-merge__list { list-style: none; margin: 0; padding: 0; max-height: 22rem; }
+    .admin-merge__row label { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px 12px; align-items: center; padding: 10px 12px; border: 1px solid rgba(242,237,228,.12); border-radius: .8rem; background: rgba(255,255,255,.035); cursor: pointer; transition: border-color .15s, background .15s; }
+    .admin-merge__row label:hover { border-color: rgba(242,237,228,.35); }
+    .admin-merge__row label:has(input:checked) { border-color: var(--orange, #ff7448); background: color-mix(in srgb, var(--orange, #ff7448) 10%, transparent); }
+    .admin-merge__row input { accent-color: var(--accent, #ff4f79); }
+    .admin-merge__name { min-width: 0; }
+    .admin-merge__name b { display: block; font-size: 14px; overflow-wrap: anywhere; }
+    .admin-merge__name small { display: block; margin-top: 3px; color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+    .admin-merge__votes { color: var(--muted); font-size: 11.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .admin-merge__empty { padding: 2rem 1rem; color: var(--muted); text-align: center; font-size: 12.5px; }
     .audit-toolbar { display: flex; gap: 8px; margin: 0 0 10px; flex-wrap: wrap; }
     .audit-toolbar input, .audit-toolbar select { padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.25); color: inherit; }
     .audit-toolbar input { flex: 1; min-width: 200px; }
