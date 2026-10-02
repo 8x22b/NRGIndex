@@ -72,6 +72,7 @@ test("камера: одна кнопка вместо фото, скана и �
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode", \{ code \}\)/);
   assert.match(cabinetSource, /pending\.barcode/);
   assert.match(cabinetSource, /body\.barcode = pending\.barcode/);
+  assert.match(cabinetSource, /База штрих-кодов/);
   assert.match(cabinetRoutes, /router\.post\("\/ai\/barcode"/);
   assert.match(stylesSource, /\.camera-view/);
   assert.match(stylesSource, /\.camera-stencil/);
