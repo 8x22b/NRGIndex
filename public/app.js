@@ -299,6 +299,9 @@
     specimen.items = specimenCandidates();
     specimen.index = 0;
     applySpecimen();
+    // Витрина определилась: показываем ауру (она уже в цвете банки) и даём
+    // «разложенной» окраситься — до этого момента страница нейтральная.
+    document.documentElement.classList.add("can-ready");
     if (specimen.timer) window.clearInterval(specimen.timer);
     specimen.timer = null;
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;

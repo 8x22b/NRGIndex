@@ -126,6 +126,15 @@ test("главный экран: аура курсора и «разложенн
   assert.match(appSource, /rootStyle\.setProperty\("--can-b", accentB\)/);
 });
 
+test("главный экран: до данных нет розовой вспышки — нейтральные цвета и скрытая аура", () => {
+  // До витрины --can-a/--can-b нейтральные (как текст), аура появляется только
+  // с реальным цветом банки по html.can-ready.
+  assert.match(stylesSource, /--can-a: var\(--paper\)/);
+  assert.match(stylesSource, /--can-b: var\(--paper-2\)/);
+  assert.match(stylesSource, /html\.can-ready \.cursor-aura \{ opacity: 1; \}/);
+  assert.match(appSource, /classList\.add\("can-ready"\)/);
+});
+
 test("доска: оценка уводит в кабинет на нужную банку, без инлайн-формы", () => {
   assert.match(appSource, /cabinet\.html\?rate=\$\{encodeURIComponent\(drink\.id\)\}/);
   assert.match(appSource, /class="dialog-rate"/);

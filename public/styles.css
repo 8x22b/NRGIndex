@@ -11,6 +11,10 @@
   --serif: "Cormorant Garamond", Georgia, serif;
   --sans: "Manrope", Arial, sans-serif;
   --ease: cubic-bezier(.22, 1, .36, 1);
+  /* До данных витрины цвета нейтральные: «разложенная» выглядит как обычный
+     текст, аура спрятана. Розовую вспышку при загрузке пользователь не видит. */
+  --can-a: var(--paper);
+  --can-b: var(--paper-2);
 }
 
 /* Цвета банки с витрины. Регистрируем как <color>, чтобы при смене витрины они
@@ -58,7 +62,12 @@ img { display: block; max-width: 100%; }
   pointer-events: none;
   left: 50vw;
   top: 25vh;
+  /* Пока витрина не определилась, аура не показывается — появляется уже
+     в цвете банки, без перекраски на глазах. */
+  opacity: 0;
+  transition: opacity .7s var(--ease);
 }
+html.can-ready .cursor-aura { opacity: 1; }
 
 .intro {
   position: fixed;
