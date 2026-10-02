@@ -1,4 +1,5 @@
-// Пайплайн: тесты и деплой должны быть одним workflow и идти строго по цепочке.
+// Пайплайн: единый workflow, запускается мержем в production. Тесты в облаке и
+// пре-деплой-тесты на раннере идут параллельно, деплой — только после обоих.
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -23,31 +24,29 @@ test("pipeline: тесты и деплой живут в одном workflow", (
   assert.deepEqual(files, ["pipeline.yml"], "вместо ci.yml + deploy.yml должен остаться один pipeline.yml");
   const yml = read("pipeline.yml");
   assert.match(yml, /^name: Pipeline/m);
-  assert.match(yml, /^  pull_request:/m);
   assert.match(yml, /^  push:/m);
   assert.match(yml, /workflow_dispatch:/);
 });
 
-test("pipeline: master не гоняет тесты — только путь к production", () => {
+test("pipeline: запускается мержем в production — ни PR, ни master", () => {
   const yml = read("pipeline.yml");
   const onBlock = yml.slice(yml.indexOf("on:"), yml.indexOf("permissions:"));
-  assert.match(onBlock, /pull_request:[\s\S]*?branches: \[production\]/);
   assert.match(onBlock, /push:[\s\S]*?branches: \[production\]/);
+  assert.doesNotMatch(onBlock, /pull_request/, "отдельного прогона на PR больше нет");
   assert.doesNotMatch(onBlock, /master/, "пуш в master не должен запускать прогон");
-  assert.match(yml, /if: \$\{\{ github\.event_name == 'pull_request' \}\}/, "ubuntu-тесты — только на PR");
 });
 
-test("pipeline: деплой — только после успешных пре-деплой-тестов", () => {
+test("pipeline: тесты и пре-деплой параллельно, деплой — после обоих", () => {
   const yml = read("pipeline.yml");
+  const testJob = jobBlock(yml, "test");
   const preDeploy = jobBlock(yml, "pre-deploy");
   const deploy = jobBlock(yml, "deploy");
-  assert.match(preDeploy, /github\.event_name == 'push' && github\.ref == 'refs\/heads\/production'/);
-  assert.match(preDeploy, /workflow_dispatch/);
-  assert.match(deploy, /needs: pre-deploy/);
+  assert.doesNotMatch(testJob, /\n    if:/, "облачные тесты без условий — стартуют сразу");
+  assert.doesNotMatch(preDeploy, /\n    if:/, "пре-деплой без условий — стартует параллельно тестам");
+  assert.doesNotMatch(preDeploy, /needs:/, "пре-деплой не должен ждать облачные тесты");
+  assert.match(deploy, /needs: \[test, pre-deploy\]/, "деплой зависит от обеих проверок");
   assert.doesNotMatch(deploy, /\n    if:/, "у деплоя не должно быть своих условий — гейт через needs");
-  assert.doesNotMatch(preDeploy, /needs: test/, "лишняя связь с Tests съедала деплой на пушах в production");
-  assert.doesNotMatch(preDeploy, /pull_request/, "самохост не должен просыпаться на PR");
-  assert.doesNotMatch(deploy, /pull_request/, "деплой не должен просыпаться на PR");
+  assert.doesNotMatch(deploy, /pull_request/);
   assert.match(deploy, /runs-on: \[self-hosted, nrgindex\]/);
   assert.match(deploy, /environment: production/);
 });
