@@ -53,6 +53,8 @@
       );
       error.status = res.status;
       error.code = json?.code || "";
+      // 409 от защиты дублей приносит список похожих — его показываем в форме.
+      error.payload = json;
       throw error;
     }
     return json;
@@ -1680,6 +1682,9 @@
       tier: TIERS.includes(parsed.tier) ? parsed.tier : "B",
       review: parsed.review || "",
     };
+    // Серверная защита от дублей: явное подтверждение шлём, только если человек
+    // реально видел похожие и снял галочку. Иначе сервер сам притормозит 409-й.
+    if (pending.similarCount > 0 && pending.duplicateAck) body.confirmDifferent = true;
     if (pending.barcode) body.barcode = pending.barcode;
     if (pending.image && pending.image.startsWith("data:")) body.imageDataUrl = pending.image;
     savingDrink = true;
@@ -1689,7 +1694,11 @@
       savingDrink = false;
     }
     resetSmart();
-    $("smart-status").textContent = "В индексе ✓";
+    // Каждая новая банка — заново: галочка сбрасывается, форма снова прячется,
+    // чтобы следующее добавление тоже начиналось с проверки индекса.
+    $("dup-gate-ack").checked = false;
+    $("smart-form").hidden = true;
+    $("dup-gate-status").textContent = "В индексе ✓ — банка добавлена";
     await refreshAll();
   };
 
@@ -2138,6 +2147,62 @@
     $("btn-confirm").disabled = !event.target.checked;
   });
 
+  /* ---------- гейт «такого нет в списке» ---------- */
+  // Форму добавления не показываем, пока человек не подтвердит, что проверил
+  // индекс. Рядом — быстрый поиск: если банка нашлась, открываем её редактор.
+  const DUP_GATE_PAGE = 6;
+
+  const renderDupGateResults = () => {
+    const box = $("dup-gate-results");
+    const needle = $("dup-gate-search").value.trim().toLowerCase();
+    if (!needle || !state.summary) {
+      box.hidden = true;
+      box.innerHTML = "";
+      return;
+    }
+    const words = needle.split(/\s+/).filter(Boolean);
+    const list = state.summary.drinks
+      .filter((drink) =>
+        words.every((word) =>
+          [drink.brand, drink.name, drink.flavor, drink.edition]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(word),
+        ),
+      )
+      .slice(0, DUP_GATE_PAGE);
+    box.hidden = false;
+    box.innerHTML = list.length
+      ? list
+          .map((drink) => {
+            const mine = state.mine.find((row) => row.drink === drink.id);
+            return `
+        <div class="dup-gate__row" data-drink="${esc(drink.id)}">
+          <img src="${esc(drink.image)}" alt="" loading="lazy">
+          <div><b>${esc(drink.name)}</b><small>${esc(drink.flavor)}${mine ? ` · у тебя ${esc(mine.tier)}` : ""}</small></div>
+          <button class="btn btn--ghost" type="button" data-rate-found>Это она — оценить</button>
+        </div>`;
+          })
+          .join("")
+      : `<p class="hint">Ничего не нашлось — похоже, банки ещё нет, отмечай галочку.</p>`;
+  };
+
+  $("dup-gate-search").addEventListener("input", renderDupGateResults);
+  $("dup-gate-results").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-rate-found]");
+    if (!button) return;
+    openOpinion(button.closest(".dup-gate__row").dataset.drink);
+  });
+  $("dup-gate-ack").addEventListener("change", (event) => {
+    $("smart-form").hidden = !event.target.checked;
+    if (event.target.checked) {
+      $("dup-gate-status").textContent = "";
+      $("smart-status").textContent = "";
+      $("smart-input").focus();
+    }
+  });
+
   let smartBusy = false;
   const updateSmartButton = () => {
     $("btn-smart").disabled = smartBusy || !$("smart-input").value.trim();
@@ -2199,9 +2264,19 @@
     try {
       await saveDrink(parsed);
     } catch (error) {
-      $("smart-status").textContent = error.message;
+      // Сервер перепроверил дубли и вернул похожие: показываем их и просим
+      // подтвердить, что банка новая, — без галочки сохранение не пройдёт.
+      if (error.payload?.similar?.length) {
+        pending.parsed = parsed;
+        renderSimilar(error.payload.similar);
+        showPreview();
+        $("smart-status").textContent =
+          "Похоже, такая банка уже есть. Открой её сверху — или отметь «Это не тот энергос», если это правда другой энергос.";
+      } else {
+        $("smart-status").textContent = error.message;
+      }
     } finally {
-      $("btn-confirm").disabled = false;
+      $("btn-confirm").disabled = pending.similarCount > 0 && !pending.duplicateAck;
     }
   };
   $("btn-retry-photo").onclick = retryPhoto;

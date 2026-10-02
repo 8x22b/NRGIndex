@@ -82,7 +82,21 @@
       </div>
 
       <div id="cab-panel-add" role="tabpanel" aria-labelledby="cab-tab-add">
-        <form class="cabinet-form smart-form" id="smart-form" autocomplete="off">
+        <section class="dup-gate" id="dup-gate" aria-label="Проверка дубля">
+          <h3>Такого энергоса ещё нет?</h3>
+          <p class="hint">Сначала проверь индекс. Если банка уже есть — открой её здесь и поставь тир, заводить заново не нужно.</p>
+          <label class="board-search dup-gate__search">
+            <span aria-hidden="true">⌕</span>
+            <input id="dup-gate-search" type="search" placeholder="Проверить: бренд, название или вкус…" autocomplete="off" aria-label="Поиск по индексу перед добавлением">
+          </label>
+          <div class="dup-gate__results" id="dup-gate-results" hidden></div>
+          <label class="dup-gate__ack">
+            <input type="checkbox" id="dup-gate-ack">
+            Такого энергоса нет в списке — добавляю новую банку
+          </label>
+          <p class="form-status" id="dup-gate-status" aria-live="polite"></p>
+        </section>
+        <form class="cabinet-form smart-form" id="smart-form" autocomplete="off" hidden>
           <h3>Новый энергос</h3>
           <p class="hint">Опиши банку словами или надиктуй голосом — ИИ разложит по полям бренд, вкус и издание, а отзыв и тир возьмёт только из того, что ты сам сказал. Фото можно снять камерой или найти отдельно.</p>
           <label>Что за энергос?
