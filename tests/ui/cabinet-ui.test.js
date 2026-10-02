@@ -299,6 +299,26 @@ test("ZXing из vendor — фолбэк для браузеров без Barcod
   assert.match(cabinetSource, /PlanarYUVLuminanceSource/);
 });
 
+test("zxing-wasm из vendor — сильный локальный декодер кадра", () => {
+  const vendor = path.join(__dirname, "..", "..", "public", "vendor", "zxing-wasm");
+  const reader = path.join(vendor, "reader.js");
+  const wasm = path.join(vendor, "zxing_reader.wasm");
+  assert.ok(fs.existsSync(reader), "нужен public/vendor/zxing-wasm/reader.js");
+  assert.ok(fs.existsSync(wasm), "нужен public/vendor/zxing-wasm/zxing_reader.wasm");
+  assert.ok(fs.existsSync(path.join(vendor, "LICENSE")), "нужна лицензия zxing-wasm");
+  assert.ok(fs.statSync(wasm).size > 100 * 1024, "wasm-модуль должен быть настоящей сборкой");
+  assert.match(fs.readFileSync(reader, "utf8"), /ZXingWASM/);
+  assert.match(cabinetSource, /vendor\/zxing-wasm\/reader\.js/);
+  assert.match(cabinetSource, /loadZXingWasm/);
+  assert.match(cabinetSource, /setZXingModuleOverrides/);
+  assert.match(cabinetSource, /readBarcodes/);
+  assert.match(cabinetSource, /otsuThreshold/);
+  assert.match(cabinetSource, /const wasmDecode = async \(canvas\)/);
+  const readme = fs.readFileSync(path.join(__dirname, "..", "..", "public", "vendor", "README.md"), "utf8");
+  assert.match(readme, /zxing-wasm/);
+  assert.match(readme, /Лениво|lazy/i);
+});
+
 test("фото с кодом уходит на серверный разбор, если клиент не осилил", () => {
   assert.match(cabinetSource, /const barcodeImageDataUrl = async \(file, maxSide = 1600\)/);
   assert.match(cabinetSource, /api\("POST", "api\/cabinet\/ai\/barcode-scan", \{ imageDataUrl \}\)/);

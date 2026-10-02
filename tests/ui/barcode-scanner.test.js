@@ -77,6 +77,7 @@ test("scanner: older async start cannot schedule a stale loop", async () => {
     barcodeFormats: () => new Promise((resolve) => pending.push(resolve)),
     window: { BarcodeDetector: class {} },
     setCameraStatus: () => {},
+    wasmDecode: async () => "",
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
     clearTimeout: () => {},
     NATIVE_GRACE_MS: 2500,
@@ -96,6 +97,52 @@ test("scanner: older async start cannot schedule a stale loop", async () => {
   sandbox.stop();
   await timers[0](); // Must return before touching camera/video or decoding.
   assert.equal(timers.length, 1);
+});
+
+test("wasmDecode: raw первым, Otsu-инверсия вторым, GS сохраняется", async () => {
+  const wx = "0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
+  const calls = [];
+  let rawFinds = false;
+  const imageData = { width: 2, height: 1, data: new Uint8ClampedArray([10, 10, 10, 255, 200, 200, 200, 255]) };
+  const canvas = { width: 2, height: 1, getContext: () => ({ getImageData: () => imageData }) };
+  const sandbox = {
+    window: {
+      ZXingWASM: {
+        setZXingModuleOverrides: () => { throw new Error("модуль уже загружен, overrides не нужны"); },
+        readBarcodes: async (image, options) => {
+          calls.push({ image, options });
+          if (rawFinds || calls.length > 1) return [{ isValid: true, text: wx }];
+          return [];
+        },
+      },
+    },
+    ImageData: class {
+      constructor(width, height) {
+        this.width = width;
+        this.height = height;
+        this.data = new Uint8ClampedArray(width * height * 4);
+      }
+    },
+  };
+  vm.createContext(sandbox);
+  const block = source.slice(source.indexOf("  // zxing-wasm из vendor"), source.indexOf("  // Сначала быстрый нативный детектор"));
+  vm.runInContext(block + "\nthis.wasmDecode = wasmDecode;", sandbox);
+  assert.equal(await sandbox.wasmDecode(canvas), wx, "точный GS из readBarcodes");
+  assert.equal(calls.length, 2, "raw + одна инверсия, не больше двух проходов");
+  assert.equal(
+    JSON.stringify(calls[0].options),
+    JSON.stringify({
+      formats: ["DataMatrix", "EAN13", "EAN8", "UPCA", "UPCE", "Code128"],
+      tryHarder: true, tryRotate: true, tryInvert: true, tryDenoise: true, tryDownscale: true,
+      maxNumberOfSymbols: 1, textMode: "Plain",
+    }),
+  );
+  assert.equal(calls[1].image.data[0], 255, "тёмный пиксель после инверсии белый");
+  assert.equal(calls[1].image.data[4], 0, "светлый пиксель после инверсии чёрный");
+  calls.length = 0;
+  rawFinds = true;
+  assert.equal(await sandbox.wasmDecode(canvas), wx);
+  assert.equal(calls.length, 1, "при успехе raw инверсия не запускается");
 });
 
 test("live fallback: один серверный кадр за раз и только при свободной камере", async () => {
@@ -138,6 +185,7 @@ test("live fallback: после локальной осечки код с сер
     ensureZXingReader: async () => { sandbox.zxingReader = {}; },
     setCameraStatus: (text) => statuses.push(text),
     scanVariant: () => ({ toDataURL: () => "jpeg" }),
+    wasmDecode: async () => "",
     zxingDecode: () => "",
     serverScanFrame: async () => { serverCalls++; return "0104680036912629215JuVJmTnOR:3H\x1D93kjJw"; },
     lookupBarcode: async (code) => { lookups.push(code); return true; },
@@ -173,6 +221,7 @@ test("live fallback: не больше 24 серверных кадров за �
     ensureZXingReader: async () => { sandbox.zxingReader = {}; },
     setCameraStatus: () => {},
     scanVariant: () => ({ toDataURL: () => "jpeg" }),
+    wasmDecode: async () => "",
     zxingDecode: () => "",
     serverScanFrame: async () => { serverCalls++; return ""; },
     lookupBarcode: async () => false,

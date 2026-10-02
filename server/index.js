@@ -1,6 +1,7 @@
 const config = require("./config");
 const { openDatabase } = require("./db");
 const { createApp } = require("./app");
+const { warmBarcodeDecoder } = require("./lib/barcode");
 
 const db = openDatabase(config.dbPath);
 const app = createApp({ db, config });
@@ -9,6 +10,8 @@ const server = app.listen(config.port, config.host, () => {
   console.log(`[nrgindex] listening on http://${config.host}:${config.port}`);
   console.log(`[nrgindex] db: ${config.dbPath}`);
   console.log(`[nrgindex] uploads: ${config.uploadsDir}`);
+  // Fire-and-forget: wasm-декодер компилируется заранее, старт не блокируем.
+  warmBarcodeDecoder().catch(() => {});
 });
 
 function shutdown(signal) {

@@ -34,6 +34,7 @@ test("security: заголовки безопасности на страниц�
   const csp = page.headers.get("content-security-policy") || "";
   assert.match(csp, /default-src 'self'/);
   assert.match(csp, /script-src 'self'/);
+  assert.match(csp, /script-src 'self' 'wasm-unsafe-eval'/, "wasm-декодер в браузере требует wasm-unsafe-eval");
   assert.match(csp, /script-src-attr 'none'/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.match(csp, /object-src 'none'/);

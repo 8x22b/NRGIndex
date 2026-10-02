@@ -323,6 +323,15 @@ function decodePrepared(raw, info, hints) {
   }
 }
 
+// Прогрев wasm-декодера при старте: первый вызов компилирует модуль (~1–2 c),
+// поэтому холодный старт сервера делает это заранее и fire-and-forget.
+async function warmBarcodeDecoder() {
+  const png = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#fff" } })
+    .png()
+    .toBuffer();
+  await decodeWithZxingWasm(png);
+}
+
 async function decodeBarcodeImage(buffer, { maxSide = DECODE_MAX_SIDE } = {}) {
   // Кадр держим в PNG: повороты raw-буфера sharp делает некорректно.
   const prepared = await sharp(buffer, { failOn: "error" })
@@ -378,4 +387,5 @@ module.exports = {
   lookupBarcodeList,
   parseBarcodeListPage,
   decodeBarcodeImage,
+  warmBarcodeDecoder,
 };

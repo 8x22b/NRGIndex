@@ -55,7 +55,8 @@ function createApp({ db, config }) {
         useDefaults: true,
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
+          // 'wasm-unsafe-eval' нужен браузерному zxing-wasm для WebAssembly.
+          scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
           styleSrc: ["'self'", "'unsafe-inline'"],
           fontSrc: ["'self'"],
           imgSrc: [

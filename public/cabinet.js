@@ -1961,8 +1961,104 @@
     }
   };
 
-  // Сначала быстрый нативный детектор, при осечке — ZXing (в т.ч. в Firefox/Safari,
-  // где BarcodeDetector нет).
+  // zxing-wasm из vendor — сильный локальный декодер: тот же рецепт, что на сервере
+  // (raw, затем Otsu-порог с инверсией). Лениво; начальный GS сохраняем как есть.
+  const WASM_DECODE_OPTIONS = {
+    formats: ["DataMatrix", "EAN13", "EAN8", "UPCA", "UPCE", "Code128"],
+    tryHarder: true,
+    tryRotate: true,
+    tryInvert: true,
+    tryDenoise: true,
+    tryDownscale: true,
+    maxNumberOfSymbols: 1,
+    textMode: "Plain",
+  };
+
+  let wasmLoading = null;
+  const loadZXingWasm = () => {
+    if (window.ZXingWASM) return Promise.resolve(window.ZXingWASM);
+    wasmLoading ||= new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "vendor/zxing-wasm/reader.js";
+      script.onload = () =>
+        window.ZXingWASM ? resolve(window.ZXingWASM) : reject(new Error("wasm-сканер не инициализировался"));
+      script.onerror = () => reject(new Error("wasm-сканер не загрузился"));
+      document.head.appendChild(script);
+    })
+      .then((wasm) => {
+        wasm.setZXingModuleOverrides({ locateFile: (file) => `vendor/zxing-wasm/${file}` });
+        return wasm;
+      })
+      .catch((error) => {
+        wasmLoading = null;
+        throw error;
+      });
+    return wasmLoading;
+  };
+
+  // Otsu: порог между «тёмным» и «светлым» по гистограмме серого.
+  const otsuThreshold = (gray) => {
+    const histogram = new Array(256).fill(0);
+    for (const value of gray) histogram[value]++;
+    const total = gray.length;
+    let sum = 0;
+    for (let i = 0; i < 256; i++) sum += i * histogram[i];
+    let dark = 0;
+    let sumDark = 0;
+    let best = 0;
+    let threshold = 0;
+    for (let i = 0; i < 256; i++) {
+      dark += histogram[i];
+      if (!dark) continue;
+      const light = total - dark;
+      if (!light) break;
+      sumDark += i * histogram[i];
+      const between = dark * light * (sumDark / dark - (sum - sumDark) / light) ** 2;
+      if (between > best) {
+        best = between;
+        threshold = i;
+      }
+    }
+    return threshold;
+  };
+
+  const wasmRead = async (image) => {
+    const wasm = await loadZXingWasm();
+    const results = await wasm.readBarcodes(image, WASM_DECODE_OPTIONS);
+    return results?.find((item) => item?.isValid && item.text)?.text || "";
+  };
+
+  let wasmDecoding = false;
+  // Максимум две wasm-попытки: raw, затем Otsu-инверсия (рецепт для бликующей
+  // крышки банки). Пока decode идёт, новые кадры не стакуются.
+  const wasmDecode = async (canvas) => {
+    if (!canvas || wasmDecoding) return "";
+    wasmDecoding = true;
+    try {
+      const image = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+      const direct = await wasmRead(image);
+      if (direct) return direct;
+      const gray = new Uint8ClampedArray(image.width * image.height);
+      for (let i = 0, j = 0; i < image.data.length; i += 4, j++) {
+        gray[j] = (image.data[i] * 299 + image.data[i + 1] * 587 + image.data[i + 2] * 114) / 1000;
+      }
+      const threshold = otsuThreshold(gray);
+      const inverted = new ImageData(image.width, image.height);
+      for (let i = 0, j = 0; i < image.data.length; i += 4, j++) {
+        const value = gray[j] > threshold ? 0 : 255;
+        inverted.data[i] = inverted.data[i + 1] = inverted.data[i + 2] = value;
+        inverted.data[i + 3] = 255;
+      }
+      return await wasmRead(inverted);
+    } catch {
+      return "";
+    } finally {
+      wasmDecoding = false;
+    }
+  };
+
+  // Сначала быстрый нативный детектор, затем локальный wasm, при осечке — legacy
+  // ZXing (в т.ч. в Firefox/Safari, где BarcodeDetector нет).
   const detectBarcode = async (source) => {
     const formats = await barcodeFormats();
     if (formats.length) {
@@ -1971,9 +2067,11 @@
         const code = found?.[0]?.rawValue || "";
         if (code) return code;
       } catch {
-        /* кадр не по зубам нативному API — пробуем ZXing */
+        /* кадр не по зубам нативному API — пробуем дальше */
       }
     }
+    const wasm = await wasmDecode(scanVariant(source, 0, 1920));
+    if (wasm) return wasm;
     try {
       await ensureZXingReader();
     } catch {
@@ -2017,9 +2115,9 @@
 
   const NATIVE_GRACE_MS = 2500;
   const SCAN_INTERVAL_MS = 150;
-  // Серверный фолбэк для слабых локальных читалок (iPhone/Safari/Firefox):
-  // раз в 2.5 c, не больше 24 кадров за сессию.
-  const SERVER_SCAN_MS = 2500;
+  // Серверный фолбэк — последний шанс: локальный wasm обычно быстрее, поэтому
+  // реже, раз в 4 c, не больше 24 кадров за сессию.
+  const SERVER_SCAN_MS = 4000;
   const SERVER_SCAN_MAX = 24;
   const SERVER_SCAN_SIDE = 1024;
   // Один ограниченный вариант за live-tick; полный кадр чередуется с ROI,
@@ -2077,15 +2175,16 @@
     const formats = await barcodeFormats();
     if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
     if (!formats.length) {
-      // Нативного детектора нет — сразу готовим ZXing; совсем без вариантов сообщим.
+      // Нативного детектора нет — готовим локальные читалки: wasm и legacy ZXing.
+      // Совсем без вариантов только тогда сообщим.
       setCameraStatus("🔎 Ищу код — просто наведи камеру");
       try {
-        await ensureZXingReader();
+        await Promise.allSettled([ensureZXingReader(), loadZXingWasm()]);
       } catch {
-        /* ниже проверим читалку */
+        /* читалки проверяем ниже */
       }
       if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
-      if (!zxingReader) {
+      if (!zxingReader && !window.ZXingWASM) {
         setCameraStatus("Этот браузер не умеет читать коды — введи цифры вручную.", true);
         $("camera-code").focus();
         return;
@@ -2117,6 +2216,8 @@
           await ensureZXingReader().catch(() => {});
         }
       }
+      if (!code) code = await wasmDecode(canvas);
+      if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
       if (!code) code = zxingDecode(canvas);
       if (
         !code &&
