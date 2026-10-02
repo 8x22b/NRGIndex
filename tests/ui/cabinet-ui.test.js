@@ -78,6 +78,17 @@ test("камера: одна кнопка вместо фото, скана и �
   assert.doesNotMatch(stylesSource, /\.barcode-row/);
 });
 
+test("код не нашёлся в базах — штрих-код не теряется, форма открывается для ручного ввода", () => {
+  assert.match(cabinetSource, /pending\.barcode = data\.code;/);
+  assert.match(cabinetSource, /товара нет в базах/);
+  assert.match(cabinetSource, /pending\.photoNote = "отсканирован код — заполни бренд и название"/);
+  const branchStart = cabinetSource.indexOf("товара нет ни в индексе");
+  assert.notEqual(branchStart, -1, "ветка «товар не найден» должна быть в lookupBarcode");
+  const branch = cabinetSource.slice(branchStart, branchStart + 800);
+  assert.match(branch, /showPreview\(\)/);
+  assert.match(branch, /return true;/);
+});
+
 test("кадр камеры обрезается по трафарету с учётом object-fit: cover", () => {
   assert.match(cabinetSource, /camera-stencil__can/);
   assert.match(cabinetSource, /getBoundingClientRect/);
