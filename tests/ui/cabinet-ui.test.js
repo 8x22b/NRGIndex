@@ -179,7 +179,8 @@ test("дубликаты: без явного «это не он» новую б
   assert.match(cabinetHtml, /Это не тот энергос — добавить новую банку/);
   assert.match(cabinetSource, /pending\.similarCount && !pending\.duplicateAck/);
   assert.match(cabinetSource, /similar-ack"\)\.addEventListener\("change"/);
-  assert.match(cabinetSource, /\$\("btn-confirm"\)\.disabled = similar\.length > 0/);
+  assert.match(cabinetSource, /const syncConfirmState = \(\) =>/);
+  assert.match(cabinetSource, /pending\.similarCount > 0 && !pending\.duplicateAck/);
 });
 
 test("поиск по индексу в кабинете: находит банку и открывает редактор мнения", () => {

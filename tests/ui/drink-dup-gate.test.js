@@ -6,20 +6,35 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..", "..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
-test("кабинет: галочка «нет в списке» открывает форму добавления", () => {
+test("кабинет: форма и камера на месте, галочка «нет в списке» скрыта до неудачных попыток", () => {
   const js = read("public/cabinet.js");
   const html = read("public/cabinet.html");
+  assert.doesNotMatch(html, /id="smart-form"[^>]*hidden/, "форма добавления не прячется");
+  assert.match(html, /id="btn-camera"/, "кнопка камеры остаётся на месте");
+  assert.match(html, /data-camera-mode="code"/, "режим скана штрих-кода остаётся");
   assert.match(html, /id="dup-gate-ack"/);
   assert.match(html, /id="dup-gate-search"/);
-  assert.match(html, /id="dup-gate-results"/);
-  assert.match(html, /id="dup-gate-status"/);
-  assert.match(html, /id="smart-form"[^>]*hidden/);
-  assert.match(js, /\$\("dup-gate-ack"\)\.addEventListener\("change"/);
-  assert.match(js, /\$\("smart-form"\)\.hidden = !event\.target\.checked/);
+  assert.match(html, /id="dup-gate-ack-wrap" hidden/, "подтверждение скрыто по умолчанию");
   assert.match(js, /const renderDupGateResults = \(\) =>/);
+  assert.match(js, /const showDupAck = \(\) =>/);
+  assert.match(js, /const hideDupAck = \(\) =>/);
   assert.match(js, /data-rate-found/);
-  // После успешного добавления галочка снимается — следующая банка снова через проверку.
-  assert.match(js, /\$\("dup-gate-ack"\)\.checked = false/);
+});
+
+test("галочка «нет в списке» появляется после неудачных поисков", () => {
+  const js = read("public/cabinet.js");
+  // поиск по индексу ничего не нашёл
+  assert.match(js, /if \(!list\.length\) showDupAck\(\)/);
+  // ИИ-разбор не нашёл похожих
+  assert.match(js, /if \(!\(similar \|\| \[\]\)\.length\) showDupAck\(\)/);
+  // штрих-код не нашёлся в индексе
+  assert.match(js, /if \(!\(data\.similar \|\| \[\]\)\.length\) showDupAck\(\)/);
+  // попытка сохранить без проверки тоже показывает галочку
+  assert.match(js, /!pending\.similarCount && !pending\.absenceAck/);
+  // подтверждение обязательно для сохранения и сбрасывается после добавления
+  assert.match(js, /pending\.absenceAck = event\.target\.checked/);
+  assert.match(js, /const syncConfirmState = \(\) =>/);
+  assert.match(js, /hideDupAck\(\)/);
 });
 
 test("кабинет: подтверждение разных энергосов уходит на сервер, 409 показывает похожие", () => {
@@ -27,7 +42,6 @@ test("кабинет: подтверждение разных энергосов
   assert.match(js, /body\.confirmDifferent = true/);
   assert.match(js, /error\.payload\?\.similar\?\.length/);
   assert.match(js, /renderSimilar\(error\.payload\.similar\)/);
-  assert.match(js, /disabled = pending\.similarCount > 0 && !pending\.duplicateAck/);
 });
 
 test("сервер: защита от дублей включена до создания банки", () => {
