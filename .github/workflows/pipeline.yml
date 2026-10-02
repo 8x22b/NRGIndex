@@ -1,10 +1,9 @@
 name: Pipeline
 
-# Тесты гоняем только там, где они реально нужны: на PR в production (гейт перед
-# мержем) и на боевом раннере перед самим деплоем. Пуш в master ничего не запускает.
+# Единый пайплайн: запускается при мерже в production (push). Тесты в облаке GitHub
+# и пре-деплой-тесты на боевом раннере идут параллельно, деплой — только после
+# успешного завершения обоих. Ручной запуск идёт тем же путём, push в master молчит.
 on:
-  pull_request:
-    branches: [production]
   push:
     branches: [production]
   workflow_dispatch:
@@ -14,13 +13,13 @@ permissions:
 
 concurrency:
   group: pipeline-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Деплой не отменяем на полпути: второй мерж просто встанет в очередь.
+  cancel-in-progress: false
 
 jobs:
-  # Быстрый гейт на PR к production: без зелёных тестов мержить нельзя.
+  # Тесты в чистом окружении GitHub + smoke-старт сервера.
   test:
     name: Tests
-    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -57,11 +56,9 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:3210/cabinet.html
           kill "$server_pid"
 
-  # Перепроверяем тот же коммит на боевом раннере: окружение деплоя бывает строже CI.
-  # Джоба не зависит от Tests: они бывают только на PR, а тут — свой прогон на раннере.
+  # Тот же коммит перепроверяем на боевом раннере: окружение деплоя бывает строже CI.
   pre-deploy:
     name: Pre-deploy tests
-    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/production') || github.event_name == 'workflow_dispatch' }}
     runs-on: [self-hosted, nrgindex]
     steps:
       - uses: actions/checkout@v7
@@ -84,12 +81,10 @@ jobs:
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
 
-  # Деплой стартует только после успешного пре-деплоя (needs без собственных условий):
-  # если тесты на раннере упали — джоба просто не запустится. На PR пре-деплой пропущен,
-  # поэтому пропущен и деплой.
+  # Деплой ждёт обе проверки: упал любой из тестов — деплоя нет.
   deploy:
     name: Deploy to LXC
-    needs: pre-deploy
+    needs: [test, pre-deploy]
     runs-on: [self-hosted, nrgindex]
     environment: production
     steps:
