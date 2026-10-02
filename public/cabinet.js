@@ -1809,11 +1809,22 @@
     try {
       const data = await api("POST", "api/cabinet/ai/barcode", { code });
       const product = data.product || data.inIndex;
-      if (!product) {
-        setCameraStatus("по коду ничего не нашлось — заполни вручную", true);
-        return false;
-      }
       pending.barcode = data.code;
+      pending.image = null;
+      pending.original = null;
+      pending.photoSource = "auto";
+      if (!product) {
+        // Код считан, но товара нет ни в индексе, ни в базах (обычное дело для
+        // российских банок): не теряем штрих-код — открываем форму с ним, бренд
+        // и название человек впишет сам.
+        pending.parsed = { brand: "", name: "", flavor: "", edition: "", tier: "B", tierGuessed: true, review: "" };
+        pending.photoNote = "отсканирован код — заполни бренд и название";
+        renderSimilar([]);
+        showDupAck();
+        showPreview();
+        $("smart-status").textContent = `штрих-код ${data.code} — товара нет в базах, заполни бренд и название вручную`;
+        return true;
+      }
       pending.parsed = {
         brand: product.brand || product.name || "",
         name: product.name || product.brand || "",
@@ -1823,9 +1834,6 @@
         tierGuessed: true,
         review: "",
       };
-      pending.image = null;
-      pending.original = null;
-      pending.photoSource = "auto";
       pending.photoNote = data.inIndex ? "банка уже в индексе" : "фото не нашлось — ищу по названию";
       renderSimilar(data.similar || []);
       // Код не нашёлся в индексе — неудачная попытка, просим подтвердить отсутствие.
