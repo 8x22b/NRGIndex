@@ -71,6 +71,7 @@
     userPhoto: false,
     similarCount: 0, // сколько похожих банок нашёл ИИ
     duplicateAck: true, // «это не он» — без этого новую банку не сохраняем
+    absenceAck: false, // «такого нет в списке» — подтверждение после неудачных поисков
     barcode: "",
   };
 
@@ -1694,11 +1695,10 @@
       savingDrink = false;
     }
     resetSmart();
-    // Каждая новая банка — заново: галочка сбрасывается, форма снова прячется,
-    // чтобы следующее добавление тоже начиналось с проверки индекса.
-    $("dup-gate-ack").checked = false;
-    $("smart-form").hidden = true;
+    // Форма и камера остаются на месте, сбрасывается только подтверждение:
+    // следующая новая банка снова потребует проверки списка.
     $("dup-gate-status").textContent = "В индексе ✓ — банка добавлена";
+    $("smart-status").textContent = "В индексе ✓";
     await refreshAll();
   };
 
@@ -1722,7 +1722,34 @@
     $("camera-code").value = "";
     setCameraStatus("");
     renderSimilar([]);
+    $("dup-gate-search").value = "";
+    $("dup-gate-results").hidden = true;
+    $("dup-gate-results").innerHTML = "";
+    hideDupAck();
     clearVoice("smart");
+  };
+
+  // Подтверждение «такого нет в списке» показываем только после неудачных попыток
+  // найти банку (поиск, ИИ-разбор, штрих-код) или при попытке сохранить без проверки.
+  const syncConfirmState = () => {
+    const similarBlock = pending.similarCount > 0 && !pending.duplicateAck;
+    const absenceBlock =
+      pending.similarCount === 0 && !pending.absenceAck && !$("dup-gate-ack-wrap").hidden;
+    $("btn-confirm").disabled = similarBlock || absenceBlock;
+  };
+
+  const showDupAck = () => {
+    // Когда похожие найдены, работает своя галочка «это не тот энергос».
+    if (pending.similarCount) return;
+    $("dup-gate-ack-wrap").hidden = false;
+    syncConfirmState();
+  };
+
+  const hideDupAck = () => {
+    $("dup-gate-ack-wrap").hidden = true;
+    $("dup-gate-ack").checked = false;
+    pending.absenceAck = false;
+    syncConfirmState();
   };
 
   // Если ИИ распознал банку, которая уже есть в индексе, — предлагаем оценить её,
@@ -1734,8 +1761,10 @@
     box.hidden = !similar.length;
     $("similar-ack").checked = false;
     $("similar-ack-wrap").hidden = !similar.length;
+    // Похожие найдены — подтверждение «нет в списке» не нужно, хватит «это не тот».
+    if (similar.length) hideDupAck();
     // Пока похожие не подтверждены «это не он», кнопка «В индекс» заблокирована.
-    $("btn-confirm").disabled = similar.length > 0;
+    syncConfirmState();
     if (!similar.length) {
       $("similar-list").innerHTML = "";
       return;
@@ -1799,6 +1828,8 @@
       pending.photoSource = "auto";
       pending.photoNote = data.inIndex ? "банка уже в индексе" : "фото не нашлось — ищу по названию";
       renderSimilar(data.similar || []);
+      // Код не нашёлся в индексе — неудачная попытка, просим подтвердить отсутствие.
+      if (!(data.similar || []).length) showDupAck();
       if (data.product?.image) {
         // Фото OFF важнее ленты: как только оно загрузится — показываем его.
         pending.photoSource = "barcode";
@@ -2310,7 +2341,7 @@
   // правильный путь при дубле.
   $("similar-ack").addEventListener("change", (event) => {
     pending.duplicateAck = event.target.checked;
-    $("btn-confirm").disabled = !event.target.checked;
+    syncConfirmState();
   });
 
   /* ---------- гейт «такого нет в списке» ---------- */
@@ -2339,6 +2370,7 @@
       )
       .slice(0, DUP_GATE_PAGE);
     box.hidden = false;
+    if (list.length) hideDupAck();
     box.innerHTML = list.length
       ? list
           .map((drink) => {
@@ -2351,7 +2383,9 @@
         </div>`;
           })
           .join("")
-      : `<p class="hint">Ничего не нашлось — похоже, банки ещё нет, отмечай галочку.</p>`;
+      : `<p class="hint">Ничего не нашлось — если банки точно нет, отметь галочку ниже.</p>`;
+    // Поиск не нашёл банку — это неудачная попытка: показываем подтверждение.
+    if (!list.length) showDupAck();
   };
 
   $("dup-gate-search").addEventListener("input", renderDupGateResults);
@@ -2361,12 +2395,9 @@
     openOpinion(button.closest(".dup-gate__row").dataset.drink);
   });
   $("dup-gate-ack").addEventListener("change", (event) => {
-    $("smart-form").hidden = !event.target.checked;
-    if (event.target.checked) {
-      $("dup-gate-status").textContent = "";
-      $("smart-status").textContent = "";
-      $("smart-input").focus();
-    }
+    pending.absenceAck = event.target.checked;
+    if (event.target.checked) $("dup-gate-status").textContent = "";
+    syncConfirmState();
   });
 
   let smartBusy = false;
@@ -2390,6 +2421,8 @@
       const { parsed, similar } = await api("POST", "api/cabinet/ai/parse", { text });
       pending.parsed = parsed;
       renderSimilar(similar || []);
+      // Разбор не нашёл похожих — показываем подтверждение «такого нет в списке».
+      if (!(similar || []).length) showDupAck();
       if (!pending.userPhoto) {
         pending.image = null;
         pending.original = null;
@@ -2402,6 +2435,8 @@
     } catch (error) {
       pending.parsed = { brand: "", name: "", flavor: "", edition: "", tier: "B", tierGuessed: true, review: "" };
       renderSimilar([]);
+      // Разбор не удался — это тоже неудачная попытка, просим подтвердить отсутствие.
+      showDupAck();
       showPreview();
       $("smart-status").textContent = `${error.message}. Заполни поля в карточке и жми «В индекс ✓».`;
     } finally {
@@ -2425,6 +2460,16 @@
       $("smart-status").textContent = "Нужны хотя бы бренд и название.";
       return;
     }
+    // Ни поиска, ни разбора не было, «нет в списке» не подтверждали — показываем
+    // галочку (она появляется после неудачных попыток найти банку).
+    if (!pending.similarCount && !pending.absenceAck) {
+      showDupAck();
+      $("dup-gate-ack-wrap").scrollIntoView({ behavior: "smooth", block: "center" });
+      $("dup-gate-ack").focus();
+      $("smart-status").textContent =
+        "Проверь список: если такой банки точно нет — отметь галочку выше и жми «В индекс ✓» ещё раз.";
+      return;
+    }
     $("btn-confirm").disabled = true;
     $("smart-status").textContent = "Сохраняю…";
     try {
@@ -2442,7 +2487,7 @@
         $("smart-status").textContent = error.message;
       }
     } finally {
-      $("btn-confirm").disabled = pending.similarCount > 0 && !pending.duplicateAck;
+      syncConfirmState();
     }
   };
   $("btn-retry-photo").onclick = retryPhoto;
