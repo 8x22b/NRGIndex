@@ -1840,12 +1840,124 @@
     }
   };
 
+  // ZXing из vendor — страховка для устройств, где BarcodeDetector нет или он молчит
+  // (Firefox/Safari, Android без сервисов Google). Грузится лениво, только при скане.
+  let zxingReader = null;
+  let zxingLoading = null;
+  const loadZXing = () => {
+    if (window.ZXing) return Promise.resolve(window.ZXing);
+    zxingLoading ||= new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "vendor/zxing.min.js";
+      script.onload = () => (window.ZXing ? resolve(window.ZXing) : reject(new Error("сканер не инициализировался")));
+      script.onerror = () => reject(new Error("сканер не загрузился"));
+      document.head.appendChild(script);
+    }).catch((error) => {
+      zxingLoading = null;
+      throw error;
+    });
+    return zxingLoading;
+  };
+
+  const ensureZXingReader = () => {
+    if (zxingReader) return Promise.resolve(zxingReader);
+    return loadZXing().then((zx) => {
+      const hints = new Map();
+      hints.set(zx.DecodeHintType.POSSIBLE_FORMATS, [
+        zx.BarcodeFormat.EAN_13,
+        zx.BarcodeFormat.EAN_8,
+        zx.BarcodeFormat.UPC_A,
+        zx.BarcodeFormat.UPC_E,
+        zx.BarcodeFormat.CODE_128,
+        zx.BarcodeFormat.DATA_MATRIX,
+      ]);
+      hints.set(zx.DecodeHintType.TRY_HARDER, true);
+      zxingReader = new zx.MultiFormatReader();
+      zxingReader.setHints(hints);
+      return zxingReader;
+    });
+  };
+
+  // Кадр → canvas ≤ maxSide: детекторы точнее на небольших картинках, а ZXing
+  // иначе не получит пиксели вовсе.
+  const frameCanvas = (source, maxSide = 1280) => {
+    const sw = source.videoWidth || source.width || 0;
+    const sh = source.videoHeight || source.height || 0;
+    if (!sw || !sh) return null;
+    const scale = Math.min(1, maxSide / Math.max(sw, sh));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(sw * scale));
+    canvas.height = Math.max(1, Math.round(sh * scale));
+    canvas.getContext("2d").drawImage(source, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  };
+
+  // ZXing ждёт яркость (Y) — считаем её сами из RGBA кадра.
+  const zxingDecode = (canvas) => {
+    if (!canvas || !zxingReader) return "";
+    const image = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+    const gray = new Uint8ClampedArray(image.width * image.height);
+    for (let i = 0, j = 0; i < image.data.length; i += 4, j++) {
+      gray[j] = (image.data[i] * 299 + image.data[i + 1] * 587 + image.data[i + 2] * 114) / 1000;
+    }
+    const zx = window.ZXing;
+    const source = new zx.PlanarYUVLuminanceSource(
+      gray,
+      image.width,
+      image.height,
+      0,
+      0,
+      image.width,
+      image.height,
+      false,
+    );
+    try {
+      const result = zxingReader.decodeWithState(new zx.BinaryBitmap(new zx.HybridBinarizer(source)));
+      return result?.getText() || "";
+    } catch {
+      return "";
+    } finally {
+      zxingReader.reset();
+    }
+  };
+
+  // Сначала быстрый нативный детектор, при осечке — ZXing (в т.ч. в Firefox/Safari,
+  // где BarcodeDetector нет).
   const detectBarcode = async (source) => {
     const formats = await barcodeFormats();
-    if (!formats.length) return "";
-    const detector = new window.BarcodeDetector({ formats });
-    const found = await detector.detect(source);
-    return found[0]?.rawValue || "";
+    if (formats.length) {
+      try {
+        const found = await new window.BarcodeDetector({ formats }).detect(source);
+        const code = found?.[0]?.rawValue || "";
+        if (code) return code;
+      } catch {
+        /* кадр не по зубам нативному API — пробуем ZXing */
+      }
+    }
+    const canvas = frameCanvas(source);
+    if (!canvas) return "";
+    try {
+      await ensureZXingReader();
+    } catch {
+      return "";
+    }
+    return zxingDecode(canvas);
+  };
+
+  // Фото → canvas ≤1600px, jpeg: маленький размер для серверного разбора.
+  const barcodeImageDataUrl = async (file, maxSide = 1600) => {
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await loadImage(objectUrl);
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.92);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
   };
 
   /* ---------- камера ---------- */
@@ -1860,37 +1972,80 @@
     autoScanTimer = null;
   };
 
-  // Живой скан: пока открыт режим «Код», сами крутим BarcodeDetector по видео.
+  const NATIVE_GRACE_MS = 2500;
+  const SCAN_INTERVAL_MS = 150;
+  const scanFrame = { canvas: null, context: null };
+
+  // Кроп видимой части кадра: BarcodeDetector стабильнее на небольшой картинке,
+  // а ZXing получает пиксели. object-fit: cover учитываем, как в cropToStencil.
+  const grabScanFrame = (maxSide = 1280) => {
+    const video = $("camera-video");
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const view = $("camera-view").getBoundingClientRect();
+    if (!vw || !vh || !view.width || !view.height) return null;
+    const scale = Math.max(view.width / vw, view.height / vh);
+    const sw = Math.min(vw, view.width / scale);
+    const sh = Math.min(vh, view.height / scale);
+    const out = Math.min(1, maxSide / Math.max(sw, sh));
+    const canvas = scanFrame.canvas || (scanFrame.canvas = document.createElement("canvas"));
+    canvas.width = Math.max(1, Math.round(sw * out));
+    canvas.height = Math.max(1, Math.round(sh * out));
+    scanFrame.context ||= canvas.getContext("2d", { willReadFrequently: true });
+    scanFrame.context.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  };
+
+  // Живой скан: пока открыт режим «Код», крутим кадры через нативный детектор,
+  // а если он молчит пару секунд (Android без сервисов Google) — подключаем ZXing.
   const startAutoScan = async () => {
     stopAutoScan();
     if (camera.mode !== "code") return;
     const formats = await barcodeFormats();
     if (camera.mode !== "code" || !$("camera-dialog").open) return;
     if (!formats.length) {
-      setCameraStatus("Этот браузер не умеет читать коды — введи цифры вручную.", true);
-      $("camera-code").focus();
-      return;
+      // Нативного детектора нет — сразу готовим ZXing; совсем без вариантов сообщим.
+      setCameraStatus("🔎 Ищу код — просто наведи камеру");
+      try {
+        await ensureZXingReader();
+      } catch {
+        /* ниже проверим читалку */
+      }
+      if (camera.mode !== "code" || !$("camera-dialog").open) return;
+      if (!zxingReader) {
+        setCameraStatus("Этот браузер не умеет читать коды — введи цифры вручную.", true);
+        $("camera-code").focus();
+        return;
+      }
+    } else {
+      setCameraStatus("🔎 Ищу код — просто наведи камеру");
     }
     const gen = autoScanGen;
-    const detector = new window.BarcodeDetector({ formats });
-    setCameraStatus("🔎 Ищу код — просто наведи камеру");
+    const startedAt = Date.now();
+    const detector = formats.length ? new window.BarcodeDetector({ formats }) : null;
     const tick = async () => {
       if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open || camera.busy) return;
-      const video = $("camera-video");
-      if (!video.videoWidth) {
+      const canvas = grabScanFrame();
+      if (!canvas) {
         autoScanTimer = setTimeout(tick, 300);
         return;
       }
       let code = "";
-      try {
-        const found = await detector.detect(video);
-        code = found[0]?.rawValue || "";
-      } catch {
-        /* кадр не готов — просто пробуем снова */
+      if (detector) {
+        try {
+          code = (await detector.detect(canvas))?.[0]?.rawValue || "";
+        } catch {
+          /* кадр не готов — просто пробуем снова */
+        }
+        // Нативный детектор молчит дольше грейс-периода — подключаем ZXing.
+        if (!code && !zxingReader && Date.now() - startedAt > NATIVE_GRACE_MS) {
+          await ensureZXingReader().catch(() => {});
+        }
       }
+      if (!code) code = zxingDecode(canvas);
       if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
       if (!code) {
-        autoScanTimer = setTimeout(tick, 600);
+        autoScanTimer = setTimeout(tick, SCAN_INTERVAL_MS);
         return;
       }
       stopAutoScan();
@@ -2058,10 +2213,19 @@
     event.target.value = "";
     if (!file) return;
     if (camera.mode === "code") {
+      camera.busy = true;
+      setCameraStatus("📷 Читаю код с фото…");
       try {
         const bitmap = await createImageBitmap(file);
-        const code = await detectBarcode(bitmap);
+        let code = await detectBarcode(bitmap);
         bitmap.close?.();
+        if (!code) {
+          // Клиент не осилил (блик/смаз) — последний шанс: серверный разбор.
+          setCameraStatus("всматриваюсь внимательнее…");
+          const imageDataUrl = await barcodeImageDataUrl(file);
+          const result = await api("POST", "api/cabinet/ai/barcode-scan", { imageDataUrl });
+          if (result.found) code = result.code;
+        }
         if (!code) {
           setCameraStatus("Код не распознан — попробуй ближе и без бликов.", true);
           return;
@@ -2069,6 +2233,8 @@
         if (await lookupBarcode(code)) closeCamera();
       } catch (error) {
         setCameraStatus(error.message || "не удалось прочитать код", true);
+      } finally {
+        camera.busy = false;
       }
       return;
     }
