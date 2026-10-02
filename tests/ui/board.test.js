@@ -115,6 +115,17 @@ test("витрина: главный энергос — только S-тир, �
   assert.match(appSource, /setupSpecimen\(\)/);
 });
 
+test("главный экран: аура курсора и «разложенная» перетекают в цвет банки витрины", () => {
+  assert.match(stylesSource, /@property --can-a \{ syntax: "<color>"/);
+  assert.match(stylesSource, /@property --can-b \{ syntax: "<color>"/);
+  assert.match(stylesSource, /:root \{ transition: --can-a/);
+  assert.match(stylesSource, /var\(--can-a, #ff4f79\)/);
+  assert.match(stylesSource, /\.hero__title em \{ color: var\(--can-a/);
+  assert.match(appSource, /const rootStyle = document\.documentElement\.style;/);
+  assert.match(appSource, /rootStyle\.setProperty\("--can-a", accentA\)/);
+  assert.match(appSource, /rootStyle\.setProperty\("--can-b", accentB\)/);
+});
+
 test("доска: оценка уводит в кабинет на нужную банку, без инлайн-формы", () => {
   assert.match(appSource, /cabinet\.html\?rate=\$\{encodeURIComponent\(drink\.id\)\}/);
   assert.match(appSource, /class="dialog-rate"/);

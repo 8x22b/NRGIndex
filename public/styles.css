@@ -13,6 +13,13 @@
   --ease: cubic-bezier(.22, 1, .36, 1);
 }
 
+/* Цвета банки с витрины. Регистрируем как <color>, чтобы при смене витрины они
+   перетекали плавной анимацией (в такт влёту банки), а не щёлкали мгновенно. */
+@property --can-a { syntax: "<color>"; inherits: true; initial-value: #ff4f79; }
+@property --can-b { syntax: "<color>"; inherits: true; initial-value: #ff7448; }
+:root { transition: --can-a 1.05s cubic-bezier(.16, 1, .3, 1), --can-b 1.25s cubic-bezier(.16, 1, .3, 1); }
+@media (prefers-reduced-motion: reduce) { :root { transition: none; } }
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 html { overflow-x: clip; }
@@ -47,7 +54,7 @@ img { display: block; max-width: 100%; }
   height: 34rem;
   border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle, rgba(255, 79, 121, .09), transparent 66%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--can-a, #ff4f79) 12%, transparent), color-mix(in srgb, var(--can-b, #ff7448) 6%, transparent) 42%, transparent 68%);
   pointer-events: none;
   left: 50vw;
   top: 25vh;
@@ -131,7 +138,7 @@ img { display: block; max-width: 100%; }
   line-height: .72;
   letter-spacing: -.065em;
 }
-.hero__title em { color: var(--pink); font-weight: 500; }
+.hero__title em { color: var(--can-a, var(--pink)); font-weight: 500; }
 .hero__bottom { display: flex; align-items: flex-end; gap: 4rem; margin-top: 3rem; padding-left: 10%; }
 .hero__bottom > p { max-width: 30rem; margin: 0; color: var(--muted); font-size: .84rem; line-height: 1.8; }
 .round-link { position: relative; flex: 0 0 auto; display: grid; place-items: center; width: 6.7rem; aspect-ratio: 1; border: 1px solid var(--line); border-radius: 50%; text-decoration: none; transition: background .4s var(--ease), color .4s var(--ease), transform .4s var(--ease); }

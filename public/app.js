@@ -37,6 +37,7 @@
   const headerPeople = document.querySelector("#header-people");
   const updateNode = document.querySelector("#last-update");
   const aura = document.querySelector(".cursor-aura");
+  const rootStyle = document.documentElement.style;
 
   let data = null;
   let activeView = "average";
@@ -229,14 +230,23 @@
     const item = specimen.items[specimen.index];
     card.classList.toggle("is-empty", !item);
     if (!item) {
+      // Пустая витрина — возвращаем базовые цвета ауры и «разложенной».
+      rootStyle.setProperty("--can-a", "#ff4f79");
+      rootStyle.setProperty("--can-b", "#ff7448");
       const caption = document.getElementById("specimen-caption");
       if (caption) caption.innerHTML = `ПОКА НЕТ S<br><span>оцени банку на S — попадёт сюда</span>`;
       return;
     }
     const { drink, average } = item;
 
-    card.style.setProperty("--hero-a", safeColor(drink.accent?.[0], "#ff4f79"));
-    card.style.setProperty("--hero-b", safeColor(drink.accent?.[1], "#ff7448"));
+    // Цвета этой банки — и для ореола карточки, и для всей страницы: аура курсора
+    // и слово «разложенная» перетекают к ним той же анимацией, что и влёт банки.
+    const accentA = safeColor(drink.accent?.[0], "#ff4f79");
+    const accentB = safeColor(drink.accent?.[1], "#ff7448");
+    card.style.setProperty("--hero-a", accentA);
+    card.style.setProperty("--hero-b", accentB);
+    rootStyle.setProperty("--can-a", accentA);
+    rootStyle.setProperty("--can-b", accentB);
 
     const image = document.getElementById("specimen-image");
     if (image) {

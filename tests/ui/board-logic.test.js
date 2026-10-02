@@ -91,8 +91,10 @@ async function runApp({ summary, pathname = "/", search = "" }) {
     modalOpened = true;
   };
   const urls = [];
+  const rootProps = {};
   const sandbox = {
     document: {
+      documentElement: { style: { setProperty: (key, value) => (rootProps[key] = value) } },
       querySelector: (sel) => {
         if (sel === "#tier-board") return board;
         if (sel === "#drink-dialog") return dialog;
@@ -140,6 +142,7 @@ async function runApp({ summary, pathname = "/", search = "" }) {
     handlers,
     urls,
     modalOpened,
+    rootProps,
     searchEl: byId["board-search"],
     dialogContent,
     specimen: {
@@ -238,4 +241,21 @@ test("витрина: без S-тира ничего не выдумывает",
   summary.drinks[1].ratings = { sanya: { tier: "B", review: "" } };
   const { specimen } = await runApp({ summary });
   assert.match(specimen.caption.innerHTML, /ПОКА НЕТ S/);
+});
+
+test("витрина: аура курсора и «разложенная» берут цвета у банки на витрине", async () => {
+  const summary = makeSummary();
+  summary.drinks[0].accent = ["#12ab34", "#56cd78"];
+  const { rootProps, specimen } = await runApp({ summary });
+  assert.match(specimen.caption.innerHTML, /BURN ORIGINAL/);
+  assert.equal(rootProps["--can-a"], "#12ab34", "цвет A должен уходить на страницу");
+  assert.equal(rootProps["--can-b"], "#56cd78", "цвет B должен уходить на страницу");
+
+  // Без S-тира возвращаем базовые цвета.
+  const empty = makeSummary();
+  empty.drinks[0].ratings = { sanya: { tier: "A", review: "" } };
+  empty.drinks[1].ratings = { sanya: { tier: "B", review: "" } };
+  const { rootProps: emptyProps } = await runApp({ summary: empty });
+  assert.equal(emptyProps["--can-a"], "#ff4f79");
+  assert.equal(emptyProps["--can-b"], "#ff7448");
 });
