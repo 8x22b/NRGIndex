@@ -82,6 +82,16 @@ test("lookupChestnyZnak: GTIN из ответа, отказ и ошибка се
   );
   assert.equal(
     await lookupChestnyZnak("0104680036912629215Fabc", {
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({ codeFounded: false, codeResolveData: { gtin: "04680036912629" } }),
+      }),
+    }),
+    null,
+    "неизвестный код Честного знака — не товар",
+  );
+  assert.equal(
+    await lookupChestnyZnak("0104680036912629215Fabc", {
       fetchImpl: async () => {
         throw new Error("network down");
       },

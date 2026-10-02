@@ -115,11 +115,14 @@ async function lookupChestnyZnak(rawCode, { fetchImpl = fetch } = {}) {
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);
     if (!data || data.success === false) return null;
+    // Потребительский API отвечает и на неизвестные коды: codeFounded=false —
+    // это не товар, а лишь разобранный GTIN; без названия возвращать нечего.
+    if (data.codeFounded === false) return null;
     const name = String(data.productName || data.product_name || data.name || data.product?.name || "").trim();
     const brand = String(data.brand || data.brandName || data.product?.brand || "").trim();
+    if (!name && !brand) return null;
     const gtin = normalizeGtin(data.gtin || data.codeResolveData?.gtin || "");
-    if (!name && !brand && !gtin) return null;
-    return { source: "crpt", brand, name, flavor: "", gtin };
+    return { source: "crpt", brand, name, flavor: "", gtin: gtin || "" };
   } catch {
     return null;
   }
