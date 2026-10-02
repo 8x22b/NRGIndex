@@ -120,7 +120,8 @@ test("security: в коде нет захардкоженных секретов
 
 test("security: пароли, сессии и cookie настроены безопасно", () => {
   const auth = read(path.join("server", "auth.js"));
-  assert.match(auth, /N:\s*32768/, "scrypt N должен быть не меньше 32768");
+  // Боевая стоимость по умолчанию 32768; тесты занижают её через SCRYPT_N.
+  assert.match(auth, /process\.env\.SCRYPT_N\) \|\| 32768/, "scrypt по умолчанию должен быть 32768");
   assert.match(auth, /timingSafeEqual/, "сравнение хешей должно быть постоянным по времени");
   assert.match(auth, /createHash\(["']sha256["']\)/, "токен сессии должен храниться как sha256");
   assert.match(auth, /httpOnly:\s*true/, "cookie должна быть httpOnly");

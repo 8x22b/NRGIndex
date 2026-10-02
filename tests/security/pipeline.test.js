@@ -67,9 +67,20 @@ test("pipeline: на боевом раннере не качаем Node, бер�
   }
 });
 
+test("pipeline: категории тестов разделены между джобами без дублей", () => {
+  const yml = read("pipeline.yml");
+  const testJob = jobBlock(yml, "test");
+  const preDeploy = jobBlock(yml, "pre-deploy");
+  assert.match(testJob, /npm run test:unit && npm run test:ui && npm run test:security/);
+  assert.match(preDeploy, /npm run test:api/);
+  assert.doesNotMatch(testJob, /npm run test:api/, "интеграция не дублируется в облаке");
+  assert.doesNotMatch(preDeploy, /npm run test:unit|npm run test:ui|npm run test:security/, "быстрые категории не дублируются на раннере");
+  assert.doesNotMatch(yml, /^\s*run: npm test\s*$/m, "полный npm test не гоняем дважды");
+  assert.doesNotMatch(preDeploy, /npm audit/, "аудит уже прошёл в облаке");
+});
+
 test("pipeline: на месте смоук, аудит, бэкап, health-check и откат", () => {
   const yml = read("pipeline.yml");
-  assert.match(yml, /npm test/);
   assert.match(yml, /npm audit --omit=dev --audit-level=high/);
   assert.match(yml, /Smoke: сервер стартует и отвечает/);
   assert.match(yml, /Backup and sync app to \/opt\/nrgindex/);

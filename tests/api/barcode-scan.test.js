@@ -46,11 +46,10 @@ test("скан фото: Data Matrix GS1 читает точный код в с�
   // zxing-wasm в Plain-режиме не отдаёт начальный FNC1: внутренний GS на месте.
   const expected = "0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
   const png = await dataMatrixPng({ scale: 12 });
+  // Повороты и инверсию сервер и так перебирает сам, а их разбор уже проверяется
+  // юнитом decodeBarcodeImage. Здесь гоняем разные по качеству кадры, не дублируя.
   const variants = [
     png,
-    await sharp(png).rotate(90).toBuffer(),
-    await sharp(png).rotate(270).toBuffer(),
-    await sharp(png).negate().toBuffer(),
     await dataMatrixPng({ scale: 2 }),
     await sharp(png).linear(0.65, -25).toBuffer(),
     await sharp(png).blur(0.35).jpeg({ quality: 82 }).toBuffer(),

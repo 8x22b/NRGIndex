@@ -1,3 +1,8 @@
+// Интеграционные тесты логинятся десятки раз: боевая стоимость scrypt (N=32768)
+// съедала на это секунды. Ставим до загрузки server/auth: схема и соль те же,
+// просто N ниже; проверка хэша всегда идёт с N, записанным в самом хэше.
+process.env.SCRYPT_N = process.env.SCRYPT_N || "1024";
+
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");

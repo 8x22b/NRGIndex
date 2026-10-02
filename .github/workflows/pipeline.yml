@@ -1,8 +1,9 @@
 name: Pipeline
 
-# Единый пайплайн: запускается при мерже в production (push). Тесты в облаке GitHub
-# и пре-деплой-тесты на боевом раннере идут параллельно, деплой — только после
-# успешного завершения обоих. Ручной запуск идёт тем же путём, push в master молчит.
+# Единый пайплайн: запускается при мерже в production (push). Два набора проверок
+# идут параллельно и дополняют друг друга (без дублей): юниты/UI/безопасность — в
+# облаке GitHub, интеграция по HTTP — на боевом раннере. Деплой — только после
+# успеха обоих. Ручной запуск идёт тем же путём, push в master молчит.
 on:
   push:
     branches: [production]
@@ -17,7 +18,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Тесты в чистом окружении GitHub + smoke-старт сервера.
+  # Быстрые категории в чистом окружении GitHub + smoke-старт сервера.
+  # Интеграционные API-тесты сюда не дублируем — они на боевом раннере.
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -32,8 +34,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Unit and API tests
-        run: npm test
+      - name: Unit, UI and security tests
+        run: npm run test:unit && npm run test:ui && npm run test:security
 
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
@@ -56,7 +58,9 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:3210/cabinet.html
           kill "$server_pid"
 
-  # Тот же коммит перепроверяем на боевом раннере: окружение деплоя бывает строже CI.
+  # На боевом раннере — интеграция по HTTP: те же сервер и БД, что у деплоя,
+  # это самая чувствительная к окружению категория. Юниты/UI уже прошли в облаке,
+  # аудит тоже там — здесь не повторяем.
   pre-deploy:
     name: Pre-deploy tests
     runs-on: [self-hosted, nrgindex]
@@ -75,11 +79,8 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefer-offline
 
-      - name: Unit and API tests
-        run: npm test
-
-      - name: Dependency audit
-        run: npm audit --omit=dev --audit-level=high
+      - name: API and integration tests
+        run: npm run test:api
 
   # Деплой ждёт обе проверки: упал любой из тестов — деплоя нет.
   deploy:

@@ -3,7 +3,9 @@ const { promisify } = require("node:util");
 const { unauthorized, forbidden, tooMany } = require("./lib/errors");
 
 const scrypt = promisify(crypto.scrypt);
-const SCRYPT = { N: 32768, r: 8, p: 1, keylen: 64, maxmem: 128 * 1024 * 1024 };
+// Стоимость scrypt: в бою 32768, в тестах helpers.js ставит 1024 — схема та же,
+// просто ниже цена (проверка всегда идёт с N из самого хэша).
+const SCRYPT = { N: Number(process.env.SCRYPT_N) || 32768, r: 8, p: 1, keylen: 64, maxmem: 128 * 1024 * 1024 };
 const SESSION_COOKIE = "nrg_session";
 const LOGIN_WINDOW = "-15 minutes";
 const LOGIN_MAX_PER_USER = 5;
