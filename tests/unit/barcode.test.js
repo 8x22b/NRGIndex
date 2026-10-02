@@ -7,6 +7,8 @@ const {
   barcodeField,
   lookupOpenFoodFacts,
   lookupChestnyZnak,
+  lookupBarcodeList,
+  parseBarcodeListPage,
 } = require("../../server/lib/barcode");
 
 test("normalizeGtin: канонизирует EAN/UPC/GTIN и режет неверные", () => {
@@ -86,6 +88,43 @@ test("lookupChestnyZnak: GTIN из ответа, отказ и ошибка се
     }),
     null,
   );
+});
+
+test("barcode-list: разбирает страницу с товаром и берёт читаемое название", () => {
+  const html = `<!doctype html><html><head>
+    <title>Напиток энергитический Адреналин Раш жб 0.25л - Штрих-код: 4600494223013</title></head>
+    <body><table class="randomBarcodes"><tr><th>№</th><th>Штрих-код</th></tr>
+    <tr class="even"><td>1</td><td>4600494223013</td><td>НАПИТОК ЭНЕРГИТИЧЕСКИЙ АДРЕНАЛИН РАШ ЖБ 0.25Л</td><td>ШТ.</td><td>581</td></tr>
+    <tr class="odd"><td>3</td><td>4600494223013</td><td>НАПИТОК АДРЕНАЛИН РАШ</td><td>ШТ</td><td>5</td></tr>
+    </table></body></html>`;
+  assert.deepEqual(parseBarcodeListPage(html, "4600494223013"), {
+    source: "barcode-list",
+    name: "Напиток энергитический Адреналин Раш жб 0.25л",
+  });
+});
+
+test("barcode-list: без таблицы или чужого кода — null", () => {
+  assert.equal(parseBarcodeListPage("<html><body>ничего не нашлось</body></html>", "4600494223013"), null);
+  const other = `<table class="randomBarcodes"><tr class="odd"><td>1</td><td>1111111111116</td><td>ЧУЖОЙ ТОВАР</td><td>ШТ</td><td>1</td></tr></table>`;
+  assert.equal(parseBarcodeListPage(other, "4600494223013"), null);
+});
+
+test("lookupBarcodeList: ходит за HTML и переживает ошибку", async () => {
+  const calls = [];
+  const html = `<html><head><title>Флеш Ап Апельсиновый ритм 0.45л. жб - Штрих-код: 4600682003106</title></head>
+    <body><table class="randomBarcodes"><tr class="even"><td>1</td><td>4600682003106</td><td>ФЛЕШ АП АПЕЛЬСИНОВЫЙ РИТМ</td><td>ШТ.</td><td>260</td></tr></table></body></html>`;
+  const found = await lookupBarcodeList("4600682003106", {
+    fetchImpl: async (url, init) => {
+      calls.push(String(url));
+      assert.match(String(init?.headers?.["user-agent"]), /NRGIndex/);
+      return new Response(html, { status: 200 });
+    },
+  });
+  assert.equal(found.name, "Флеш Ап Апельсиновый ритм 0.45л. жб");
+  assert.match(calls[0], /barcode-list\.ru/);
+  assert.match(calls[0], /barcode=4600682003106/);
+
+  assert.equal(await lookupBarcodeList("4600682003106", { fetchImpl: async () => new Response("no", { status: 500 }) }), null);
 });
 
 // Заводских энкодеров в zxing-js нет, поэтому рисуем код сами (tests/helpers/ean13.js).

@@ -14,17 +14,25 @@ const {
 const { saveProcessedImage, saveAvatarImage, deleteUpload } = require("../lib/images");
 const { redrawCanOnWhite, recognizeAssortment } = require("../lib/gemini");
 const { redrawCanOnTransparent, templateDataUrlFromUpload } = require("../lib/openrouter-image");
-const { parseScanCode, barcodeField, lookupOpenFoodFacts, lookupChestnyZnak, decodeBarcodeImage } = require("../lib/barcode");
+const {
+  parseScanCode,
+  barcodeField,
+  lookupOpenFoodFacts,
+  lookupChestnyZnak,
+  lookupBarcodeList,
+  decodeBarcodeImage,
+} = require("../lib/barcode");
 const { recordAiUsage, writeAudit } = require("../db");
 const history = require("../lib/history");
-const {
-  ACCENTS,
-  touchContent,
-  uniqueSlug,
-  ratingsForDrink,
-  relationsForDrink,
-  findSimilarDrinks,
-} = require("../lib/content");
+  const {
+    ACCENTS,
+    touchContent,
+    uniqueSlug,
+    ratingsForDrink,
+    relationsForDrink,
+    findSimilarDrinks,
+    matchWords,
+  } = require("../lib/content");
 const { drinkToAdmin, userToApi } = require("../lib/serialize");
 
 // base нужен для PATCH: неуказанные поля не сбрасываются в дефолт, а остаются как были.
@@ -76,6 +84,24 @@ module.exports = (db, auth, config) => {
     const drink = db.prepare("SELECT * FROM drinks WHERE slug = ?").get(slug);
     if (!drink) throw notFound("Напиток не найден");
     return drink;
+  }
+
+  // Бренд для находки из внешней базы: ищем известный бренд из индекса среди слов
+  // названия (matchWords учитывает транслит: «энерг. напиток BURN 0.449» → burn).
+  function guessBrand(db, name) {
+    const words = new Set(matchWords(name));
+    if (!words.size) return "";
+    let best = "";
+    let bestWords = 0;
+    for (const { brand } of db.prepare("SELECT DISTINCT brand FROM drinks WHERE brand <> ''").all()) {
+      const brandWords = matchWords(brand);
+      if (!brandWords.length || !brandWords.every((word) => words.has(word))) continue;
+      if (brandWords.length > bestWords || (brandWords.length === bestWords && brand.length > best.length)) {
+        best = brand;
+        bestWords = brandWords.length;
+      }
+    }
+    return best;
   }
 
   const userRow = (user) => ({ id: user.id, username: user.username, display_name: user.displayName });
@@ -397,6 +423,24 @@ module.exports = (db, auth, config) => {
     if (!stored && scan.kind === "datamatrix") {
       const crpt = await lookupChestnyZnak(scan.raw, { fetchImpl: ai.fetchImpl });
       if (crpt && !product) product = { ...crpt, volume: "", image: "", caffeineMg: 0, kcal: 0, sugarG: 0 };
+    }
+    if (!product) {
+      // Российские банки в Open Food Facts часто не заведены — смотрим базу
+      // штрих-кодов barcode-list.ru: она вытягивает хотя бы верное название.
+      const found = await lookupBarcodeList(scan.gtin, { fetchImpl: ai.fetchImpl }).catch(() => null);
+      if (found?.name) {
+        product = {
+          source: "barcode-list",
+          brand: guessBrand(db, found.name),
+          name: found.name,
+          flavor: "",
+          volume: "",
+          image: "",
+          caffeineMg: 0,
+          kcal: 0,
+          sugarG: 0,
+        };
+      }
     }
 
     const myTier = (slug) =>

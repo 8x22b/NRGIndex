@@ -1795,6 +1795,7 @@
     const source = data.product?.source;
     if (source === "openfoodfacts") bits.push("Open Food Facts");
     if (source === "crpt") bits.push("Честный знак");
+    if (source === "barcode-list") bits.push("База штрих-кодов");
     if (source === "index") bits.push("уже в индексе");
     if (data.product?.volume) bits.push(data.product.volume);
     if (data.product?.caffeineMg) bits.push(`${data.product.caffeineMg} мг кофеина`);

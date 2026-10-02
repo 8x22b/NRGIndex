@@ -11,9 +11,11 @@ const { badRequest } = require("./errors");
 
 const OFF_BASE = "https://world.openfoodfacts.org/api/v2/product";
 const CRPT_URL = "https://mobile.api.crpt.ru/mobile/check";
+const BARCODE_LIST_URL = "https://barcode-list.ru/barcode/RU/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA.htm";
 const UA = "NRGIndex/2.0 (energy drink tier list)";
 const OFF_TIMEOUT_MS = 8000;
 const CRPT_TIMEOUT_MS = 5000;
+const BL_TIMEOUT_MS = 8000;
 
 const digits = (value) => String(value || "").replace(/\D/g, "");
 
@@ -123,6 +125,50 @@ async function lookupChestnyZnak(rawCode, { fetchImpl = fetch } = {}) {
   }
 }
 
+const ENTITIES = { quot: '"', apos: "'", amp: "&", lt: "<", gt: ">", nbsp: " " };
+
+function decodeEntities(value) {
+  return String(value || "")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+    .replace(/&([a-z]+);/gi, (match, name) => ENTITIES[name.toLowerCase()] ?? match);
+}
+
+const stripTags = (value) =>
+  decodeEntities(String(value || "").replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+
+// barcode-list.ru: российская база штрих-кодов — выручает там, где Open Food Facts
+// по российским банкам пуст. Таблица randomBarcodes: «№ | код | наименование | ед. | рейтинг»,
+// строки отсортированы по рейтингу. Название берём из <title> — там человеческая
+// капитализация, а строку таблицы используем как проверку, что код вообще нашёлся.
+function parseBarcodeListPage(html, gtin) {
+  const text = String(html || "");
+  const code = digits(gtin);
+  if (!code || !text.includes('class="randomBarcodes"')) return null;
+  let rowName = "";
+  for (const row of text.matchAll(/<tr class="(?:even|odd)[^"]*">([\s\S]*?)<\/tr>/g)) {
+    const cells = [...row[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((cell) => stripTags(cell[1]));
+    if (cells.length < 3 || digits(cells[1]) !== code || !cells[2]) continue;
+    rowName = cells[2];
+    break;
+  }
+  if (!rowName) return null;
+  const title = stripTags((text.match(/<title>([\s\S]*?)<\/title>/) || [])[1] || "")
+    .replace(/\s*-\s*Штрих-код:.*$/i, "")
+    .trim();
+  return { source: "barcode-list", name: title || rowName };
+}
+
+async function lookupBarcodeList(gtin, { fetchImpl = fetch } = {}) {
+  const url = `${BARCODE_LIST_URL}?barcode=${encodeURIComponent(digits(gtin))}`;
+  const res = await fetchImpl(url, {
+    headers: { "user-agent": UA, accept: "text/html" },
+    signal: AbortSignal.timeout(BL_TIMEOUT_MS),
+  });
+  if (!res.ok) return null;
+  const html = await res.text();
+  return parseBarcodeListPage(html, gtin);
+}
+
 // Читаем код с фото сами: обычный кадр, контрастный и инвертированный, каждый —
 // в четырёх поворотах. Так переживают блики, тени и съёмку «вверх ногами» —
 // то, на чём спотыкается единственная попытка камерного API.
@@ -198,5 +244,7 @@ module.exports = {
   barcodeField,
   lookupOpenFoodFacts,
   lookupChestnyZnak,
+  lookupBarcodeList,
+  parseBarcodeListPage,
   decodeBarcodeImage,
 };
