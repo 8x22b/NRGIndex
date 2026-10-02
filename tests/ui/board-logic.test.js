@@ -92,9 +92,17 @@ async function runApp({ summary, pathname = "/", search = "" }) {
   };
   const urls = [];
   const rootProps = {};
+  const rootClasses = new Set();
   const sandbox = {
     document: {
-      documentElement: { style: { setProperty: (key, value) => (rootProps[key] = value) } },
+      documentElement: {
+        style: { setProperty: (key, value) => (rootProps[key] = value) },
+        classList: {
+          add: (name) => rootClasses.add(name),
+          remove: (name) => rootClasses.delete(name),
+          toggle: (name, on) => (on ? rootClasses.add(name) : rootClasses.delete(name)),
+        },
+      },
       querySelector: (sel) => {
         if (sel === "#tier-board") return board;
         if (sel === "#drink-dialog") return dialog;
@@ -143,6 +151,7 @@ async function runApp({ summary, pathname = "/", search = "" }) {
     urls,
     modalOpened,
     rootProps,
+    rootClasses,
     searchEl: byId["board-search"],
     dialogContent,
     specimen: {
@@ -258,4 +267,9 @@ test("витрина: аура курсора и «разложенная» бе
   const { rootProps: emptyProps } = await runApp({ summary: empty });
   assert.equal(emptyProps["--can-a"], "#ff4f79");
   assert.equal(emptyProps["--can-b"], "#ff7448");
+});
+
+test("витрина: после раскраски включается html.can-ready — аура появляется уже в цвете", async () => {
+  const { rootClasses } = await runApp({ summary: makeSummary() });
+  assert.ok(rootClasses.has("can-ready"), "после раскраски витрины ставим html.can-ready");
 });
