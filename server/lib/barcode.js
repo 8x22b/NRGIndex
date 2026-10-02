@@ -7,6 +7,7 @@ const {
   MultiFormatReader,
   PlanarYUVLuminanceSource,
 } = require("@zxing/library");
+const { readBarcodes } = require("zxing-wasm/reader");
 const { badRequest } = require("./errors");
 
 const OFF_BASE = "https://world.openfoodfacts.org/api/v2/product";
@@ -222,6 +223,80 @@ const DECODE_FORMATS = [
 ];
 const DECODE_MAX_SIDE = 1600;
 
+// zxing-wasm: сильнее старого JS-порта на зашумлённых Data Matrix.
+const WASM_FORMATS = ["DataMatrix", "EAN13", "EAN8", "UPCA", "UPCE", "Code128"];
+const WASM_FORMAT_NAMES = {
+  DataMatrix: "data_matrix",
+  EAN13: "ean_13",
+  EAN8: "ean_8",
+  UPCA: "upc_a",
+  UPCE: "upc_e",
+  Code128: "code_128",
+};
+
+async function decodeWithZxingWasm(image) {
+  const results = await readBarcodes(new Uint8Array(image), {
+    formats: WASM_FORMATS,
+    tryHarder: true,
+    tryRotate: true,
+    tryInvert: true,
+    tryDownscale: true,
+    tryDenoise: true,
+    maxNumberOfSymbols: 1,
+    textMode: "Plain",
+  });
+  const result = results?.find((item) => item?.isValid && item.text);
+  if (!result) return null;
+  return {
+    code: String(result.text),
+    format: WASM_FORMAT_NAMES[result.format] || String(result.format || "").toLowerCase(),
+  };
+}
+
+// Otsu: гистограмма серого и порог между «тёмным» и «светлым».
+function otsuThreshold(gray) {
+  const histogram = new Array(256).fill(0);
+  for (const value of gray) histogram[value]++;
+  const total = gray.length;
+  let sum = 0;
+  for (let i = 0; i < 256; i++) sum += i * histogram[i];
+  let dark = 0;
+  let sumDark = 0;
+  let best = 0;
+  let threshold = 0;
+  for (let i = 0; i < 256; i++) {
+    dark += histogram[i];
+    if (!dark) continue;
+    const light = total - dark;
+    if (!light) break;
+    sumDark += i * histogram[i];
+    const between = dark * light * (sumDark / dark - (sum - sumDark) / light) ** 2;
+    if (between > best) {
+      best = between;
+      threshold = i;
+    }
+  }
+  return threshold;
+}
+
+// Три фиксированные попытки: оригинал, Otsu и Otsu с инверсией. Инверсия
+// обязательна для бликующей банки: без неё Data Matrix не читается.
+async function decodeWithWasmVariants(prepared) {
+  const direct = await decodeWithZxingWasm(prepared);
+  if (direct) return direct;
+  const { data, info } = await sharp(prepared).grayscale().raw().toBuffer({ resolveWithObject: true });
+  const threshold = otsuThreshold(data);
+  for (const invert of [false, true]) {
+    const pixels = Buffer.from(data.map((value) => ((value > threshold) !== invert ? 255 : 0)));
+    const png = await sharp(pixels, { raw: { width: info.width, height: info.height, channels: 1 } })
+      .png()
+      .toBuffer();
+    const found = await decodeWithZxingWasm(png);
+    if (found) return found;
+  }
+  return null;
+}
+
 function decodePrepared(raw, info, hints) {
   const source = new PlanarYUVLuminanceSource(
     Uint8ClampedArray.from(raw),
@@ -255,6 +330,9 @@ async function decodeBarcodeImage(buffer, { maxSide = DECODE_MAX_SIDE } = {}) {
     .resize({ width: maxSide, height: maxSide, fit: "inside", withoutEnlargement: true })
     .png()
     .toBuffer();
+
+  const wasm = await decodeWithWasmVariants(prepared).catch(() => null);
+  if (wasm) return wasm;
 
   const hints = new Map();
   hints.set(DecodeHintType.POSSIBLE_FORMATS, DECODE_FORMATS);

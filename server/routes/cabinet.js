@@ -66,6 +66,9 @@ module.exports = (db, auth, config) => {
 
   const barcodeUsage = new Map();
   const BARCODE_LIMIT = 120;
+  // Живой фолбэк шлёт кадры чаще поиска по коду — отдельный, более щедрый лимит.
+  const scanUsage = new Map();
+  const BARCODE_SCAN_LIMIT = 600;
   const barcodeCache = new Map();
   const BARCODE_CACHE_MS = 30 * 60 * 1000;
   const BARCODE_CACHE_MAX = 300;
@@ -79,6 +82,17 @@ module.exports = (db, auth, config) => {
     }
     entry.count += 1;
     if (entry.count > BARCODE_LIMIT) throw tooMany("Лимит поиска по коду: 120 в час");
+  }
+
+  function checkScanLimit(userId) {
+    const now = Date.now();
+    const entry = scanUsage.get(userId);
+    if (!entry || entry.resetAt < now) {
+      scanUsage.set(userId, { count: 1, resetAt: now + AI_WINDOW_MS });
+      return;
+    }
+    entry.count += 1;
+    if (entry.count > BARCODE_SCAN_LIMIT) throw tooMany("Лимит распознавания кадров: 600 в час");
   }
 
   function findDrink(slug) {
@@ -491,7 +505,7 @@ module.exports = (db, auth, config) => {
   // Распознавание кода с фото на сервере: работает в любом браузере (в Firefox
   // и Safari нет BarcodeDetector), переживает повороты, блики и тени.
   router.post("/ai/barcode-scan", async (req, res) => {
-    checkBarcodeLimit(req.user.id);
+    checkScanLimit(req.user.id);
     const { buffer } = imageFromDataUrl(req.body?.imageDataUrl, { maxBytes: config.maxUploadBytes });
     const found = await decodeBarcodeImage(buffer);
     if (!found?.code) return res.json({ found: false });

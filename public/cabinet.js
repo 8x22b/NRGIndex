@@ -2017,6 +2017,11 @@
 
   const NATIVE_GRACE_MS = 2500;
   const SCAN_INTERVAL_MS = 150;
+  // Серверный фолбэк для слабых локальных читалок (iPhone/Safari/Firefox):
+  // раз в 2.5 c, не больше 24 кадров за сессию.
+  const SERVER_SCAN_MS = 2500;
+  const SERVER_SCAN_MAX = 24;
+  const SERVER_SCAN_SIDE = 1024;
   // Один ограниченный вариант за live-tick; полный кадр чередуется с ROI,
   // поэтому код у края кадра не теряется из-за object-fit/crop.
   const scanVariant = (video, index, maxSide = 1280) => {
@@ -2042,6 +2047,25 @@
       context.putImageData(image, 0, 0);
     }
     return canvas;
+  };
+
+  // Кадр на сервер: ограниченный JPEG, один запрос за раз. Ошибки глушим —
+  // live-цикл не должен падать из-за сети.
+  let serverScanBusy = false;
+  const serverScanFrame = async () => {
+    if (serverScanBusy || camera.busy || barcodeBusy) return "";
+    const canvas = scanVariant($("camera-video"), 0, SERVER_SCAN_SIDE);
+    if (!canvas) return "";
+    serverScanBusy = true;
+    try {
+      const imageDataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      const result = await api("POST", "api/cabinet/ai/barcode-scan", { imageDataUrl });
+      return result?.found ? result.code : "";
+    } catch {
+      return "";
+    } finally {
+      serverScanBusy = false;
+    }
   };
 
   // Живой скан: пока открыт режим «Код», крутим кадры через нативный детектор,
@@ -2072,6 +2096,8 @@
     const startedAt = Date.now();
     const detector = formats.length ? new window.BarcodeDetector({ formats }) : null;
     let variant = 0;
+    let serverAttempts = 0;
+    let serverAt = 0;
     const tick = async () => {
       if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open || camera.busy || barcodeBusy) return;
       const canvas = scanVariant($("camera-video"), variant++ % 6);
@@ -2092,6 +2118,18 @@
         }
       }
       if (!code) code = zxingDecode(canvas);
+      if (
+        !code &&
+        serverAttempts < SERVER_SCAN_MAX &&
+        Date.now() - serverAt >= SERVER_SCAN_MS
+      ) {
+        serverAt = Date.now();
+        serverAttempts++;
+        setCameraStatus("🔎 Смотрю кадр внимательнее…");
+        code = await serverScanFrame();
+        if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
+        if (!code) setCameraStatus("🔎 Ищу код — просто наведи камеру");
+      }
       if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
       if (!code) {
         autoScanTimer = setTimeout(tick, SCAN_INTERVAL_MS);

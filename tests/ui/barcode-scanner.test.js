@@ -98,6 +98,102 @@ test("scanner: older async start cannot schedule a stale loop", async () => {
   assert.equal(timers.length, 1);
 });
 
+test("live fallback: один серверный кадр за раз и только при свободной камере", async () => {
+  const calls = [];
+  const canvas = { toDataURL: () => "data:image/jpeg;base64,xx" };
+  const sandbox = {
+    camera: { busy: false, mode: "code" }, barcodeBusy: false, SERVER_SCAN_SIDE: 1024,
+    scanVariant: (video, index, maxSide) => { assert.equal(index, 0); assert.equal(maxSide, 1024); return canvas; },
+    $: () => ({ videoWidth: 1280, videoHeight: 720 }),
+    api: async (method, path, body) => {
+      calls.push([method, path, body.imageDataUrl]);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return calls.length === 1 ? { found: true, code: "0104680036912629215JuVJmTnOR:3H\x1D93kjJw" } : { found: false };
+    },
+  };
+  vm.createContext(sandbox);
+  const block = source.slice(source.indexOf("  let serverScanBusy"), source.indexOf("  // Живой скан:"));
+  vm.runInContext(block + "\nthis.serverScanFrame = serverScanFrame;", sandbox);
+  const [first, second] = await Promise.all([sandbox.serverScanFrame(), sandbox.serverScanFrame()]);
+  assert.equal(first, "0104680036912629215JuVJmTnOR:3H\x1D93kjJw");
+  assert.equal(second, "", "параллельный кадр не стакуется");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1], "api/cabinet/ai/barcode-scan");
+  sandbox.camera.busy = true;
+  assert.equal(await sandbox.serverScanFrame(), "");
+  assert.equal(calls.length, 1);
+});
+
+test("live fallback: после локальной осечки код с сервера уходит в lookupBarcode", async () => {
+  const timers = [];
+  const lookups = [];
+  const statuses = [];
+  let now = 0;
+  let serverCalls = 0;
+  const elements = { "camera-dialog": { open: true }, "camera-video": { videoWidth: 1280, videoHeight: 720 } };
+  const sandbox = {
+    camera: { mode: "code", busy: false }, barcodeBusy: false, autoScanGen: 0, zxingReader: null,
+    $: (id) => elements[id] ||= { open: true },
+    barcodeFormats: async () => [],
+    ensureZXingReader: async () => { sandbox.zxingReader = {}; },
+    setCameraStatus: (text) => statuses.push(text),
+    scanVariant: () => ({ toDataURL: () => "jpeg" }),
+    zxingDecode: () => "",
+    serverScanFrame: async () => { serverCalls++; return "0104680036912629215JuVJmTnOR:3H\x1D93kjJw"; },
+    lookupBarcode: async (code) => { lookups.push(code); return true; },
+    closeCamera: () => {},
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearTimeout: () => {},
+    Date: { now: () => now },
+    NATIVE_GRACE_MS: 2500, SCAN_INTERVAL_MS: 150, SERVER_SCAN_MS: 2500, SERVER_SCAN_MAX: 24,
+  };
+  sandbox.stopAutoScan = () => { sandbox.autoScanGen += 1; timers.length = 0; };
+  sandbox.window = { BarcodeDetector: class {} };
+  vm.createContext(sandbox);
+  const block = source.slice(source.indexOf("  const startAutoScan ="), source.indexOf("  const stopCamera ="));
+  vm.runInContext(block + "\nthis.start = startAutoScan;", sandbox);
+  await sandbox.start();
+  assert.equal(timers.length, 1);
+  now = 3000;
+  await timers[0].fn();
+  assert.equal(serverCalls, 1);
+  assert.deepEqual(lookups, ["0104680036912629215JuVJmTnOR:3H\x1D93kjJw"]);
+  assert.ok(statuses.includes("🔎 Смотрю кадр внимательнее…"));
+});
+
+test("live fallback: не больше 24 серверных кадров за сессию", async () => {
+  const timers = [];
+  let now = 0;
+  let serverCalls = 0;
+  const elements = { "camera-dialog": { open: true }, "camera-video": { videoWidth: 1280, videoHeight: 720 } };
+  const sandbox = {
+    camera: { mode: "code", busy: false }, barcodeBusy: false, autoScanGen: 0, zxingReader: null,
+    $: (id) => elements[id] ||= { open: true },
+    barcodeFormats: async () => [],
+    ensureZXingReader: async () => { sandbox.zxingReader = {}; },
+    setCameraStatus: () => {},
+    scanVariant: () => ({ toDataURL: () => "jpeg" }),
+    zxingDecode: () => "",
+    serverScanFrame: async () => { serverCalls++; return ""; },
+    lookupBarcode: async () => false,
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
+    clearTimeout: () => {},
+    Date: { now: () => now },
+    NATIVE_GRACE_MS: 2500, SCAN_INTERVAL_MS: 150, SERVER_SCAN_MS: 2500, SERVER_SCAN_MAX: 24,
+  };
+  sandbox.stopAutoScan = () => { sandbox.autoScanGen += 1; timers.length = 0; };
+  sandbox.window = { BarcodeDetector: class {} };
+  vm.createContext(sandbox);
+  const block = source.slice(source.indexOf("  const startAutoScan ="), source.indexOf("  const stopCamera ="));
+  vm.runInContext(block + "\nthis.start = startAutoScan;", sandbox);
+  await sandbox.start();
+  for (let i = 0; i < 26; i++) {
+    now += 3000;
+    await timers.shift().fn();
+  }
+  assert.equal(serverCalls, 24);
+});
+
 test("scanner: empty manual input keeps scanning; gallery failure offers retry, stale completion does not", async () => {
   const handlers = {};
   const elements = {};

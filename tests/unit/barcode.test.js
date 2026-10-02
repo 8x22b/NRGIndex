@@ -218,13 +218,26 @@ test("decodeBarcodeImage: читает фото в поворотах, инве�
 test("decodeBarcodeImage: реальный GS1 Data Matrix с GS", async () => {
   const { dataMatrixPng } = require("../helpers/datamatrix");
   const { decodeBarcodeImage } = require("../../server/lib/barcode");
-  const expected = "\x1D0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
+  const expected = "0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
   for (const image of [
     await dataMatrixPng({ scale: 12 }),
     await require("sharp")(await dataMatrixPng({ scale: 12 })).rotate(180).toBuffer(),
     await require("sharp")(await dataMatrixPng({ scale: 12 })).negate().toBuffer(),
     await require("sharp")(await dataMatrixPng({ scale: 12 })).resize(320, 320).toBuffer(),
-  ]) assert.equal((await decodeBarcodeImage(image))?.code, expected);
+  ]) {
+    // zxing-wasm в Plain-режиме не отдаёт начальный FNC1: внутренний GS на месте.
+    assert.deepEqual(await decodeBarcodeImage(image), { code: expected, format: "data_matrix" });
+  }
+});
+
+test("decodeBarcodeImage: реальное фото Data Matrix с крышки банки", async () => {
+  const { readFile } = require("node:fs/promises");
+  const path = require("node:path");
+  const { decodeBarcodeImage } = require("../../server/lib/barcode");
+  const found = await decodeBarcodeImage(
+    await readFile(path.join(__dirname, "..", "fixtures", "dm-can-top.jpg")),
+  );
+  assert.deepEqual(found, { code: "0104680036912629215JuVJmTnOR:3H\x1D93kjJw", format: "data_matrix" });
 });
 
 test("GS1 fixture → parseScanCode → TrueMark: только начальный FNC1 удаляется", async () => {
@@ -232,8 +245,9 @@ test("GS1 fixture → parseScanCode → TrueMark: только начальны�
   const { decodeBarcodeImage } = require("../../server/lib/barcode");
   const expected = "0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
   const decoded = await decodeBarcodeImage(await dataMatrixPng());
-  assert.equal(decoded.code, `\x1D${expected}`);
-  for (const code of [decoded.code, `]d2${decoded.code}`, expected]) {
+  assert.equal(decoded.code, expected);
+  // parseScanCode принимает и сырой код, и вариант с начальным FNC1, и scanner-префикс.
+  for (const code of [decoded.code, `\x1D${decoded.code}`, `]d2${decoded.code}`, `]d2\x1D${decoded.code}`]) {
     const scan = parseScanCode(code);
     assert.equal(scan.raw, expected);
     await lookupTrueMark(scan.raw, { fetchImpl: async (url) => {

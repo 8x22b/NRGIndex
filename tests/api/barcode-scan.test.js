@@ -43,7 +43,8 @@ test("скан фото: без кода — found:false, а не ошибка",
 });
 
 test("скан фото: Data Matrix GS1 читает точный код в сложных вариантах", async () => {
-  const expected = "\x1D0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
+  // zxing-wasm в Plain-режиме не отдаёт начальный FNC1: внутренний GS на месте.
+  const expected = "0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
   const png = await dataMatrixPng({ scale: 12 });
   const variants = [
     png,
@@ -60,6 +61,19 @@ test("скан фото: Data Matrix GS1 читает точный код в с�
     assert.equal(res.status, 200);
     assert.deepEqual(res.json, { found: true, code: expected, format: "data_matrix" });
   }
+});
+
+test("скан фото: реальное фото Data Matrix с крышки банки", async () => {
+  const { readFile } = require("node:fs/promises");
+  const path = require("node:path");
+  const jpeg = await readFile(path.join(__dirname, "..", "fixtures", "dm-can-top.jpg"));
+  const res = await scan(userCookie, { imageDataUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}` });
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.json, {
+    found: true,
+    code: "0104680036912629215JuVJmTnOR:3H\x1D93kjJw",
+    format: "data_matrix",
+  });
 });
 
 test("скан фото: аноним — 401, мусор — 400", async () => {
