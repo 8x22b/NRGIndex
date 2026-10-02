@@ -553,6 +553,145 @@ module.exports = (db, auth, config) => {
     res.json({ ok: true });
   });
 
+  // Склейка дублей: :id — дубль, который исчезнет; targetId — оставшийся напиток.
+  // Оценки и отзывы переносятся, конфликты решаются в пользу отзыва, затем свежести.
+  router.post("/drinks/:id/merge", (req, res) => {
+    const sourceId = int(req.params.id, "id", { min: 1 });
+    const targetId = int(req.body?.targetId, "targetId", { min: 1 });
+    if (sourceId === targetId) throw badRequest("Нельзя объединить напиток с самим собой");
+    const source = db.prepare("SELECT * FROM drinks WHERE id = ?").get(sourceId);
+    if (!source) throw notFound("Напиток не найден");
+    const target = db.prepare("SELECT * FROM drinks WHERE id = ?").get(targetId);
+    if (!target) throw notFound("Напиток для объединения не найден");
+
+    const details = [];
+    const stats = { movedRatings: 0, mergedRatings: 0, movedRelations: 0, filled: [] };
+    const sourceSnap = history.snapDrink(db, sourceId, { full: true });
+    const targetSnap = history.snapDrink(db, targetId, { full: true });
+
+    const merge = db.transaction(() => {
+      // 1) Оценки: свободные переносим, конфликты решаем в пользу отзыва, затем свежести.
+      const targetRatings = new Map(
+        db.prepare("SELECT * FROM ratings WHERE drink_id = ?").all(targetId).map((r) => [r.user_id, r]),
+      );
+      const preferSource = (mine, theirs) => {
+        const a = String(mine.review || "").trim() ? 1 : 0;
+        const b = String(theirs.review || "").trim() ? 1 : 0;
+        if (a !== b) return a > b;
+        return String(mine.updated_at || "") > String(theirs.updated_at || "");
+      };
+      const usernameOf = db.prepare("SELECT username FROM users WHERE id = ?");
+      for (const rating of sourceSnap.ratings) {
+        const existing = targetRatings.get(rating.user_id);
+        if (!existing) {
+          db.prepare("UPDATE ratings SET drink_id = ? WHERE drink_id = ? AND user_id = ?").run(
+            targetId,
+            sourceId,
+            rating.user_id,
+          );
+          stats.movedRatings += 1;
+          continue;
+        }
+        stats.mergedRatings += 1;
+        if (preferSource(rating, existing)) {
+          db.prepare(
+            `UPDATE ratings SET tier_id = ?, review = ?, order_index = ?, created_at = ?, updated_at = ?
+             WHERE drink_id = ? AND user_id = ?`,
+          ).run(
+            rating.tier_id,
+            rating.review,
+            rating.order_index,
+            rating.created_at,
+            rating.updated_at,
+            targetId,
+            rating.user_id,
+          );
+          const who = usernameOf.get(rating.user_id)?.username || `#${rating.user_id}`;
+          details.push(`@${who}: оставлена оценка дубля ${rating.tier_id} вместо ${existing.tier_id}`);
+        }
+        db.prepare("DELETE FROM ratings WHERE drink_id = ? AND user_id = ?").run(sourceId, rating.user_id);
+      }
+
+      // 2) Связи: рёбра дубля переводим на оставшийся напиток, петли исключаем.
+      const insertRel = db.prepare("INSERT OR IGNORE INTO drink_relations (drink_id, related_id) VALUES (?, ?)");
+      for (const { related_id: rid } of db
+        .prepare("SELECT related_id FROM drink_relations WHERE drink_id = ?")
+        .all(sourceId)) {
+        if (rid !== targetId && rid !== sourceId) {
+          insertRel.run(targetId, rid);
+          stats.movedRelations += 1;
+        }
+      }
+      for (const { drink_id: did } of db
+        .prepare("SELECT drink_id FROM drink_relations WHERE related_id = ?")
+        .all(sourceId)) {
+        if (did !== targetId && did !== sourceId) {
+          insertRel.run(did, targetId);
+          stats.movedRelations += 1;
+        }
+      }
+
+      // 3) Поля: пустые места оставшегося напитка заполняем данными дубля.
+      const row = { ...target };
+      const filled = [];
+      const takeField = (col, label) => {
+        if (!String(target[col] || "").trim() && String(source[col] || "").trim()) {
+          row[col] = source[col];
+          filled.push(label);
+        }
+      };
+      takeField("barcode", "Штрих-код");
+      takeField("flavor", "Вкус");
+      takeField("edition", "Издание");
+      takeField("source_label", "Подпись");
+      if (!target.image_path && source.image_path) {
+        row.image_path = source.image_path;
+        row.image_width = source.image_width;
+        row.image_height = source.image_height;
+        row.image_srcset = source.image_srcset;
+        row.accent_a = source.accent_a;
+        row.accent_b = source.accent_b;
+        filled.push("Картинка");
+      }
+      if (source.is_published && !target.is_published) {
+        row.is_published = 1;
+        filled.push("Публикация");
+      }
+      db.prepare(
+        `UPDATE drinks SET barcode = ?, flavor = ?, edition = ?, source_label = ?, image_path = ?,
+           image_width = ?, image_height = ?, image_srcset = ?, accent_a = ?, accent_b = ?, is_published = ?,
+           updated_at = datetime('now')
+         WHERE id = ?`,
+      ).run(
+        row.barcode,
+        row.flavor,
+        row.edition,
+        row.source_label,
+        row.image_path,
+        row.image_width,
+        row.image_height,
+        row.image_srcset,
+        row.accent_a,
+        row.accent_b,
+        row.is_published,
+        targetId,
+      );
+
+      db.prepare("DELETE FROM drinks WHERE id = ?").run(sourceId);
+
+      stats.filled = filled;
+      if (stats.movedRatings) details.unshift(`Оценок перенесено: ${stats.movedRatings}`);
+      if (stats.mergedRatings) details.push(`Совпало с оценками оставшегося: ${stats.mergedRatings}`);
+      if (stats.movedRelations) details.push(`Связей перенесено: ${stats.movedRelations}`);
+      if (filled.length) details.push(`Заполнено из дубля: ${filled.join(", ")}`);
+    });
+
+    merge();
+    history.recordMerge(db, req.user, { source: sourceSnap, target: targetSnap, details });
+    touchContent(db);
+    res.json({ ok: true, ...stats });
+  });
+
   router.put("/ratings/:drinkId/:userId", (req, res) => {
     const drinkId = int(req.params.drinkId, "drinkId", { min: 1 });
     const userId = int(req.params.userId, "userId", { min: 1 });
