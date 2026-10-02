@@ -156,6 +156,38 @@ module.exports = (db, auth, config) => {
     const tier = oneOf(String(req.body?.tier || "B"), TIERS, "Тир");
     const review = str(req.body?.review ?? "", "Отзыв", { required: false, max: 1000 });
     const barcode = barcodeField(req.body?.barcode);
+
+    // Защита от дублей на сервере: клиентские галочки можно обойти, поэтому
+    // перепроверяем сами. Точный штрих-код или заметная похожесть блокируют
+    // создание, пока не придёт явное «это другой энергос» (confirmDifferent).
+    // Скрытые банки тоже учитываем — иначе дубль заведётся рядом с черновиком.
+    const barcodeMatch = barcode
+      ? db
+          .prepare("SELECT slug, brand, name, flavor, image_path, is_published FROM drinks WHERE barcode = ?")
+          .get(barcode)
+      : null;
+    const similar = findSimilarDrinks(db, fields, { limit: 3, min: 0.6, includeHidden: true });
+    if (barcodeMatch && !similar.some((drink) => drink.slug === barcodeMatch.slug)) {
+      similar.unshift({
+        slug: barcodeMatch.slug,
+        brand: barcodeMatch.brand,
+        name: barcodeMatch.name,
+        flavor: barcodeMatch.flavor,
+        image: barcodeMatch.image_path || "assets/favicon.svg",
+        score: 1,
+        confidence: "high",
+        reason: "штрих-код совпал",
+        hidden: !barcodeMatch.is_published,
+      });
+    }
+    if (similar.length && req.body?.confirmDifferent !== true) {
+      return res.status(409).json({
+        error: "Похоже, такой энергос уже в индексе. Открой похожую банку — или подтверди, что это новая.",
+        code: "duplicate",
+        similar,
+      });
+    }
+
     const image = req.body?.imageDataUrl
       ? await saveProcessedImage(config.uploadsDir, req.body.imageDataUrl, config.maxUploadBytes)
       : null;
