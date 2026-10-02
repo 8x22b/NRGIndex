@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const sharp = require("sharp");
 const { startServer, createUser, request, login } = require("../helpers");
 const { ean13Png } = require("../helpers/ean13");
+const { dataMatrixPng } = require("../helpers/datamatrix");
 
 let ctx;
 let userCookie;
@@ -39,6 +40,26 @@ test("скан фото: без кода — found:false, а не ошибка",
   const res = await scan(userCookie, { imageDataUrl: `data:image/png;base64,${blank.toString("base64")}` });
   assert.equal(res.status, 200);
   assert.equal(res.json.found, false);
+});
+
+test("скан фото: Data Matrix GS1 читает точный код в сложных вариантах", async () => {
+  const expected = "\x1D0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
+  const png = await dataMatrixPng({ scale: 12 });
+  const variants = [
+    png,
+    await sharp(png).rotate(90).toBuffer(),
+    await sharp(png).rotate(270).toBuffer(),
+    await sharp(png).negate().toBuffer(),
+    await dataMatrixPng({ scale: 2 }),
+    await sharp(png).linear(0.65, -25).toBuffer(),
+    await sharp(png).blur(0.35).jpeg({ quality: 82 }).toBuffer(),
+  ];
+  for (const image of variants) {
+    const mime = image[0] === 255 ? "image/jpeg" : "image/png";
+    const res = await scan(userCookie, { imageDataUrl: `data:${mime};base64,${image.toString("base64")}` });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.json, { found: true, code: expected, format: "data_matrix" });
+  }
 });
 
 test("скан фото: аноним — 401, мусор — 400", async () => {

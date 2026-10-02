@@ -11,6 +11,7 @@ const { badRequest } = require("./errors");
 
 const OFF_BASE = "https://world.openfoodfacts.org/api/v2/product";
 const CRPT_URL = "https://mobile.api.crpt.ru/mobile/check";
+const TRUEMARK_URL = "https://truemark.ru/wp-json/truemark/v1/chz2";
 const BARCODE_LIST_URL = "https://barcode-list.ru/barcode/RU/%D0%BF%D0%BE%D0%B8%D1%81%D0%BA.htm";
 const UA = "NRGIndex/2.0 (energy drink tier list)";
 const OFF_TIMEOUT_MS = 8000;
@@ -46,7 +47,8 @@ function gtinFromDataMatrix(value) {
 }
 
 function parseScanCode(value) {
-  const raw = String(value || "").trim();
+  // trim убирает пробелы по краям, но сохраняет GS (\x1D) и весь серийник.
+  const raw = String(value || "").trim().replace(/^\]d2/, "").replace(/\{GS\}/g, "\x1D").replace(/^\x1D/, "");
   if (!raw) throw badRequest("Пустой код");
   if (/^\d{8,14}$/.test(raw)) {
     const gtin = normalizeGtin(raw);
@@ -128,6 +130,41 @@ async function lookupChestnyZnak(rawCode, { fetchImpl = fetch } = {}) {
   }
 }
 
+function parseTrueMarkResponse(data) {
+  const m = data?.m;
+  if (data?.ok === false || data?.codeFounded === false || m?.codeFounded === false) return null;
+  const good = Array.isArray(m?.catalogData) ? m.catalogData[0] : null;
+  if (!good) return null;
+  const text = (value) => typeof value === "string" ? value.trim() : "";
+  const name = text(good.good_name);
+  const brand = text(good.brand_name);
+  if (!name && !brand) return null;
+  const attrs = Array.isArray(good.good_attrs) ? good.good_attrs : [];
+  const flavor = text(attrs.find((attr) => attr?.attr_name === "Вкус")?.attr_value);
+  let image = "";
+  try {
+    const rawImage = text(good.good_img);
+    const url = new URL(rawImage.startsWith("//") ? `https:${rawImage}` : rawImage);
+    if (["https:", "http:"].includes(url.protocol) && !url.username && !url.password) image = url.href;
+  } catch {
+    // Некорректная картинка не мешает вернуть остальные данные товара.
+  }
+  return { source: "truemark", name, brand, flavor, image };
+}
+
+async function lookupTrueMark(rawCode, { fetchImpl = fetch } = {}) {
+  try {
+    const res = await fetchImpl(`${TRUEMARK_URL}?code=${encodeURIComponent(rawCode)}`, {
+      headers: { "user-agent": UA, referer: "https://truemark.ru/proverka-koda-markirovki/", accept: "application/json" },
+      signal: AbortSignal.timeout(CRPT_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    return parseTrueMarkResponse(await res.json());
+  } catch {
+    return null;
+  }
+}
+
 const ENTITIES = { quot: '"', apos: "'", amp: "&", lt: "<", gt: ">", nbsp: " " };
 
 function decodeEntities(value) {
@@ -201,7 +238,7 @@ function decodePrepared(raw, info, hints) {
     reader.setHints(hints);
     const result = reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
     return {
-      code: String(result.getText() || "").trim(),
+      code: String(result.getText() || ""),
       format: String(BarcodeFormat[result.getBarcodeFormat()] || "").toLowerCase(),
     };
   } catch {
@@ -223,17 +260,28 @@ async function decodeBarcodeImage(buffer, { maxSide = DECODE_MAX_SIDE } = {}) {
   hints.set(DecodeHintType.POSSIBLE_FORMATS, DECODE_FORMATS);
   hints.set(DecodeHintType.TRY_HARDER, true);
 
-  for (const rotation of [0, 180, 90, 270]) {
-    const frame = rotation ? await sharp(prepared).rotate(rotation).png().toBuffer() : prepared;
-    const base = () => sharp(frame).grayscale().normalise();
-    const variants = [
-      await base().raw().toBuffer({ resolveWithObject: true }),
-      await base().linear(1.6, -40).sharpen().raw().toBuffer({ resolveWithObject: true }),
-      await base().negate().raw().toBuffer({ resolveWithObject: true }),
-    ];
-    for (const variant of variants) {
-      const found = decodePrepared(variant.data, variant.info, hints);
-      if (found?.code) return found;
+  for (const upscale of [false, true]) {
+    let source = prepared;
+    if (upscale) {
+      const meta = await sharp(prepared).metadata();
+      const side = Math.max(meta.width, meta.height);
+      const enlarged = Math.min(2400, side * 2);
+      if (enlarged <= side) break;
+      source = await sharp(prepared).resize({ width: enlarged, height: enlarged, fit: "inside" }).png().toBuffer();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.DATA_MATRIX]);
+    }
+    for (const rotation of upscale ? [0] : [0, 180, 90, 270]) {
+      const frame = rotation ? await sharp(source).rotate(rotation).png().toBuffer() : source;
+      const base = () => sharp(frame).grayscale().normalise();
+      const variants = [
+        await base().raw().toBuffer({ resolveWithObject: true }),
+        await base().linear(1.6, -40).sharpen().raw().toBuffer({ resolveWithObject: true }),
+        await base().negate().raw().toBuffer({ resolveWithObject: true }),
+      ];
+      for (const variant of variants) {
+        const found = decodePrepared(variant.data, variant.info, hints);
+        if (found?.code) return found;
+      }
     }
   }
   return null;
@@ -247,6 +295,8 @@ module.exports = {
   barcodeField,
   lookupOpenFoodFacts,
   lookupChestnyZnak,
+  lookupTrueMark,
+  parseTrueMarkResponse,
   lookupBarcodeList,
   parseBarcodeListPage,
   decodeBarcodeImage,

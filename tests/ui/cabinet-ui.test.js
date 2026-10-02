@@ -8,6 +8,15 @@ const cabinetHtml = fs.readFileSync(path.join(__dirname, "..", "..", "public", "
 const cabinetRoutes = fs.readFileSync(path.join(__dirname, "..", "..", "server", "routes", "cabinet.js"), "utf8");
 const stylesSource = fs.readFileSync(path.join(__dirname, "..", "..", "public", "styles.css"), "utf8");
 
+test("Data Matrix: подсказка верха банки, квадрат и текстовый ручной код", () => {
+  assert.match(cabinetHtml, /Data Matrix \/ штрих-код/);
+  assert.match(cabinetHtml, /id="camera-code"[^>]*inputmode="text"/);
+  assert.match(cabinetSource, /Data Matrix обычно на верху банки/);
+  assert.match(stylesSource, /camera-stencil\[data-mode="code"\]::after[^\n]*aspect-ratio: 1/);
+  assert.match(cabinetSource, /body\.barcode = pending\.barcode/);
+  assert.doesNotMatch(cabinetSource, /body\.(?:barcode|rawCode) = pending\.rawCode/);
+});
+
 test("кабинет показывает красную кнопку удаления оценки", () => {
   assert.match(cabinetSource, /<button class=\"btn btn--danger\" type=\"button\" data-m-del-rating>удалить<\/button>/);
   assert.doesNotMatch(cabinetSource, /data-m-del-rating>− оценка<\/button>/);
@@ -266,12 +275,12 @@ test("статусы называют процесс: голос, фото, те
   assert.match(cabinetSource, /Обрабатываю текст/);
 });
 
-test("режим «Код» сканирует автоматически и без трафарета", () => {
+test("режим «Код» сканирует автоматически, квадрат не ограничивает полный кадр", () => {
   assert.doesNotMatch(cabinetHtml, /camera-stencil__code/);
   assert.doesNotMatch(stylesSource, /\.camera-stencil__code/);
   assert.match(cabinetSource, /const startAutoScan = async \(\) =>/);
   assert.match(cabinetSource, /const stopAutoScan = \(\) =>/);
-  assert.match(cabinetSource, /const grabScanFrame = \(maxSide = 1280\)/);
+  assert.match(cabinetSource, /const scanVariant = \(video, index, maxSide = 1280\)/);
   assert.match(cabinetSource, /detector\.detect\(canvas\)/);
   assert.match(cabinetSource, /zxingDecode\(canvas\)/);
   assert.match(cabinetSource, /startAutoScan\(\)/);

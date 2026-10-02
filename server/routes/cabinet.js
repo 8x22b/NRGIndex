@@ -19,6 +19,7 @@ const {
   barcodeField,
   lookupOpenFoodFacts,
   lookupChestnyZnak,
+  lookupTrueMark,
   lookupBarcodeList,
   decodeBarcodeImage,
 } = require("../lib/barcode");
@@ -395,12 +396,13 @@ module.exports = (db, auth, config) => {
     res.json({ parsed, similar });
   });
 
-  // Штрих-код или Data Matrix: сначала своя база, потом Open Food Facts,
-  // для Честного знака — best-effort CRPT. Нет данных — product: null, не ошибка.
+  // Сначала индекс, для Data Matrix — TrueMark, затем OFF/CRPT/barcode-list.
+  // Нет данных — product: null, не ошибка.
   router.post("/ai/barcode", async (req, res) => {
     checkBarcodeLimit(req.user.id);
     const scan = parseScanCode(str(req.body?.code ?? "", "Код", { max: 300 }));
-    const cached = barcodeCache.get(scan.gtin);
+    const cacheKey = JSON.stringify([req.user.id, scan.kind, scan.gtin, scan.kind === "datamatrix" ? scan.raw : ""]);
+    const cached = barcodeCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return res.json(cached.payload);
 
     const stored = db
@@ -419,8 +421,13 @@ module.exports = (db, auth, config) => {
           kcal: 0,
           sugarG: 0,
         }
-      : await lookupOpenFoodFacts(scan.gtin, { fetchImpl: ai.fetchImpl }).catch(() => null);
-    if (!stored && scan.kind === "datamatrix") {
+      : null;
+    if (!product && scan.kind === "datamatrix") {
+      const found = await lookupTrueMark(scan.raw, { fetchImpl: ai.fetchImpl });
+      if (found) product = { ...found, volume: "", caffeineMg: 0, kcal: 0, sugarG: 0 };
+    }
+    if (!product) product = await lookupOpenFoodFacts(scan.gtin, { fetchImpl: ai.fetchImpl }).catch(() => null);
+    if (!product && scan.kind === "datamatrix") {
       const crpt = await lookupChestnyZnak(scan.raw, { fetchImpl: ai.fetchImpl });
       if (crpt && !product) product = { ...crpt, volume: "", image: "", caffeineMg: 0, kcal: 0, sugarG: 0 };
     }
@@ -471,11 +478,12 @@ module.exports = (db, auth, config) => {
     const payload = {
       code: scan.gtin,
       kind: scan.kind,
+      ...(scan.kind === "datamatrix" ? { rawCode: scan.raw } : {}),
       inIndex: stored ? { slug: stored.slug, brand: stored.brand, name: stored.name, flavor: stored.flavor } : null,
       product,
       similar,
     };
-    barcodeCache.set(scan.gtin, { expiresAt: Date.now() + BARCODE_CACHE_MS, payload });
+    barcodeCache.set(cacheKey, { expiresAt: Date.now() + BARCODE_CACHE_MS, payload });
     if (barcodeCache.size > BARCODE_CACHE_MAX) barcodeCache.delete(barcodeCache.keys().next().value);
     res.json(payload);
   });

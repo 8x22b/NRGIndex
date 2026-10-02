@@ -341,7 +341,7 @@
             <h3>Камера</h3>
             <div class="camera-modes" role="tablist" aria-label="Что снимаем">
               <button class="camera-mode is-active" type="button" role="tab" aria-selected="true" data-camera-mode="can">Банка</button>
-              <button class="camera-mode" type="button" role="tab" aria-selected="false" data-camera-mode="code">Штрих-код</button>
+              <button class="camera-mode" type="button" role="tab" aria-selected="false" data-camera-mode="code">Data Matrix / штрих-код</button>
             </div>
             <button class="btn btn--ghost" type="button" id="camera-close" aria-label="Закрыть">×</button>
           </div>
@@ -353,8 +353,8 @@
             <p class="camera-hint" id="camera-hint">Наведи банку по контуру и жми «Снять»</p>
           </div>
           <div class="camera-manual" id="camera-manual" hidden>
-            <input id="camera-code" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="или цифры / код Честного знака">
-            <span class="camera-manual__hint">введи цифры и жми Enter</span>
+            <input id="camera-code" type="text" inputmode="text" autocomplete="off" spellcheck="false" autocapitalize="none" placeholder="EAN или полный Data Matrix с верха банки" aria-label="EAN или полный код маркировки Data Matrix">
+            <span class="camera-manual__hint">введи код и жми Enter</span>
           </div>
           <div class="camera-actions">
             <button class="btn" type="button" id="btn-camera-shoot">● Снять</button>

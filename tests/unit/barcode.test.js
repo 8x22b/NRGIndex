@@ -7,6 +7,8 @@ const {
   barcodeField,
   lookupOpenFoodFacts,
   lookupChestnyZnak,
+  lookupTrueMark,
+  parseTrueMarkResponse,
   lookupBarcodeList,
   parseBarcodeListPage,
 } = require("../../server/lib/barcode");
@@ -38,6 +40,47 @@ test("parseScanCode: различает EAN и Data Matrix, отклоняет �
 test("barcodeField: пусто остаётся пустым, мусор отклоняется", () => {
   assert.equal(barcodeField(""), "");
   assert.throws(() => barcodeField("мусор"), /Штрих-код/);
+});
+
+test("TrueMark: полный GS1, GS в query и безопасные фиксированные заголовки", async () => {
+  const raw = "0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
+  assert.deepEqual(parseScanCode(` ${raw} `), { kind: "datamatrix", gtin: "4680036912629", raw });
+  for (const code of [raw, `]d2${raw}`, "0104680036912629215JuVJmTnOR:3H{GS}93kjJw", "]d20104680036912629215JuVJmTnOR:3H{GS}93kjJw"]) {
+    assert.deepEqual(parseScanCode(code), { kind: "datamatrix", gtin: "4680036912629", raw });
+  }
+  const percentCode = "010468003691262921serial%1D%2B+/=:3H\x1D93test";
+  assert.equal(parseScanCode(percentCode).raw, percentCode, "не декодируем URL и не меняем пунктуацию серийника");
+  const data = { m: { codeFounded: true, catalogData: [{
+    good_name: " Energy ", brand_name: " Brand ", good_img: " //example.com/can image.jpg ",
+    good_attrs: [{ attr_name: "Цвет", attr_value: "красный" }, { attr_name: "Вкус", attr_value: " манго " }],
+  }, { good_name: "Не этот товар" }] } };
+  const found = await lookupTrueMark(raw, { fetchImpl: async (url, init) => {
+    assert.equal(new URL(url).origin + new URL(url).pathname, "https://truemark.ru/wp-json/truemark/v1/chz2");
+    assert.match(url, /%1D/);
+    assert.equal(new URL(url).searchParams.get("code"), raw);
+    assert.deepEqual(init.headers, {
+      "user-agent": "NRGIndex/2.0 (energy drink tier list)", referer: "https://truemark.ru/proverka-koda-markirovki/", accept: "application/json",
+    });
+    return Response.json(data);
+  } });
+  assert.deepEqual(found, { source: "truemark", name: "Energy", brand: "Brand", flavor: "манго", image: "https://example.com/can%20image.jpg" });
+  assert.equal(parseTrueMarkResponse({ ...data, codeFounded: false }), null);
+  assert.equal(parseTrueMarkResponse({ ...data, ok: false }), null);
+  assert.equal(parseTrueMarkResponse({ m: { ...data.m, codeFounded: false } }), null);
+  for (const value of [null, {}, { m: { catalogData: [] } }, { m: { catalogData: [{}] } }]) {
+    assert.equal(parseTrueMarkResponse(value), null);
+  }
+  for (const good_img of ["javascript:alert(1)", "data:image/png;base64,abc", "garbage", "https://user:pass@example.com/x"]) {
+    assert.equal(parseTrueMarkResponse({ m: { catalogData: [{ good_name: "X", good_img }] } }).image, "");
+  }
+});
+
+test("TrueMark: HTTP, JSON и сетевая ошибка возвращают null", async () => {
+  for (const fetchImpl of [
+    async () => new Response("error", { status: 503 }),
+    async () => new Response("not json"),
+    async () => { throw new Error("network down"); },
+  ]) assert.equal(await lookupTrueMark("0104680036912629215Fabc", { fetchImpl }), null);
 });
 
 test("lookupOpenFoodFacts: товар, нет товара и HTTP-ошибка", async () => {
@@ -170,4 +213,32 @@ test("decodeBarcodeImage: читает фото в поворотах, инве�
     .png()
     .toBuffer();
   assert.equal(await decodeBarcodeImage(blank), null, "пустой кадр ничего не выдумывает");
+});
+
+test("decodeBarcodeImage: реальный GS1 Data Matrix с GS", async () => {
+  const { dataMatrixPng } = require("../helpers/datamatrix");
+  const { decodeBarcodeImage } = require("../../server/lib/barcode");
+  const expected = "\x1D0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
+  for (const image of [
+    await dataMatrixPng({ scale: 12 }),
+    await require("sharp")(await dataMatrixPng({ scale: 12 })).rotate(180).toBuffer(),
+    await require("sharp")(await dataMatrixPng({ scale: 12 })).negate().toBuffer(),
+    await require("sharp")(await dataMatrixPng({ scale: 12 })).resize(320, 320).toBuffer(),
+  ]) assert.equal((await decodeBarcodeImage(image))?.code, expected);
+});
+
+test("GS1 fixture → parseScanCode → TrueMark: только начальный FNC1 удаляется", async () => {
+  const { dataMatrixPng } = require("../helpers/datamatrix");
+  const { decodeBarcodeImage } = require("../../server/lib/barcode");
+  const expected = "0104680036912629215JuVJmTnOR:3H\x1D93kjJw";
+  const decoded = await decodeBarcodeImage(await dataMatrixPng());
+  assert.equal(decoded.code, `\x1D${expected}`);
+  for (const code of [decoded.code, `]d2${decoded.code}`, expected]) {
+    const scan = parseScanCode(code);
+    assert.equal(scan.raw, expected);
+    await lookupTrueMark(scan.raw, { fetchImpl: async (url) => {
+      assert.equal(new URL(url).searchParams.get("code"), expected);
+      return Response.json({ codeFounded: false });
+    } });
+  }
 });

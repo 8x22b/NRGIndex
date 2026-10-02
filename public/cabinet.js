@@ -73,6 +73,7 @@
     duplicateAck: true, // «это не он» — без этого новую банку не сохраняем
     absenceAck: false, // «такого нет в списке» — подтверждение после неудачных поисков
     barcode: "",
+    rawCode: "",
   };
 
   /* ---------- views ---------- */
@@ -1710,6 +1711,7 @@
     pending.photoSource = "auto";
     pending.photoNote = "";
     pending.barcode = "";
+    pending.rawCode = "";
     clearStrip();
     ["parsed-brand", "parsed-name", "parsed-flavor", "parsed-edition", "parsed-review", "m-image-url"].forEach((id) => {
       $(id).value = "";
@@ -1795,6 +1797,7 @@
     const source = data.product?.source;
     if (source === "openfoodfacts") bits.push("Open Food Facts");
     if (source === "crpt") bits.push("Честный знак");
+    if (source === "truemark") bits.push("TrueMark · Честный знак");
     if (source === "barcode-list") bits.push("База штрих-кодов");
     if (source === "index") bits.push("уже в индексе");
     if (data.product?.volume) bits.push(data.product.volume);
@@ -1806,11 +1809,14 @@
   const lookupBarcode = async (code) => {
     if (barcodeBusy || !code) return false;
     barcodeBusy = true;
+    const gen = autoScanGen;
     setCameraStatus("🔎 Ищу по коду…");
     try {
       const data = await api("POST", "api/cabinet/ai/barcode", { code });
+      if (gen !== autoScanGen || !$("camera-dialog").open || camera.mode !== "code") return false;
       const product = data.product || data.inIndex;
       pending.barcode = data.code;
+      pending.rawCode = data.rawCode || "";
       pending.image = null;
       pending.original = null;
       pending.photoSource = "auto";
@@ -1826,9 +1832,11 @@
         $("smart-status").textContent = `штрих-код ${data.code} — товара нет в базах, заполни бренд и название вручную`;
         return true;
       }
+      const sourceName = product.name || product.brand || "";
+      const longName = sourceName.length > 120;
       pending.parsed = {
         brand: product.brand || product.name || "",
-        name: product.name || product.brand || "",
+        name: longName ? "" : sourceName,
         flavor: product.flavor || "",
         edition: "",
         tier: "B",
@@ -1840,28 +1848,34 @@
       // Код не нашёлся в индексе — неудачная попытка, просим подтвердить отсутствие.
       if (!(data.similar || []).length) showDupAck();
       if (data.product?.image) {
-        // Фото OFF важнее ленты: как только оно загрузится — показываем его.
+        const label = { truemark: "TrueMark", openfoodfacts: "Open Food Facts", index: "индекса", crpt: "Честного знака" }[data.product.source] || "источника";
+        const selection = pending.parsed;
+        const current = () => pending.parsed === selection && pending.barcode === data.code &&
+          pending.rawCode === (data.rawCode || "") && pending.photoSource === "barcode";
         pending.photoSource = "barcode";
-        pending.photoNote = "фото Open Food Facts · фон режется…";
-        processImageUrl(data.product.image)
+        pending.photoNote = `фото ${label} · фон режется…`;
+        processImageUrl(data.product.source === "truemark" ? proxiedPhotoUrl(data.product.image) : data.product.image)
           .then((dataUrl) => {
-            if (pending.barcode !== data.code) return;
+            if (!current()) return;
             pending.image = dataUrl;
-            pending.photoNote = "фото Open Food Facts ✓";
+            pending.photoNote = `фото ${label} ✓`;
             updatePreviewImage();
           })
           .catch(() => {
-            pending.photoNote = "фото из Open Food Facts не загрузилось";
+            if (!current()) return;
+            pending.photoNote = `фото из ${label} не загрузилось`;
             updatePreviewImage();
           });
       }
       $("smart-status").textContent = data.inIndex
         ? "уже в индексе — жми «Оценить эту» выше"
         : barcodeNote(data);
+      if (longName) $("smart-status").textContent += ` · Название источника: ${sourceName}. Введи краткое название до 120 символов — исходное не обрезано.`;
       showPreview();
       refreshPhotos();
       return true;
     } catch (error) {
+      if (gen !== autoScanGen) return false;
       setCameraStatus(error.message, true);
       return false;
     } finally {
@@ -1918,20 +1932,6 @@
     });
   };
 
-  // Кадр → canvas ≤ maxSide: детекторы точнее на небольших картинках, а ZXing
-  // иначе не получит пиксели вовсе.
-  const frameCanvas = (source, maxSide = 1280) => {
-    const sw = source.videoWidth || source.width || 0;
-    const sh = source.videoHeight || source.height || 0;
-    if (!sw || !sh) return null;
-    const scale = Math.min(1, maxSide / Math.max(sw, sh));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(sw * scale));
-    canvas.height = Math.max(1, Math.round(sh * scale));
-    canvas.getContext("2d").drawImage(source, 0, 0, canvas.width, canvas.height);
-    return canvas;
-  };
-
   // ZXing ждёт яркость (Y) — считаем её сами из RGBA кадра.
   const zxingDecode = (canvas) => {
     if (!canvas || !zxingReader) return "";
@@ -1974,14 +1974,17 @@
         /* кадр не по зубам нативному API — пробуем ZXing */
       }
     }
-    const canvas = frameCanvas(source);
-    if (!canvas) return "";
     try {
       await ensureZXingReader();
     } catch {
       return "";
     }
-    return zxingDecode(canvas);
+    for (let index = 0; index < 6; index++) {
+      const code = zxingDecode(scanVariant(source, index, index === 0 ? 1920 : 1280));
+      if (code) return code;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return "";
   };
 
   // Фото → canvas ≤1600px, jpeg: маленький размер для серверного разбора.
@@ -2014,25 +2017,30 @@
 
   const NATIVE_GRACE_MS = 2500;
   const SCAN_INTERVAL_MS = 150;
-  const scanFrame = { canvas: null, context: null };
-
-  // Кроп видимой части кадра: BarcodeDetector стабильнее на небольшой картинке,
-  // а ZXing получает пиксели. object-fit: cover учитываем, как в cropToStencil.
-  const grabScanFrame = (maxSide = 1280) => {
-    const video = $("camera-video");
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    const view = $("camera-view").getBoundingClientRect();
-    if (!vw || !vh || !view.width || !view.height) return null;
-    const scale = Math.max(view.width / vw, view.height / vh);
-    const sw = Math.min(vw, view.width / scale);
-    const sh = Math.min(vh, view.height / scale);
-    const out = Math.min(1, maxSide / Math.max(sw, sh));
-    const canvas = scanFrame.canvas || (scanFrame.canvas = document.createElement("canvas"));
-    canvas.width = Math.max(1, Math.round(sw * out));
-    canvas.height = Math.max(1, Math.round(sh * out));
-    scanFrame.context ||= canvas.getContext("2d", { willReadFrequently: true });
-    scanFrame.context.drawImage(video, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, canvas.width, canvas.height);
+  // Один ограниченный вариант за live-tick; полный кадр чередуется с ROI,
+  // поэтому код у края кадра не теряется из-за object-fit/crop.
+  const scanVariant = (video, index, maxSide = 1280) => {
+    const sw = video.videoWidth || video.width;
+    const sh = video.videoHeight || video.height;
+    if (!sw || !sh) return null;
+    const roi = index % 2 === 1;
+    const width = roi ? sw / 2 : sw;
+    const height = roi ? sh / 2 : sh;
+    const scale = Math.min(2, maxSide / Math.max(width, height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const context = canvas.getContext("2d");
+    context.drawImage(video, (sw - width) / 2, (sh - height) / 2, width, height, 0, 0, canvas.width, canvas.height);
+    if (index >= 2) {
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < image.data.length; i += 4) {
+        const gray = (image.data[i] * 299 + image.data[i + 1] * 587 + image.data[i + 2] * 114) / 1000;
+        const value = index >= 4 ? 255 - gray : (gray - 128) * 1.6 + 128;
+        image.data[i] = image.data[i + 1] = image.data[i + 2] = value;
+      }
+      context.putImageData(image, 0, 0);
+    }
     return canvas;
   };
 
@@ -2040,9 +2048,10 @@
   // а если он молчит пару секунд (Android без сервисов Google) — подключаем ZXing.
   const startAutoScan = async () => {
     stopAutoScan();
+    const gen = autoScanGen;
     if (camera.mode !== "code") return;
     const formats = await barcodeFormats();
-    if (camera.mode !== "code" || !$("camera-dialog").open) return;
+    if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
     if (!formats.length) {
       // Нативного детектора нет — сразу готовим ZXing; совсем без вариантов сообщим.
       setCameraStatus("🔎 Ищу код — просто наведи камеру");
@@ -2051,7 +2060,7 @@
       } catch {
         /* ниже проверим читалку */
       }
-      if (camera.mode !== "code" || !$("camera-dialog").open) return;
+      if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open) return;
       if (!zxingReader) {
         setCameraStatus("Этот браузер не умеет читать коды — введи цифры вручную.", true);
         $("camera-code").focus();
@@ -2060,12 +2069,12 @@
     } else {
       setCameraStatus("🔎 Ищу код — просто наведи камеру");
     }
-    const gen = autoScanGen;
     const startedAt = Date.now();
     const detector = formats.length ? new window.BarcodeDetector({ formats }) : null;
+    let variant = 0;
     const tick = async () => {
-      if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open || camera.busy) return;
-      const canvas = grabScanFrame();
+      if (gen !== autoScanGen || camera.mode !== "code" || !$("camera-dialog").open || camera.busy || barcodeBusy) return;
+      const canvas = scanVariant($("camera-video"), variant++ % 6);
       if (!canvas) {
         autoScanTimer = setTimeout(tick, 300);
         return;
@@ -2089,11 +2098,12 @@
         return;
       }
       stopAutoScan();
+      const lookupGen = autoScanGen;
       camera.busy = true;
       try {
         if (await lookupBarcode(code)) {
           closeCamera();
-        } else {
+        } else if (lookupGen === autoScanGen) {
           // Код прочитан, но товара нет — даём шанс переснять.
           $("btn-camera-shoot").hidden = false;
           $("btn-camera-shoot").textContent = "↻ Сканировать снова";
@@ -2138,7 +2148,7 @@
     $("camera-stencil").dataset.mode = mode;
     $("camera-manual").hidden = mode !== "code";
     $("camera-hint").textContent =
-      mode === "code" ? "Наведи камеру на код — распознается сам" : "Наведи банку по контуру и жми «Снять»";
+      mode === "code" ? "Data Matrix обычно на верху банки: поднеси ближе, без бликов. Квадрат — ориентир; EAN тоже читается во всём кадре." : "Наведи банку по контуру и жми «Снять»";
     const shoot = $("btn-camera-shoot");
     shoot.hidden = mode === "code";
     shoot.textContent = "● Снять";
@@ -2157,13 +2167,20 @@
     }
     try {
       camera.stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: false,
       });
       const video = $("camera-video");
       video.srcObject = camera.stream;
       await video.play().catch(() => {});
       const track = camera.stream.getVideoTracks()[0];
+      if (track?.getCapabilities?.()?.focusMode?.includes("continuous")) {
+        await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
+      }
       $("camera-torch").hidden = !track?.getCapabilities?.()?.torch;
       $("btn-camera-shoot").disabled = false;
     } catch {
@@ -2186,6 +2203,7 @@
   };
 
   const closeCamera = () => {
+    stopAutoScan();
     if ($("camera-dialog").open) $("camera-dialog").close();
   };
 
@@ -2251,14 +2269,17 @@
   $("camera-file").addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
+    if (!file || camera.busy || barcodeBusy) return;
     if (camera.mode === "code") {
+      stopAutoScan();
+      const gen = autoScanGen;
       camera.busy = true;
       setCameraStatus("📷 Читаю код с фото…");
       try {
         const bitmap = await createImageBitmap(file);
         let code = await detectBarcode(bitmap);
         bitmap.close?.();
+        if (gen !== autoScanGen) return;
         if (!code) {
           // Клиент не осилил (блик/смаз) — последний шанс: серверный разбор.
           setCameraStatus("всматриваюсь внимательнее…");
@@ -2266,15 +2287,17 @@
           const result = await api("POST", "api/cabinet/ai/barcode-scan", { imageDataUrl });
           if (result.found) code = result.code;
         }
+        if (gen !== autoScanGen) return;
         if (!code) {
           setCameraStatus("Код не распознан — попробуй ближе и без бликов.", true);
           return;
         }
         if (await lookupBarcode(code)) closeCamera();
       } catch (error) {
-        setCameraStatus(error.message || "не удалось прочитать код", true);
+        if (gen === autoScanGen) setCameraStatus(error.message || "не удалось прочитать код", true);
       } finally {
         camera.busy = false;
+        restoreScanRetry(gen);
       }
       return;
     }
@@ -2299,11 +2322,25 @@
     }
   });
 
+  const restoreScanRetry = (gen) => {
+    if (gen !== autoScanGen || !$("camera-dialog").open || camera.mode !== "code") return;
+    $("btn-camera-shoot").hidden = false;
+    $("btn-camera-shoot").disabled = false;
+    $("btn-camera-shoot").textContent = "↻ Сканировать снова";
+  };
+
   $("camera-code").addEventListener("keydown", async (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
     const code = $("camera-code").value.trim();
-    if (code && (await lookupBarcode(code))) closeCamera();
+    if (!code || camera.busy || barcodeBusy) return;
+    stopAutoScan();
+    const gen = autoScanGen;
+    try {
+      if (await lookupBarcode(code)) closeCamera();
+    } finally {
+      restoreScanRetry(gen);
+    }
   });
 
   $("camera-torch").onclick = async () => {
